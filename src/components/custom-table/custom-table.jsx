@@ -1,0 +1,533 @@
+'use client';
+
+import { useMemo, useCallback, memo, Component, useRef, useEffect } from 'react';
+
+import Box from '@mui/material/Box';
+import { DataGrid, gridClasses, Toolbar } from '@mui/x-data-grid';
+
+import { EmptyContent } from 'src/components/empty-content';
+import { createActionsColumn, useActionsColumn } from 'src/utils/create-actions-column';
+import {
+  useToolbarSettings,
+  CustomToolbarQuickFilter,
+  CustomToolbarExportButton,
+  CustomToolbarFilterButton,
+  CustomToolbarColumnsButton,
+  CustomToolbarSettingsButton,
+} from 'src/components/custom-data-grid';
+
+import { useCustomTable } from './use-custom-table';
+import { normalizeRows, normalizeColumns, normalizeToolbar, hasConfirmationDialogs } from './table-utils';
+import {
+  DEFAULT_PAGINATION,
+  DEFAULT_SORTING,
+  DEFAULT_FILTERING,
+  DEFAULT_SELECTION,
+  DEFAULT_TOOLBAR,
+  DEFAULT_DENSITY,
+  DEFAULT_ACTIONS_COLUMN,
+} from './table-defaults';
+
+// ----------------------------------------------------------------------
+// CustomTable Component
+// ----------------------------------------------------------------------
+
+/**
+ * CustomTable - A production-grade wrapper around MUI X DataGrid
+ *
+ * @param {object} props - Component props
+ * @param {Array} props.rows - Data array (required)
+ * @param {Array} props.columns - GridColDef array (required)
+ * @param {boolean} props.loading - Loading state
+ * @param {Array} props.actions - Actions config for createActionsColumn
+ * @param {object} props.actionsColumnOptions - Options for actions column
+ * @param {object|boolean} props.pagination - Pagination config
+ * @param {object|boolean} props.sorting - Sorting config
+ * @param {object|boolean} props.filtering - Filtering config
+ * @param {object|boolean} props.selection - Row selection config
+ * @param {object|boolean|ReactNode} props.toolbar - Toolbar config
+ * @param {string} props.density - Row density: 'compact' | 'standard' | 'comfortable'
+ * @param {number|string} props.height - Grid height
+ * @param {object} props.sx - MUI sx prop
+ * @param {object} props.slots - Custom DataGrid slots
+ * @param {object} props.slotProps - Custom DataGrid slotProps
+ * @param {Function} props.onRowClick - Row click handler
+ * @param {Function} props.onCellClick - Cell click handler
+ * @param {Function} props.onSelectionChange - Selection change handler
+ * @param {Function} props.getRowId - Custom row ID getter
+ * @param {Function} props.getRowClassName - Dynamic row className
+ * @param {object} props.initialState - Initial grid state
+ * @param {ReactNode} props.emptyContent - Custom empty content component
+ * @param {object} props.otherProps - All other DataGrid props
+ */
+function CustomTableComponent({
+  rows: rowsProp = [],
+  columns: columnsProp = [],
+  loading = false,
+  actions,
+  actionsColumnOptions,
+  pagination: paginationProp,
+  sorting: sortingProp,
+  filtering: filteringProp,
+  selection: selectionProp,
+  toolbar: toolbarProp,
+  density: densityProp,
+  height,
+  sx,
+  slots: slotsProp,
+  slotProps: slotPropsProp,
+  onRowClick,
+  onCellClick,
+  onSelectionChange,
+  getRowId,
+  getRowClassName,
+  initialState: initialStateProp,
+  emptyContent,
+  ...otherProps
+}) {
+  // Normalize and validate data with error handling
+  const rows = useMemo(() => {
+    try {
+      return normalizeRows(rowsProp, getRowId);
+    } catch (error) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.error('CustomTable: Error normalizing rows:', error);
+      }
+      return [];
+    }
+  }, [rowsProp, getRowId]);
+
+  const baseColumns = useMemo(() => {
+    try {
+      return normalizeColumns(columnsProp);
+    } catch (error) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.error('CustomTable: Error normalizing columns:', error);
+      }
+      return [];
+    }
+  }, [columnsProp]);
+
+  // Memoize row IDs to prevent unnecessary re-renders
+  const rowIdsRef = useRef(new Set());
+  useEffect(() => {
+    const newIds = new Set(rows.map((row) => row.id));
+    const hasChanged = rowIdsRef.current.size !== newIds.size || 
+      Array.from(rowIdsRef.current).some(id => !newIds.has(id));
+    if (hasChanged) {
+      rowIdsRef.current = newIds;
+    }
+  }, [rows]);
+
+  // Check if actions need confirmation dialogs
+  const needsConfirmationDialog = useMemo(() => hasConfirmationDialogs(actions), [actions]);
+
+  // Handle actions column with confirmation support
+  const actionsColumnResult = useActionsColumn(actions || [], {
+    ...DEFAULT_ACTIONS_COLUMN,
+    ...actionsColumnOptions,
+  });
+
+  // Merge actions column if actions provided
+  const columns = useMemo(() => {
+    if (!actions || actions.length === 0) {
+      return baseColumns;
+    }
+
+    const actionsColumn = needsConfirmationDialog
+      ? actionsColumnResult.column
+      : createActionsColumn(actions, {
+          ...DEFAULT_ACTIONS_COLUMN,
+          ...actionsColumnOptions,
+        });
+
+    if (!actionsColumn) {
+      return baseColumns;
+    }
+
+    // Check if actions column already exists
+    const hasActionsColumn = baseColumns.some((col) => col.type === 'actions' || col.field === 'actions');
+
+    if (hasActionsColumn) {
+      return baseColumns;
+    }
+
+    return [...baseColumns, actionsColumn];
+  }, [baseColumns, actions, actionsColumnOptions, needsConfirmationDialog, actionsColumnResult.column]);
+
+  // Use custom table hook for state management
+  const tableState = useCustomTable({
+    rows,
+    pagination: paginationProp,
+    sorting: sortingProp,
+    filtering: filteringProp,
+    selection: selectionProp,
+    getRowId,
+    onSelectionChange,
+    onPageChange: otherProps.onPageChange,
+    onPageSizeChange: otherProps.onPageSizeChange,
+    onSortModelChange: otherProps.onSortModelChange,
+    onFilterModelChange: otherProps.onFilterModelChange,
+  });
+
+  // Normalize toolbar configuration
+  const toolbarConfig = useMemo(() => normalizeToolbar(toolbarProp ?? DEFAULT_TOOLBAR), [toolbarProp]);
+
+  // Toolbar settings hook
+  const toolbarSettings = useToolbarSettings(
+    useMemo(
+      () => ({
+        density: densityProp || DEFAULT_DENSITY,
+      }),
+      [densityProp]
+    )
+  );
+
+  // Build toolbar component
+  const toolbarComponent = useMemo(() => {
+    if (toolbarConfig === false || (typeof toolbarConfig === 'object' && !toolbarConfig.show)) {
+      return null;
+    }
+
+    if (typeof toolbarConfig === 'object' && toolbarConfig.custom) {
+      return toolbarConfig.custom;
+    }
+
+    if (typeof toolbarConfig === 'object' && toolbarConfig.show) {
+      return (
+        <CustomToolbar
+          settings={toolbarSettings.settings}
+          onChangeSettings={toolbarSettings.onChangeSettings}
+          config={toolbarConfig}
+        />
+      );
+    }
+
+    return null;
+  }, [toolbarConfig, toolbarSettings]);
+
+  // Build slots
+  const slots = useMemo(() => {
+    const defaultSlots = {
+      noRowsOverlay: () => (emptyContent || <EmptyContent />),
+      noResultsOverlay: () => (emptyContent || <EmptyContent title="No results found" />),
+    };
+
+    if (toolbarComponent) {
+      defaultSlots.toolbar = () => toolbarComponent;
+    }
+
+    return {
+      ...defaultSlots,
+      ...slotsProp,
+    };
+  }, [toolbarComponent, slotsProp, emptyContent]);
+
+  // Build slotProps
+  const slotProps = useMemo(() => {
+    const defaultSlotProps = {};
+
+    if (toolbarConfig && typeof toolbarConfig === 'object' && toolbarConfig.columns !== false) {
+      defaultSlotProps.columnsManagement = {
+        getTogglableColumns: () => {
+          return columns
+            .filter((col) => {
+              if (col.type === 'actions') return false;
+              if (col.field === 'actions') return false;
+              if (col.hideable === false) return false;
+              return col.field;
+            })
+            .map((col) => col.field);
+        },
+      };
+    }
+
+    return {
+      ...defaultSlotProps,
+      ...slotPropsProp,
+    };
+  }, [columns, toolbarConfig, slotPropsProp]);
+
+  // Performance optimization: Enable virtualization for large datasets
+  const shouldEnableVirtualization = useMemo(() => rows.length > 1000, [rows.length]);
+
+  // Build DataGrid props
+  const dataGridProps = useMemo(() => {
+    const props = {
+      rows,
+      columns,
+      loading,
+      ...otherProps,
+    };
+
+    // Enable virtualization for large datasets
+    if (shouldEnableVirtualization) {
+      props.disableVirtualization = false;
+    }
+
+    // Pagination
+    if (tableState.paginationConfig.enabled) {
+      props.paginationModel = tableState.paginationModel;
+      props.onPaginationModelChange = tableState.handlePaginationModelChange;
+      props.pageSizeOptions = tableState.paginationConfig.pageSizeOptions;
+
+      if (tableState.paginationConfig.mode === 'server') {
+        props.paginationMode = 'server';
+        if (tableState.paginationConfig.rowCount !== undefined) {
+          props.rowCount = tableState.paginationConfig.rowCount;
+        }
+      }
+    } else {
+      props.pagination = false;
+    }
+
+    // Sorting
+    if (tableState.sortingConfig.enabled) {
+      props.sortModel = tableState.sortModel;
+      props.onSortModelChange = tableState.handleSortModelChange;
+
+      if (tableState.sortingConfig.mode === 'server') {
+        props.sortingMode = 'server';
+      }
+
+      if (tableState.sortingConfig.disableMultipleColumns) {
+        props.disableMultipleColumnsSorting = true;
+      }
+    } else {
+      props.disableColumnSorting = true;
+    }
+
+    // Filtering
+    if (tableState.filteringConfig.enabled) {
+      // Ensure filterModel has the correct structure with items array
+      props.filterModel = tableState.filterModel?.items
+        ? tableState.filterModel
+        : { items: [] };
+      props.onFilterModelChange = tableState.handleFilterModelChange;
+
+      if (tableState.filteringConfig.mode === 'server') {
+        props.filterMode = 'server';
+      }
+
+      if (tableState.filteringConfig.disableMultipleColumns) {
+        props.disableMultipleColumnsFiltering = true;
+      }
+
+      if (!tableState.filteringConfig.quickFilter) {
+        props.disableQuickFilter = true;
+      }
+    } else {
+      props.disableColumnFilter = true;
+    }
+
+    // Selection
+    if (tableState.selectionConfig.enabled) {
+      props.checkboxSelection = tableState.selectionConfig.checkboxSelection;
+      props.disableRowSelectionOnClick = tableState.selectionConfig.disableRowSelectionOnClick;
+      // Ensure rowSelectionModel is always an array
+      props.rowSelectionModel = Array.isArray(tableState.selectionModel) ? tableState.selectionModel : [];
+      props.onRowSelectionModelChange = tableState.handleSelectionModelChange;
+
+      if (tableState.selectionConfig.isRowSelectable) {
+        props.isRowSelectable = tableState.selectionConfig.isRowSelectable;
+      }
+    } else {
+      // When selection is disabled, explicitly turn off DataGrid row selection.
+      // DataGrid defaults rowSelection to true, so without this, row click still selects and shows "X row(s) selected".
+      props.rowSelection = false;
+      props.hideFooterSelectedRowCount = true;
+    }
+
+    // Density
+    if (toolbarSettings.settings.density) {
+      props.density = toolbarSettings.settings.density;
+    }
+
+    // Height - Make it flexible when there's no data to show empty content properly
+    const hasData = rows.length > 0;
+    if (!hasData) {
+      // When there's no data, enable autoHeight so the grid expands to show empty content
+      props.autoHeight = true;
+      if (height) {
+        props.sx = {
+          minHeight: 400, // Minimum height to show empty content properly
+          ...sx,
+        };
+      } else if (sx) {
+        props.sx = {
+          ...sx,
+          minHeight: 400, // Ensure empty content is visible
+        };
+      } else {
+        props.sx = {
+          minHeight: 400, // Ensure empty content is visible when no data
+        };
+      }
+    } else if (height) {
+      props.sx = {
+        height,
+        ...sx,
+      };
+    } else if (sx) {
+      props.sx = sx;
+    }
+
+    // Row ID
+    if (getRowId) {
+      props.getRowId = getRowId;
+    }
+
+    // Row className
+    if (getRowClassName) {
+      props.getRowClassName = getRowClassName;
+    }
+
+    // Event handlers
+    if (onRowClick) {
+      props.onRowClick = onRowClick;
+    }
+
+    if (onCellClick) {
+      props.onCellClick = onCellClick;
+    }
+
+    // Initial state
+    if (initialStateProp) {
+      props.initialState = initialStateProp;
+    } else if (tableState.paginationConfig.enabled) {
+      props.initialState = {
+        pagination: {
+          paginationModel: {
+            page: tableState.paginationModel.page,
+            pageSize: tableState.paginationModel.pageSize,
+          },
+        },
+      };
+    }
+
+    // Slots
+    props.slots = slots;
+
+    // SlotProps
+    props.slotProps = slotProps;
+
+    return props;
+  }, [
+    rows,
+    columns,
+    loading,
+    tableState,
+    toolbarSettings.settings.density,
+    height,
+    sx,
+    getRowId,
+    getRowClassName,
+    onRowClick,
+    onCellClick,
+    initialStateProp,
+    slots,
+    slotProps,
+    shouldEnableVirtualization,
+    otherProps,
+  ]);
+
+  // Handle empty columns
+  if (columns.length === 0) {
+    return <EmptyContent title="No columns defined" description="Please provide at least one column definition." />;
+  }
+
+  // Edge case: Handle empty rows (already handled by DataGrid's noRowsOverlay slot)
+
+  return (
+    <TableErrorBoundary>
+      <DataGrid
+        {...dataGridProps}
+        sx={[
+          {
+            [`& .${gridClasses.cell}`]: {
+              display: 'flex',
+              alignItems: 'center',
+            },
+          },
+          ...(Array.isArray(dataGridProps.sx) ? dataGridProps.sx : [dataGridProps.sx]),
+        ]}
+      />
+      {needsConfirmationDialog && actionsColumnResult.ConfirmationDialog}
+    </TableErrorBoundary>
+  );
+}
+
+// ----------------------------------------------------------------------
+// Error Boundary Component
+// ----------------------------------------------------------------------
+
+class TableErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.error('CustomTable Error:', error, errorInfo);
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return <EmptyContent title="Error loading table" description="Please refresh the page." />;
+    }
+
+    return this.props.children;
+  }
+}
+
+// ----------------------------------------------------------------------
+// Memoized Export
+// ----------------------------------------------------------------------
+
+export const CustomTable = memo(CustomTableComponent, (prevProps, nextProps) => {
+  // Custom comparison function for memoization
+  if (
+    prevProps.rows !== nextProps.rows ||
+    prevProps.columns !== nextProps.columns ||
+    prevProps.loading !== nextProps.loading ||
+    prevProps.actions !== nextProps.actions ||
+    prevProps.pagination !== nextProps.pagination ||
+    prevProps.sorting !== nextProps.sorting ||
+    prevProps.filtering !== nextProps.filtering ||
+    prevProps.selection !== nextProps.selection ||
+    prevProps.toolbar !== nextProps.toolbar ||
+    prevProps.density !== nextProps.density ||
+    prevProps.height !== nextProps.height
+  ) {
+    return false;
+  }
+  return true;
+});
+
+// ----------------------------------------------------------------------
+// Custom Toolbar Component
+// ----------------------------------------------------------------------
+
+function CustomToolbar({ settings, onChangeSettings, config }) {
+  return (
+    <Toolbar>
+      {config.quickFilter !== false && <CustomToolbarQuickFilter />}
+      <Box component="span" sx={{ flexGrow: 1 }} />
+      {config.customActions && <Box sx={{ display: 'flex', gap: 1, mr: 1 }}>{config.customActions}</Box>}
+      {config.columns !== false && <CustomToolbarColumnsButton />}
+      {config.filter !== false && <CustomToolbarFilterButton />}
+      {config.export !== false && <CustomToolbarExportButton />}
+      {config.settings !== false && (
+        <CustomToolbarSettingsButton settings={settings} onChangeSettings={onChangeSettings} />
+      )}
+    </Toolbar>
+  );
+}
+
+

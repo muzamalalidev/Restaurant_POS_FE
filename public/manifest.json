@@ -1,0 +1,23 @@
+{
+  "name": "Minimal Dashboard",
+  "short_name": "Minimal",
+  "description": "Minimal Dashboard Theme",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#141A21",
+  "theme_color": "#078DEE",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "48x48",
+      "type": "image/x-icon"
+    },
+    {
+      "src": "/favicon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

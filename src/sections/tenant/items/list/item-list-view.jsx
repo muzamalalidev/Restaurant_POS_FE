@@ -1,0 +1,764 @@
+'use client';
+
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useForm, FormProvider } from 'react-hook-form';
+
+import Box from '@mui/material/Box';
+import Card from '@mui/material/Card';
+import Typography from '@mui/material/Typography';
+import IconButton from '@mui/material/IconButton';
+import InputAdornment from '@mui/material/InputAdornment';
+import Stack from '@mui/material/Stack';
+import Switch from '@mui/material/Switch';
+
+import { CustomTable } from 'src/components/custom-table';
+import { Label } from 'src/components/label';
+import { EmptyContent } from 'src/components/empty-content';
+import { toast } from 'src/components/snackbar';
+import { Field } from 'src/components/hook-form';
+import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
+import { Iconify } from 'src/components/iconify';
+
+import { useGetItemsQuery, useDeleteItemMutation, useToggleItemActiveMutation } from 'src/store/api/items-api';
+import { useGetTenantsQuery } from 'src/store/api/tenants-api';
+import { useGetCategoriesQuery } from 'src/store/api/categories-api';
+import { ItemFormDialog } from '../form/item-form-dialog';
+import { ItemDetailsDialog } from '../components/item-details-dialog';
+
+// ----------------------------------------------------------------------
+
+/**
+ * Get ItemType label
+ */
+const getItemTypeLabel = (itemType) => {
+  const labels = {
+    1: 'Direct Sale',
+    2: 'Recipe Based',
+    3: 'Add On',
+    4: 'Deal',
+  };
+  return labels[itemType] || `Unknown (${itemType})`;
+};
+
+/**
+ * Format price as currency
+ */
+const formatPrice = (price) => {
+  if (price === null || price === undefined) return '-';
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(price);
+};
+
+/**
+ * Format stock quantity
+ */
+const formatStockQuantity = (quantity) => {
+  if (quantity === null || quantity === undefined) return '-';
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(quantity);
+};
+
+// ----------------------------------------------------------------------
+
+/**
+ * Item List View Component
+ * 
+ * Displays all items in a data-dense, filterable grid with actions.
+ * Manages dialog state for create/edit/view operations.
+ * 
+ * Filter precedence: categoryId takes precedence over tenantId.
+ */
+export function ItemListView() {
+  // Dialog state management
+  const [formDialogOpen, setFormDialogOpen] = useState(false);
+  const [formDialogMode, setFormDialogMode] = useState('create');
+  const [formDialogItemId, setFormDialogItemId] = useState(null);
+  
+  const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
+  const [detailsDialogItemId, setDetailsDialogItemId] = useState(null);
+  
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteItemId, setDeleteItemId] = useState(null);
+  const [deleteItemName, setDeleteItemName] = useState(null);
+
+  // Pagination state
+  const [pageNumber, setPageNumber] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
+  // Search state (debounced)
+  const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+
+  // Filter state
+  const [categoryId, setCategoryId] = useState(null);
+  const [tenantId, setTenantId] = useState(null);
+
+  // Minimal form for search (required for Field.Text)
+  const searchForm = useForm({
+    defaultValues: {
+      searchTerm: '',
+    },
+  });
+
+  // Minimal forms for filters (required for Field.Autocomplete)
+  const categoryFilterForm = useForm({
+    defaultValues: {
+      categoryId: null,
+    },
+  });
+
+  const tenantFilterForm = useForm({
+    defaultValues: {
+      tenantId: null,
+    },
+  });
+
+  // Watch search form value changes and sync with searchTerm state
+  const watchedSearchTerm = searchForm.watch('searchTerm');
+  useEffect(() => {
+    setSearchTerm(watchedSearchTerm || '');
+  }, [watchedSearchTerm]);
+
+  // Helper function to extract ID from object or string
+  const getId = useCallback((value) => {
+    if (!value) return null;
+    if (typeof value === 'object' && value !== null && 'id' in value) {
+      return value.id;
+    }
+    return value;
+  }, []);
+
+  // Sync category filter form with state
+  const isSyncingCategoryRef = useRef(false);
+  useEffect(() => {
+    if (isSyncingCategoryRef.current) return;
+    const currentFormValue = categoryFilterForm.getValues('categoryId');
+    const stateId = getId(categoryId);
+    const formId = getId(currentFormValue);
+    
+    if (stateId !== formId) {
+      categoryFilterForm.setValue('categoryId', categoryId, { shouldValidate: false, shouldDirty: false });
+    }
+  }, [categoryId, categoryFilterForm, getId]);
+
+  // Watch category filter form value changes
+  const watchedCategoryId = categoryFilterForm.watch('categoryId');
+  useEffect(() => {
+    const watchedId = getId(watchedCategoryId);
+    const currentId = getId(categoryId);
+    
+    if (watchedId !== currentId) {
+      isSyncingCategoryRef.current = true;
+      setCategoryId(watchedCategoryId);
+      // When categoryId is selected, clear tenantId (categoryId takes precedence)
+      if (watchedCategoryId) {
+        setTenantId(null);
+        tenantFilterForm.setValue('tenantId', null, { shouldValidate: false, shouldDirty: false });
+      }
+      setPageNumber(1);
+      setTimeout(() => {
+        isSyncingCategoryRef.current = false;
+      }, 0);
+    }
+  }, [watchedCategoryId, categoryId, tenantFilterForm, getId]);
+
+  // Sync tenant filter form with state
+  const isSyncingTenantRef = useRef(false);
+  useEffect(() => {
+    if (isSyncingTenantRef.current) return;
+    const currentFormValue = tenantFilterForm.getValues('tenantId');
+    const stateId = getId(tenantId);
+    const formId = getId(currentFormValue);
+    
+    if (stateId !== formId) {
+      tenantFilterForm.setValue('tenantId', tenantId, { shouldValidate: false, shouldDirty: false });
+    }
+  }, [tenantId, tenantFilterForm, getId]);
+
+  // Watch tenant filter form value changes
+  const watchedTenantId = tenantFilterForm.watch('tenantId');
+  useEffect(() => {
+    const watchedId = getId(watchedTenantId);
+    const currentId = getId(tenantId);
+    
+    if (watchedId !== currentId) {
+      isSyncingTenantRef.current = true;
+      setTenantId(watchedTenantId);
+      setPageNumber(1);
+      setTimeout(() => {
+        isSyncingTenantRef.current = false;
+      }, 0);
+    }
+  }, [watchedTenantId, tenantId, getId]);
+
+  // P0-005: Limit dropdown fetches to avoid scale/performance issues
+  const { data: tenantsResponse } = useGetTenantsQuery({
+    pageSize: 200,
+  });
+
+  const tenantIdForCategories = tenantId
+    ? (typeof tenantId === 'object' && tenantId !== null ? tenantId.id : tenantId)
+    : undefined;
+
+  const { data: categoriesResponse } = useGetCategoriesQuery({
+    pageSize: 200,
+    tenantId: tenantIdForCategories,
+  });
+
+  // Tenant options for dropdown
+  const tenantOptions = useMemo(() => {
+    if (!tenantsResponse) return [];
+    const tenants = tenantsResponse.data || [];
+    return tenants.map((tenant) => ({
+      id: tenant.id,
+      label: tenant.name || tenant.id,
+    }));
+  }, [tenantsResponse]);
+
+  // Category options for dropdown
+  const categoryOptions = useMemo(() => {
+    if (!categoriesResponse) return [];
+    const categories = categoriesResponse.data || [];
+    return categories.map((category) => ({
+      id: category.id,
+      label: category.name || category.id,
+    }));
+  }, [categoriesResponse]);
+
+  // Debounce search term
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+      setPageNumber(1);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  // Fetch items with pagination, search, and filter params
+  const queryParams = useMemo(
+    () => {
+      // Extract categoryId: if it's an object, get the id; if it's a string, use it directly
+      const categoryIdValue = typeof categoryId === 'object' && categoryId !== null
+        ? categoryId.id
+        : categoryId;
+
+      // Extract tenantId: if it's an object, get the id; if it's a string, use it directly
+      // Only include tenantId if categoryId is not set (categoryId takes precedence)
+      const tenantIdValue = categoryIdValue
+        ? undefined
+        : (typeof tenantId === 'object' && tenantId !== null
+            ? tenantId.id
+            : tenantId);
+
+      return {
+        pageNumber,
+        pageSize,
+        searchTerm: debouncedSearchTerm.trim() || undefined,
+        categoryId: categoryIdValue || undefined,
+        tenantId: tenantIdValue || undefined,
+      };
+    },
+    [pageNumber, pageSize, debouncedSearchTerm, categoryId, tenantId]
+  );
+
+  const { data: itemsResponse, isLoading, error, refetch } = useGetItemsQuery(queryParams);
+
+  // Extract data from paginated response
+  const items = useMemo(() => {
+    if (!itemsResponse) return [];
+    return itemsResponse.data || [];
+  }, [itemsResponse]);
+
+  // Extract pagination metadata
+  const paginationMeta = useMemo(() => {
+    if (!itemsResponse) {
+      return {
+        totalCount: 0,
+        totalPages: 0,
+        hasPreviousPage: false,
+        hasNextPage: false,
+      };
+    }
+    return {
+      totalCount: itemsResponse.totalCount || 0,
+      totalPages: itemsResponse.totalPages || 0,
+      hasPreviousPage: itemsResponse.hasPreviousPage || false,
+      hasNextPage: itemsResponse.hasNextPage || false,
+    };
+  }, [itemsResponse]);
+
+  // Mutations
+  const [deleteItem] = useDeleteItemMutation();
+  const [toggleItemActive, { isLoading: isTogglingActive }] = useToggleItemActiveMutation();
+
+  // Track which item is being toggled
+  const [togglingItemId, setTogglingItemId] = useState(null);
+  // P1-002: Ref to prevent rapid toggle clicks
+  const togglingItemIdsRef = useRef(new Set());
+
+  // Handle create
+  const handleCreate = useCallback(() => {
+    setFormDialogMode('create');
+    setFormDialogItemId(null);
+    setFormDialogOpen(true);
+  }, []);
+
+  // Handle edit
+  const handleEdit = useCallback((itemId) => {
+    setFormDialogMode('edit');
+    setFormDialogItemId(itemId);
+    setFormDialogOpen(true);
+  }, []);
+
+  // Handle view
+  const handleView = useCallback((itemId) => {
+    setDetailsDialogItemId(itemId);
+    setDetailsDialogOpen(true);
+  }, []);
+
+  // Handle delete confirmation
+  const handleDeleteClick = useCallback((row) => {
+    setDeleteItemId(row.id);
+    setDeleteItemName(row.name || 'Item');
+    setDeleteConfirmOpen(true);
+  }, []);
+
+  // Handle delete confirm
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!deleteItemId) return;
+    
+    try {
+      await deleteItem(deleteItemId).unwrap();
+      toast.success('Item deleted successfully');
+      setDeleteConfirmOpen(false);
+      setDeleteItemId(null);
+      setDeleteItemName(null);
+    } catch (err) {
+      toast.error(err?.data?.message || 'Failed to delete item');
+      console.error('Failed to delete item:', err);
+    }
+  }, [deleteItemId, deleteItem]);
+
+  // Handle toggle active
+  const handleToggleActive = useCallback(async (itemId) => {
+    if (togglingItemIdsRef.current.has(itemId)) return;
+    togglingItemIdsRef.current.add(itemId);
+    setTogglingItemId(itemId);
+    try {
+      await toggleItemActive(itemId).unwrap();
+      toast.success('Item status updated successfully');
+    } catch (err) {
+      toast.error(err?.data?.message || 'Failed to update item status');
+      console.error('Failed to toggle item active status:', err);
+    } finally {
+      setTogglingItemId(null);
+      togglingItemIdsRef.current.delete(itemId);
+    }
+  }, [toggleItemActive]);
+
+  // Handle form dialog success
+  const handleFormSuccess = useCallback((id, action) => {
+    setFormDialogOpen(false);
+    setFormDialogMode('create');
+    setFormDialogItemId(null);
+    toast.success(`Item ${action} successfully`);
+  }, []);
+
+  // Handle form dialog close
+  const handleFormClose = useCallback(() => {
+    setFormDialogOpen(false);
+    setFormDialogMode('create');
+    setFormDialogItemId(null);
+  }, []);
+
+  // Handle pagination change
+  const handlePageChange = useCallback((newPage) => {
+    setPageNumber(newPage + 1); // DataGrid uses 0-based, API uses 1-based
+  }, []);
+
+  const handlePageSizeChange = useCallback((newPageSize) => {
+    setPageSize(newPageSize);
+    setPageNumber(1); // Reset to first page when page size changes
+  }, []);
+
+  // Handle search clear
+  const handleSearchClear = useCallback(() => {
+    searchForm.setValue('searchTerm', '');
+    setSearchTerm('');
+  }, [searchForm]);
+
+  // Find category name by ID
+  const getCategoryName = useCallback((categoryId, allCategories) => {
+    if (!categoryId || !allCategories) return null;
+    const category = allCategories.find((cat) => cat.id === categoryId);
+    return category?.name || null;
+  }, []);
+
+  // Find tenant name by ID
+  const getTenantName = useCallback((tenantId, tenants) => {
+    if (!tenantId || !tenants) return null;
+    const tenant = tenants.find((t) => t.id === tenantId);
+    return tenant?.name || null;
+  }, []);
+
+  // Prepare table rows
+  const rows = useMemo(() => {
+    const allCategories = categoriesResponse?.data || [];
+    const tenants = tenantsResponse?.data || [];
+    
+    return items.map((item) => ({
+      id: item.id,
+      name: item.name,
+      categoryId: item.categoryId,
+      categoryName: getCategoryName(item.categoryId, allCategories),
+      tenantId: item.tenantId,
+      tenantName: getTenantName(item.tenantId, tenants),
+      itemType: item.itemType,
+      itemTypeLabel: getItemTypeLabel(item.itemType),
+      price: item.price,
+      priceFormatted: formatPrice(item.price),
+      stockQuantity: item.stockQuantity,
+      stockQuantityFormatted: formatStockQuantity(item.stockQuantity),
+      description: item.description || '-',
+      imageUrl: item.imageUrl,
+      isActive: item.isActive,
+      isAvailable: item.isAvailable,
+    }));
+  }, [items, categoriesResponse, tenantsResponse, getCategoryName, getTenantName]);
+
+  // Define columns
+  const columns = useMemo(
+    () => [
+      {
+        field: 'name',
+        headerName: 'Name',
+        flex: 1,
+        sortable: true,
+        filterable: true,
+      },
+      {
+        field: 'categoryName',
+        headerName: 'Category',
+        flex: 1,
+        sortable: true,
+        filterable: true,
+        renderCell: (params) => (
+          <Typography variant="body2" color="text.secondary">
+            {params.value || params.row.categoryId || '-'}
+          </Typography>
+        ),
+      },
+      {
+        field: 'itemTypeLabel',
+        headerName: 'Item Type',
+        flex: 1,
+        sortable: true,
+        filterable: true,
+        renderCell: (params) => (
+          <Typography variant="body2" color="text.secondary">
+            {params.value}
+          </Typography>
+        ),
+      },
+      {
+        field: 'priceFormatted',
+        headerName: 'Price',
+        flex: 1,
+        sortable: true,
+        filterable: true,
+        renderCell: (params) => (
+          <Typography variant="body2" color="text.secondary">
+            {params.value}
+          </Typography>
+        ),
+      },
+      {
+        field: 'stockQuantityFormatted',
+        headerName: 'Stock Quantity',
+        flex: 1,
+        sortable: true,
+        filterable: true,
+        renderCell: (params) => (
+          <Typography variant="body2" color="text.secondary">
+            {params.value}
+          </Typography>
+        ),
+      },
+      {
+        field: 'status',
+        headerName: 'Status',
+        flex: 1,
+        sortable: false,
+        filterable: false,
+        renderCell: (params) => (
+          <Stack direction="row" spacing={1}>
+            <Label color={params.row.isActive ? 'success' : 'default'} variant="soft" sx={{ fontSize: '0.75rem' }}>
+              {params.row.isActive ? 'Active' : 'Inactive'}
+            </Label>
+            <Label color={params.row.isAvailable ? 'success' : 'default'} variant="soft" sx={{ fontSize: '0.75rem' }}>
+              {params.row.isAvailable ? 'Available' : 'Unavailable'}
+            </Label>
+          </Stack>
+        ),
+      },
+    ],
+    []
+  );
+
+  // Define actions
+  const actions = useMemo(
+    () => [
+      {
+        id: 'view',
+        label: 'View',
+        icon: 'solar:eye-bold',
+        onClick: (row) => handleView(row.id),
+        order: 1,
+      },
+      {
+        id: 'edit',
+        label: 'Edit',
+        icon: 'solar:pen-bold',
+        onClick: (row) => handleEdit(row.id),
+        order: 2,
+      },
+      {
+        id: 'toggle-active',
+        label: (row) => (row.isActive ? 'Deactivate' : 'Activate'),
+        icon: (row) => (
+          <Switch
+            checked={!!row.isActive}
+            size="small"
+            disabled={togglingItemId === row.id}
+            onChange={(event) => {
+              event.stopPropagation();
+              handleToggleActive(row.id);
+            }}
+            onClick={(event) => {
+              event.stopPropagation();
+            }}
+            slotProps={{
+              input: {
+                id: `item-toggle-active-${row.id}`,
+                'aria-label': `Toggle active status for ${row.name || 'item'}`,
+              },
+            }}
+          />
+        ),
+        order: 3,
+      },
+      {
+        id: 'delete',
+        label: 'Delete',
+        icon: 'solar:trash-bin-trash-bold',
+        onClick: (row) => handleDeleteClick(row),
+        order: 4,
+      },
+    ],
+    [handleView, handleEdit, handleToggleActive, handleDeleteClick, togglingItemId]
+  );
+
+  // Check if categoryId is selected (for disabling tenantId filter)
+  const isCategorySelected = useMemo(() => {
+    return categoryId !== null && categoryId !== undefined;
+  }, [categoryId]);
+
+  // Error state
+  if (error) {
+    return (
+      <EmptyContent
+        title="Error loading items"
+        description={error?.data?.message || 'An error occurred while loading items'}
+        action={
+          <Field.Button variant="contained" onClick={() => refetch()} startIcon="solar:refresh-bold">
+            Retry
+          </Field.Button>
+        }
+      />
+    );
+  }
+
+  return (
+    <Box>
+      <Card variant="outlined" sx={{ p: 2 }}>
+        {/* Search and Filter Bar */}
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={2}
+          sx={{ mb: 3 }}
+        >
+          <FormProvider {...searchForm}>
+            <Field.Text
+              name="searchTerm"
+              size="small"
+              placeholder="Search by name or description..."
+              slotProps={{
+                input: {
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <Iconify icon="eva:search-fill" sx={{ color: 'text.disabled' }} />
+                    </InputAdornment>
+                  ),
+                  endAdornment: searchTerm && (
+                    <InputAdornment position="end">
+                      <IconButton
+                        size="small"
+                        onClick={handleSearchClear}
+                        sx={{ minWidth: 'auto', minHeight: 'auto', p: 0.5 }}
+                        aria-label="Clear search"
+                      >
+                        <Iconify icon="eva:close-fill" />
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                },
+              }}
+              sx={{ maxWidth: { sm: 400 } }}
+            />
+          </FormProvider>
+          <FormProvider {...categoryFilterForm}>
+            <Field.Autocomplete
+              name="categoryId"
+              label="Category"
+              options={categoryOptions}
+              getOptionLabel={(option) => {
+                if (!option) return '';
+                return option.label || option.name || option.id || '';
+              }}
+              isOptionEqualToValue={(option, value) => {
+                if (!option || !value) return option === value;
+                return option.id === value.id;
+              }}
+              slotProps={{
+                textField: {
+                  size: 'small',
+                  placeholder: 'All Categories',
+                },
+              }}
+              sx={{ minWidth: { sm: 200 } }}
+            />
+          </FormProvider>
+          <FormProvider {...tenantFilterForm}>
+            <Field.Autocomplete
+              name="tenantId"
+              label="Tenant"
+              options={tenantOptions}
+              getOptionLabel={(option) => {
+                if (!option) return '';
+                return option.label || option.name || option.id || '';
+              }}
+              isOptionEqualToValue={(option, value) => {
+                if (!option || !value) return option === value;
+                return option.id === value.id;
+              }}
+              disabled={isCategorySelected}
+              slotProps={{
+                textField: {
+                  size: 'small',
+                  placeholder: 'All Tenants',
+                  helperText: isCategorySelected ? 'Category filter takes precedence over tenant filter' : undefined,
+                },
+              }}
+              sx={{ minWidth: { sm: 200 } }}
+            />
+          </FormProvider>
+          <Field.Button
+            variant="contained"
+            startIcon="mingcute:add-line"
+            onClick={handleCreate}
+            sx={{ ml: 'auto' }}
+          >
+            Create Item
+          </Field.Button>
+        </Stack>
+
+        <CustomTable
+          rows={rows}
+          columns={columns}
+          loading={isLoading}
+          actions={actions}
+          pagination={{
+            enabled: true,
+            mode: 'server',
+            pageSize,
+            pageSizeOptions: [10, 25, 50, 100],
+            rowCount: paginationMeta.totalCount,
+            onPageChange: handlePageChange,
+            onPageSizeChange: handlePageSizeChange,
+          }}
+          sorting={{
+            enabled: false, // P0-004: Disabled - client-side only sorts current page; backend sort applies to list
+          }}
+          filtering={{
+            enabled: false, // Disable client-side filtering (using server-side search)
+            quickFilter: false,
+          }}
+          toolbar={{
+            show: false, // Hide default toolbar, using custom search/filter bar above
+          }}
+          getRowId={(row) => row.id}
+          emptyContent={
+            <EmptyContent
+              title="No items found"
+              description={
+                searchTerm || categoryId || tenantId
+                  ? "Try adjusting your search or filter criteria"
+                  : "Get started by creating a new item"
+              }
+            />
+          }
+        />
+      </Card>
+
+      {/* Form Dialog */}
+      <ItemFormDialog
+        open={formDialogOpen}
+        mode={formDialogMode}
+        itemId={formDialogItemId}
+        onClose={handleFormClose}
+        onSuccess={handleFormSuccess}
+        tenantOptions={tenantOptions}
+        categoryOptions={categoriesResponse?.data || []}
+      />
+
+      {/* Details Dialog */}
+      <ItemDetailsDialog
+        open={detailsDialogOpen}
+        itemId={detailsDialogItemId}
+        onClose={() => {
+          setDetailsDialogOpen(false);
+          setDetailsDialogItemId(null);
+        }}
+      />
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        title="Delete Item"
+        content={
+          deleteItemName
+            ? `Are you sure you want to delete "${deleteItemName}"? This action cannot be undone.`
+            : 'Are you sure you want to delete this item? This action cannot be undone.'
+        }
+        action={
+          <Field.Button variant="contained" color="error" onClick={handleDeleteConfirm}>
+            Delete
+          </Field.Button>
+        }
+        onClose={() => {
+          setDeleteConfirmOpen(false);
+          setDeleteItemId(null);
+          setDeleteItemName(null);
+        }}
+      />
+    </Box>
+  );
+}
+

@@ -1,0 +1,311 @@
+---
+description: Restaurant POS SaaS - Senior Product Engineering Workflow
+alwaysApply: true
+---
+
+# Restaurant POS Engineering Standards
+
+For EVERY task, operate as a complete SaaS product team:
+
+- Product Strategist
+- UX Designer (Airbnb-level clarity, Stripe-level precision)
+- Senior Frontend Engineer (Next.js + MUI Specialist)
+- Senior Backend Engineer
+- QA Engineer
+- Performance & Reliability Engineer
+
+This is a production-grade, multi-tenant Restaurant POS system.
+Assume real restaurants, real cashiers, real rush hours, and real money.
+
+---
+
+# TECH CONTEXT (MANDATORY)
+
+- Next.js 15 (App Router)
+- React 19
+- Material UI (MUI v7 + X Data Grid)
+- Redux Toolkit + RTK Query (Primary API layer)
+- React Hook Form + Zod
+- Emotion Styling
+- Node.js >= 20
+
+Multi-tenant isolation is non-negotiable.
+
+---
+
+# DEFAULT MINDSET
+
+- Think before acting
+- Design for speed and clarity
+- Prioritize reliability over flashiness
+- Treat every screen as mission-critical
+- Build for 5–10 years of maintainability
+- Reuse before creating new abstractions
+
+---
+
+# BEFORE Implementation
+
+1. Restate the business goal briefly
+2. Identify:
+   - Who is the user? (Cashier, Manager, Tenant Admin, Super Admin)
+   - What environment? (Tablet, Desktop, Slow Internet, Rush Hour, Multi-tab)
+3. Clarify assumptions only if required
+4. Identify UX risks:
+   - Slow checkout
+   - Mis-clicks on touch screens
+   - Confusing hierarchy
+   - Keyboard overlap on mobile
+   - Overloaded admin grids
+5. Identify technical risks:
+   - Offline failures
+   - Race conditions in orders
+   - Multi-tenant data leakage
+   - Payment duplication
+   - RTK Query cache invalidation issues
+   - Stale server state
+6. Choose the simplest scalable architecture
+   - Clear Server/Client boundary (Next.js App Router)
+   - RTK Query slice structure
+   - API-first design
+7. Explain trade-offs clearly
+
+---
+
+# DESIGN PRINCIPLES (Airbnb + Stripe Inspired, MUI Based)
+
+- Clean, calm, confident UI
+- Strong whitespace discipline
+- Clear visual hierarchy
+- Minimal cognitive load
+- No visual noise
+- Subtle micro-interactions (never distracting)
+- Accessible color contrast (WCAG compliant)
+- Touch-first spacing (minimum 44px tap targets)
+- Consistent MUI theme system
+
+Checkout screens must be:
+- Fast
+- Large tap areas
+- Zero clutter
+- Optimized for repetition
+- Lightweight (no heavy grids)
+
+Admin screens must be:
+- Data-dense but readable
+- Structured with strong grouping
+- Server-side pagination
+- Searchable and filterable
+- Optimized grid usage
+
+---
+
+# ARCHITECTURE PRINCIPLES
+
+- Multi-tenant safe by design
+- Tenant & branch isolation enforced at API level
+- No business logic in UI layer
+- RTK Query as single source of server state
+- Proper cache invalidation strategy
+- Offline-first consideration for POS
+- Soft deletes only
+- Audit logs for financial changes
+- Prevent duplicate submissions & race conditions
+
+Never assume:
+- Perfect internet
+- Perfect hardware
+- Single device usage
+- Single tab usage
+
+---
+
+# REUSABILITY & COMPONENT ENFORCEMENT (STRICT)
+
+This project already has centralized reusable components.
+Never duplicate existing abstractions.
+
+---
+
+## FORM CONTROLS (MANDATORY)
+
+All form elements MUST use shared controls from:
+
+import { Form, Field } from 'src/components/hook-form';
+
+Includes:
+- Input fields
+- Number fields
+- Date pickers
+- Selects
+- Autocomplete
+- Switches
+- Checkboxes
+- Buttons
+
+Rules:
+
+- Do NOT use raw MUI inputs directly in forms.
+- Do NOT create new wrappers unless absolutely required.
+- Always check this file first.
+- If extension needed → extend inside same file.
+- Never duplicate form logic elsewhere.
+
+---
+
+## TABLE / GRID RULE (MANDATORY)
+
+All list pages MUST use:
+
+import { CustomTable } from 'src/components/custom-table';
+
+Rules:
+
+- Do NOT import MUI DataGrid directly in feature modules.
+- Do NOT create new grid wrappers.
+- Use server-side pagination via this abstraction.
+- Sorting & filtering must flow through this component.
+- If enhancement needed → modify shared component.
+- Never fork or duplicate table logic.
+
+---
+
+## DIALOG USAGE & UX DECISION RULE (MANDATORY)
+
+Standard dialogs:
+
+import { CustomDialog } from 'src/components/custom-dialog';
+import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
+
+
+Rules:
+
+- Destructive or confirmation actions  
+  → MUST use `confirm-dialog.jsx`
+
+- Small, quick interactions  
+  → Use `custom-dialog.jsx` only if UX is not degraded
+
+### Dialog vs Page Decision Framework
+
+Use Dialog ONLY if:
+
+- ≤ 5–6 fields
+- No complex dependencies
+- No multi-step flows
+- Can be completed in < 20 seconds
+- No vertical scroll on tablet
+
+Use Full Page if:
+
+- Many or grouped fields
+- Business-critical workflows (Tenant, Branch, Roles, Pricing)
+- Needs explanations, permissions, review
+- Risk of data loss is high
+- Dialog feels cramped
+
+Mandatory Rule:
+If UX is degraded → always use a full page instead of forcing a dialog.
+
+Dialogs must:
+
+- Never exceed 80% viewport height
+- Never stack dialogs
+- Warn on unsaved changes
+- Never block checkout flows
+
+---
+
+## CRUD PAGE STRUCTURE RULE
+
+For any entity with Create + Edit:
+
+- Use ONE shared form component
+- Detect mode via route param
+- Reuse same validation schema
+- Reuse same layout
+
+Structure:
+
+- `/module/page.jsx` → List  
+- `/module/new/page.jsx` → Create (uses shared form)  
+- `/module/[id]/page.jsx` → Edit (same shared form)
+
+Never create separate Add/Edit form components.
+
+---
+
+# DURING Implementation
+
+- Write production-grade code
+- Prefer clarity over cleverness
+- No hacks or shortcuts
+- Strong typing mindset
+- Validate inputs on client (Zod) and server
+- Handle loading, empty, error states explicitly
+- Prevent double submissions
+- Handle concurrency safely
+- Lazy-load heavy admin components
+- Keep checkout lightweight
+- Avoid unnecessary re-renders
+- Avoid memory-heavy client components
+- Follow RTK Query best practices (tagTypes + invalidation)
+
+---
+
+# AFTER Implementation
+
+Perform internal QA simulation:
+
+1. Cashier rush hour test  
+2. Slow 3G simulation  
+3. Offline mode test  
+4. Rapid tap stress test  
+5. Multi-tab conflict test  
+6. Payment retry scenario  
+7. Branch isolation test  
+8. Tenant isolation test  
+9. Role permission test  
+10. Large dataset grid test (50k+ records)  
+
+Provide:
+
+- Functional test scenarios  
+- Edge case scenarios  
+- Failure mode behavior  
+- Performance risks  
+- Scalability considerations  
+- Cache invalidation risks  
+- Data integrity risks  
+- Cross-tenant leakage risks  
+
+---
+
+# QUALITY BAR
+
+- Must pass senior engineering review
+- Must pass UX clarity test
+- Must handle mobile keyboards correctly
+- Must degrade gracefully under failure
+- Must not expose cross-tenant data
+- Must enforce tenant & branch isolation
+- Must scale to 1000+ tenants
+- Must be maintainable long-term
+- Must avoid SSR/hydration mismatch issues
+
+---
+
+# DO NOT
+
+- Jump straight to code
+- Over-engineer prematurely
+- Add visual noise
+- Ignore offline scenarios
+- Ignore accessibility
+- Assume admin and POS share same UX
+- Optimize for beauty over reliability
+- Put business logic inside React components
+- Trust frontend tenant context blindly
+- Use heavy grids inside checkout
+- Duplicate shared components
+- Create separate Add/Edit pages unnecessarily

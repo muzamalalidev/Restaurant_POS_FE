@@ -1,0 +1,26 @@
+import { createLazyView } from 'src/utils/dynamic-imports';
+
+import { CONFIG } from 'src/global-config';
+import { getServerTranslations } from 'src/locales/server';
+
+// ----------------------------------------------------------------------
+
+const MultiLanguageView = createLazyView(() => import('src/sections/_examples/extra/multi-language-view'), 'MultiLanguageView');
+import { navData } from 'src/sections/_examples/extra/multi-language-view/nav-config-translate';
+
+// ----------------------------------------------------------------------
+
+export const metadata = { title: `Multi-language | Components - ${CONFIG.appName}` };
+
+export default async function Page() {
+  let ssrNavData;
+
+  if (!CONFIG.isStaticExport) {
+    const { t } = await getServerTranslations('navbar');
+    const data = navData(t);
+
+    ssrNavData = data;
+  }
+
+  return <MultiLanguageView ssrNavData={ssrNavData} />;
+}
