@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo } from 'react';
+import { useMemo, useCallback } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
 
 import Box from '@mui/material/Box';
@@ -48,9 +48,7 @@ export function RecipeIngredientsField({ name = 'ingredients', itemOptions = [],
   );
 
   // Filter items to active and available only
-  const filteredItemOptions = useMemo(() => {
-    return itemOptions.filter((item) => item.isActive && item.isAvailable);
-  }, [itemOptions]);
+  const filteredItemOptions = useMemo(() => itemOptions.filter((item) => item.isActive && item.isAvailable), [itemOptions]);
 
   // Show warning for update mode that ingredients will be replaced
   const showReplaceWarning = mode === 'edit' && fields.length > 0;
@@ -80,7 +78,7 @@ export function RecipeIngredientsField({ name = 'ingredients', itemOptions = [],
       {fields.length === 0 ? (
         <Card sx={{ p: 3, textAlign: 'center' }}>
           <Typography variant="body2" color="text.secondary">
-            No ingredients added. Click "Add Ingredient" to add ingredients to this recipe.
+            No ingredients added. Click &quot;Add Ingredient&quot; to add ingredients to this recipe.
           </Typography>
         </Card>
       ) : (
@@ -197,9 +195,6 @@ export function RecipeIngredientsField({ name = 'ingredients', itemOptions = [],
               },
             ]}
             pagination={{ enabled: false }}
-            sorting={{ enabled: false }}
-            filtering={{ enabled: false }}
-            toolbar={{ show: false }}
             getRowId={(row) => row.id}
           />
         </Card>

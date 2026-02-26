@@ -1,22 +1,26 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMediaQuery, useTheme } from '@mui/material';
+import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
 import Stack from '@mui/material/Stack';
 import Divider from '@mui/material/Divider';
+import Typography from '@mui/material/Typography';
+import { useTheme, useMediaQuery } from '@mui/material';
 
+import { getApiErrorMessage } from 'src/utils/api-error-message';
+
+import { createTableSchema, updateTableSchema } from 'src/schemas';
+import { useGetBranchesDropdownQuery } from 'src/store/api/branches-api';
+import { useGetAllTablesQuery, useCreateTableMutation, useUpdateTableMutation } from 'src/store/api/tables-api';
+
+import { toast } from 'src/components/snackbar';
 import { Form, Field } from 'src/components/hook-form';
 import { CustomDialog } from 'src/components/custom-dialog';
+import { QueryStateContent } from 'src/components/query-state-content';
 import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
-import { toast } from 'src/components/snackbar';
-
-import { useGetAllTablesQuery, useCreateTableMutation, useUpdateTableMutation } from 'src/store/api/tables-api';
-import { createTableSchema, updateTableSchema } from '../schemas/table-schema';
 
 // ----------------------------------------------------------------------
 
@@ -55,11 +59,17 @@ export function TableFormDialog({ open, mode, tableId, branchId, onClose, onSucc
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
-  // State for unsaved changes confirmation
   const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] = useState(false);
 
+  const { data: branchesDropdownFallback } = useGetBranchesDropdownQuery(undefined, { skip: branchOptions.length > 0 });
+  const effectiveBranchOptions = useMemo(() => {
+    if (branchOptions.length > 0) return branchOptions;
+    if (!branchesDropdownFallback || !Array.isArray(branchesDropdownFallback)) return [];
+    return branchesDropdownFallback.map((item) => ({ id: item.key, label: item.value || item.key }));
+  }, [branchOptions, branchesDropdownFallback]);
+
   // Fetch table data for edit mode (P0-003/P1-003: pageSize 200; getTableById is placeholder - find by ID in response)
-  const { data: tablesResponse, isLoading: isLoadingTable, refetch: refetchTable } = useGetAllTablesQuery(
+  const { data: tablesResponse, isLoading: isLoadingTable, error: queryError, isError: _isError, refetch: refetchTable } = useGetAllTablesQuery(
     {
       branchId: getId(branchId),
       pageSize: 200,
@@ -109,7 +119,7 @@ export function TableFormDialog({ open, mode, tableId, branchId, onClose, onSucc
     handleSubmit,
     getValues,
     setValue,
-    watch,
+    watch: _watch,
     formState: { isDirty },
   } = methods;
 
@@ -138,9 +148,8 @@ export function TableFormDialog({ open, mode, tableId, branchId, onClose, onSucc
 
     if (shouldInitialize) {
       if (mode === 'edit' && tableData) {
-        // Find matching branch object from branchOptions
-        const matchingBranch = tableData.branchId && branchOptions.length > 0
-          ? branchOptions.find((b) => b.id === tableData.branchId)
+        const matchingBranch = tableData.branchId && effectiveBranchOptions.length > 0
+          ? effectiveBranchOptions.find((b) => b.id === tableData.branchId)
           : null;
 
         reset({
@@ -156,8 +165,8 @@ export function TableFormDialog({ open, mode, tableId, branchId, onClose, onSucc
         previousTableIdRef.current = currentTableId;
       } else if (mode === 'create') {
         // Pre-select branch if provided
-        const branchToSelect = getId(branchId) && branchOptions.length > 0
-          ? branchOptions.find((b) => b.id === getId(branchId))
+        const branchToSelect = getId(branchId) && effectiveBranchOptions.length > 0
+          ? effectiveBranchOptions.find((b) => b.id === getId(branchId))
           : null;
 
         reset({
@@ -178,8 +187,8 @@ export function TableFormDialog({ open, mode, tableId, branchId, onClose, onSucc
 
   // Separate effect to update branchId when branchOptions become available in edit mode
   useEffect(() => {
-    if (open && mode === 'edit' && tableData?.branchId && branchOptions.length > 0) {
-      const matchingBranch = branchOptions.find((b) => b.id === tableData.branchId);
+    if (open && mode === 'edit' && tableData?.branchId && effectiveBranchOptions.length > 0) {
+      const matchingBranch = effectiveBranchOptions.find((b) => b.id === tableData.branchId);
       if (matchingBranch) {
         const currentValue = getValues('branchId');
         const currentId = typeof currentValue === 'object' && currentValue !== null ? currentValue.id : currentValue;
@@ -189,7 +198,7 @@ export function TableFormDialog({ open, mode, tableId, branchId, onClose, onSucc
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, mode, tableData?.branchId, branchOptions.length]);
+  }, [open, mode, tableData?.branchId, effectiveBranchOptions.length]);
 
   // Handle form submit (P0-002: ref guard prevents double-submit)
   const onSubmit = handleSubmit(async (data) => {
@@ -225,22 +234,12 @@ export function TableFormDialog({ open, mode, tableId, branchId, onClose, onSucc
       onClose();
     } catch (error) {
       console.error('Failed to save table:', error);
-      const errorStatus = error?.status || error?.data?.status;
-      let errorMessage;
-
-      if (errorStatus === 404) {
-        errorMessage = error?.data?.message || 'Table or branch not found';
-      } else if (errorStatus === 400) {
-        errorMessage = error?.data?.message || 'Validation failed. Please check your input.';
-      } else if (errorStatus >= 500) {
-        errorMessage = 'Server error. Please try again later.';
-      } else if (!navigator.onLine) {
-        errorMessage = 'Network error. Please check your connection.';
-      } else {
-        errorMessage = error?.data?.message || error?.message || `Failed to ${mode === 'create' ? 'create' : 'update'} table`;
-      }
-
-      toast.error(errorMessage);
+      const { message } = getApiErrorMessage(error, {
+        defaultMessage: `Failed to ${mode === 'create' ? 'create' : 'update'} table`,
+        notFoundMessage: 'Table or branch not found',
+        validationMessage: 'Validation failed. Please check your input.',
+      });
+      toast.error(message);
     } finally {
       isSubmittingRef.current = false;
     }
@@ -324,25 +323,18 @@ export function TableFormDialog({ open, mode, tableId, branchId, onClose, onSucc
           },
         }}
       >
-        {isLoading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-            <Typography variant="body2" color="text.secondary">
-              Loading table data...
-            </Typography>
-          </Box>
-        ) : hasError ? (
-          <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', minHeight: 200, gap: 2 }}>
-            <Typography variant="body1" color="error">
-              Failed to load table data
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Table not found or an error occurred.
-            </Typography>
-            <Field.Button variant="contained" onClick={() => refetchTable()} startIcon="solar:refresh-bold" sx={{ mt: 1 }}>
-              Retry
-            </Field.Button>
-          </Box>
-        ) : (
+        <QueryStateContent
+          isLoading={isLoading}
+          isError={hasError}
+          error={queryError}
+          onRetry={refetchTable}
+          loadingMessage="Loading table data..."
+          errorTitle="Failed to load table data"
+          errorMessageOptions={{
+            defaultMessage: 'Failed to load table data',
+            notFoundMessage: 'Table not found or an error occurred.',
+          }}
+        >
           <Form methods={methods} onSubmit={onSubmit}>
             <Box
               sx={{
@@ -364,7 +356,7 @@ export function TableFormDialog({ open, mode, tableId, branchId, onClose, onSucc
                   <Field.Autocomplete
                     name="branchId"
                     label="Branch"
-                    options={branchOptions}
+                    options={effectiveBranchOptions}
                     required
                     disabled={mode === 'edit'}
                     getOptionLabel={(option) => {
@@ -434,7 +426,7 @@ export function TableFormDialog({ open, mode, tableId, branchId, onClose, onSucc
               </Box>
             </Box>
           </Form>
-        )}
+        </QueryStateContent>
       </CustomDialog>
 
       {/* Unsaved Changes Confirmation Dialog */}

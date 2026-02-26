@@ -67,6 +67,7 @@ export const navData = [
       { title: 'Tables', path: paths.tenant.tables.root, icon: ICONS.calendar, iconName: 'ic-calendar' },
       { title: 'Recipes', path: paths.tenant.recipes.root, icon: ICONS.file, iconName: 'ic-file' },
       { title: 'Kitchens', path: paths.tenant.kitchens.root, icon: ICONS.kanban, iconName: 'ic-kanban' },
+      { title: 'Payment Modes', path: paths.tenant.paymentModes.root, icon: ICONS.banking, iconName: 'ic-banking' },
     ],
   },
 ];

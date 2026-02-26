@@ -1,16 +1,16 @@
 'use client';
 
-import { useMediaQuery, useTheme } from '@mui/material';
-
 import Box from '@mui/material/Box';
+import Stack from '@mui/material/Stack';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
-import Stack from '@mui/material/Stack';
-
-import { CustomDialog } from 'src/components/custom-dialog';
-import { Label } from 'src/components/label';
+import { useTheme, useMediaQuery } from '@mui/material';
 
 import { useGetTenantByIdQuery } from 'src/store/api/tenants-api';
+
+import { Label } from 'src/components/label';
+import { CustomDialog } from 'src/components/custom-dialog';
+import { QueryStateContent } from 'src/components/query-state-content';
 
 // ----------------------------------------------------------------------
 
@@ -24,7 +24,7 @@ export function TenantDetailsDialog({ open, tenantId, onClose }) {
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   // Fetch tenant data
-  const { data: tenant, isLoading, error: queryError, isError } = useGetTenantByIdQuery(tenantId, {
+  const { data: tenant, isLoading, error: queryError, isError, refetch } = useGetTenantByIdQuery(tenantId, {
     skip: !tenantId || !open,
   });
 
@@ -38,22 +38,21 @@ export function TenantDetailsDialog({ open, tenantId, onClose }) {
       fullScreen={isMobile}
       loading={isLoading}
     >
-      {isLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-          <Typography variant="body2" color="text.secondary">
-            Loading tenant details...
-          </Typography>
-        </Box>
-      ) : isError ? (
-        <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', minHeight: 200, gap: 2 }}>
-          <Typography variant="body1" color="error">
-            Failed to load tenant details
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {queryError?.data?.message || queryError?.message || 'Network Error'}
-          </Typography>
-        </Box>
-      ) : tenant ? (
+      <QueryStateContent
+        isLoading={isLoading}
+        isError={isError}
+        error={queryError}
+        onRetry={refetch}
+        loadingMessage="Loading tenant details..."
+        errorTitle="Failed to load tenant details"
+        errorMessageOptions={{
+          defaultMessage: 'Failed to load tenant details',
+          notFoundMessage: 'Tenant not found',
+        }}
+        isEmpty={!tenant && !isLoading && !isError}
+        emptyMessage="Tenant not found"
+      >
+        {tenant ? (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1, pb: 3 }}>
           {/* Basic Information */}
           <Box>
@@ -150,13 +149,8 @@ export function TenantDetailsDialog({ open, tenantId, onClose }) {
             )}
           </Box>
         </Box>
-      ) : (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-          <Typography variant="body2" color="text.secondary">
-            Tenant not found
-          </Typography>
-        </Box>
-      )}
+        ) : null}
+      </QueryStateContent>
     </CustomDialog>
   );
 }

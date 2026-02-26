@@ -1,28 +1,28 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useForm, FormProvider } from 'react-hook-form';
+import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
+import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
-import Stack from '@mui/material/Stack';
-
-import { CustomTable } from 'src/components/custom-table';
-import { Label } from 'src/components/label';
-import { EmptyContent } from 'src/components/empty-content';
-import { toast } from 'src/components/snackbar';
-import { Field } from 'src/components/hook-form';
-import { Iconify } from 'src/components/iconify';
 
 import { useGetItemsQuery } from 'src/store/api/items-api';
-import { useGetTenantsQuery } from 'src/store/api/tenants-api';
-import { useGetCategoriesQuery } from 'src/store/api/categories-api';
-import { StockDetailsDialog } from '../components/stock-details-dialog';
+import { useGetTenantsDropdownQuery } from 'src/store/api/tenants-api';
+import { useGetCategoriesDropdownQuery } from 'src/store/api/categories-api';
+
+import { Label } from 'src/components/label';
+import { Field } from 'src/components/hook-form';
+import { Iconify } from 'src/components/iconify';
+import { EmptyContent } from 'src/components/empty-content';
+import { CustomTable, DEFAULT_PAGINATION } from 'src/components/custom-table';
+
 import { UpdateStockDialog } from '../form/update-stock-dialog';
 import { AdjustStockDialog } from '../form/adjust-stock-dialog';
+import { StockDetailsDialog } from '../components/stock-details-dialog';
 import { isLowStock, getStockColor, formatStockQuantity } from '../utils/stock-helpers';
 
 // ----------------------------------------------------------------------
@@ -51,7 +51,7 @@ export function StockListView() {
 
   // Pagination state
   const [pageNumber, setPageNumber] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGINATION.pageSize);
 
   // Search state (debounced)
   const [searchTerm, setSearchTerm] = useState('');
@@ -190,39 +190,24 @@ export function StockListView() {
     }
   }, [watchedLowStockOnly, lowStockOnly]);
 
-  // P0-004: Limit dropdown fetches; scope categories by tenant when selected
-  const { data: tenantsResponse } = useGetTenantsQuery({
-    pageSize: 200,
-  });
-
   const tenantIdForCategories = tenantId
     ? (typeof tenantId === 'object' && tenantId !== null ? tenantId.id : tenantId)
     : undefined;
 
-  const { data: categoriesResponse } = useGetCategoriesQuery({
-    pageSize: 200,
-    tenantId: tenantIdForCategories,
-  });
-
-  // Tenant options for dropdown
+  const { data: tenantsDropdown } = useGetTenantsDropdownQuery();
   const tenantOptions = useMemo(() => {
-    if (!tenantsResponse) return [];
-    const tenants = tenantsResponse.data || [];
-    return tenants.map((tenant) => ({
-      id: tenant.id,
-      label: tenant.name || tenant.id,
-    }));
-  }, [tenantsResponse]);
+    if (!tenantsDropdown || !Array.isArray(tenantsDropdown)) return [];
+    return tenantsDropdown.map((item) => ({ id: item.key, label: item.value || item.key }));
+  }, [tenantsDropdown]);
 
-  // Category options for dropdown
+  const { data: categoriesDropdown } = useGetCategoriesDropdownQuery(
+    { tenantId: tenantIdForCategories },
+    { skip: false }
+  );
   const categoryOptions = useMemo(() => {
-    if (!categoriesResponse) return [];
-    const categories = categoriesResponse.data || [];
-    return categories.map((category) => ({
-      id: category.id,
-      label: category.name || category.id,
-    }));
-  }, [categoriesResponse]);
+    if (!categoriesDropdown || !Array.isArray(categoriesDropdown)) return [];
+    return categoriesDropdown.map((item) => ({ id: item.key, label: item.value || item.key }));
+  }, [categoriesDropdown]);
 
   // Debounce search term
   useEffect(() => {
@@ -335,40 +320,32 @@ export function StockListView() {
     setSearchTerm('');
   }, [searchForm]);
 
-  // Find category name by ID
-  const getCategoryName = useCallback((categoryId, allCategories) => {
-    if (!categoryId || !allCategories) return null;
-    const category = allCategories.find((cat) => cat.id === categoryId);
-    return category?.name || null;
+  const getCategoryName = useCallback((categoryIdParam, options) => {
+    if (!categoryIdParam || !options?.length) return null;
+    const opt = options.find((cat) => cat.id === categoryIdParam);
+    return opt?.label ?? null;
   }, []);
 
-  // Find tenant name by ID
-  const getTenantName = useCallback((tenantId, tenants) => {
-    if (!tenantId || !tenants) return null;
-    const tenant = tenants.find((t) => t.id === tenantId);
-    return tenant?.name || null;
+  const getTenantName = useCallback((tenantIdParam, options) => {
+    if (!tenantIdParam || !options?.length) return null;
+    const opt = options.find((t) => t.id === tenantIdParam);
+    return opt?.label ?? null;
   }, []);
 
-  // Prepare table rows
-  const rows = useMemo(() => {
-    const allCategories = categoriesResponse?.data || [];
-    const tenants = tenantsResponse?.data || [];
-    
-    return filteredItems.map((item) => ({
+  const rows = useMemo(() => filteredItems.map((item) => ({
       id: item.id,
       name: item.name,
       categoryId: item.categoryId,
-      categoryName: getCategoryName(item.categoryId, allCategories),
+      categoryName: getCategoryName(item.categoryId, categoryOptions),
       tenantId: item.tenantId,
-      tenantName: getTenantName(item.tenantId, tenants),
+      tenantName: getTenantName(item.tenantId, tenantOptions),
       stockQuantity: item.stockQuantity,
       stockQuantityFormatted: formatStockQuantity(item.stockQuantity),
       isLowStock: isLowStock(item.stockQuantity),
       stockColor: getStockColor(item.stockQuantity),
       isActive: item.isActive,
       isAvailable: item.isAvailable,
-    }));
-  }, [filteredItems, categoriesResponse, tenantsResponse, getCategoryName, getTenantName]);
+    })), [filteredItems, categoryOptions, tenantOptions, getCategoryName, getTenantName]);
 
   // Define columns
   const columns = useMemo(
@@ -467,24 +444,7 @@ export function StockListView() {
   );
 
   // Check if categoryId is selected (for disabling tenantId filter)
-  const isCategorySelected = useMemo(() => {
-    return categoryId !== null && categoryId !== undefined;
-  }, [categoryId]);
-
-  // Error state
-  if (error) {
-    return (
-      <EmptyContent
-        title="Error loading stock"
-        description={error?.data?.message || 'An error occurred while loading stock information'}
-        action={
-          <Field.Button variant="contained" onClick={() => refetch()} startIcon="solar:refresh-bold">
-            Retry
-          </Field.Button>
-        }
-      />
-    );
-  }
+  const isCategorySelected = useMemo(() => categoryId !== null && categoryId !== undefined, [categoryId]);
 
   return (
     <Box>
@@ -572,16 +532,28 @@ export function StockListView() {
           columns={columns}
           actions={actions}
           loading={isLoading}
+          error={error}
+          onRetry={refetch}
+          errorEntityLabel="stock"
           pagination={{
-            enabled: true,
+            ...DEFAULT_PAGINATION,
             mode: 'server',
             pageSize,
-            pageSizeOptions: [10, 25, 50, 100],
             rowCount: paginationMeta.totalCount,
             onPageChange: handlePageChange,
             onPageSizeChange: handlePageSizeChange,
           }}
           getRowId={(row) => row.id}
+          emptyContent={
+            <EmptyContent
+              title="No stock found"
+              description={
+                searchTerm
+                  ? "Try adjusting your search criteria"
+                  : "Get started by creating a new stock item"
+              }
+            />
+          }
         />
       </Card>
 
@@ -592,20 +564,6 @@ export function StockListView() {
         onClose={() => {
           setDetailsDialogOpen(false);
           setDetailsDialogItemId(null);
-        }}
-        onUpdate={() => {
-          setDetailsDialogOpen(false);
-          setDetailsDialogItemId(null);
-          if (detailsDialogItemId) {
-            handleUpdate(detailsDialogItemId);
-          }
-        }}
-        onAdjust={() => {
-          setDetailsDialogOpen(false);
-          setDetailsDialogItemId(null);
-          if (detailsDialogItemId) {
-            handleAdjust(detailsDialogItemId);
-          }
         }}
       />
 

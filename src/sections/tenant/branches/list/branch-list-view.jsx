@@ -1,26 +1,29 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useForm, FormProvider } from 'react-hook-form';
+import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
+import Stack from '@mui/material/Stack';
+import Switch from '@mui/material/Switch';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
-import Stack from '@mui/material/Stack';
-import Switch from '@mui/material/Switch';
 
-import { CustomTable } from 'src/components/custom-table';
+import { getApiErrorMessage } from 'src/utils/api-error-message';
+
+import { useGetTenantsDropdownQuery } from 'src/store/api/tenants-api';
+import { useGetBranchesQuery, useDeleteBranchMutation, useToggleBranchActiveMutation } from 'src/store/api/branches-api';
+
 import { Label } from 'src/components/label';
-import { EmptyContent } from 'src/components/empty-content';
 import { toast } from 'src/components/snackbar';
 import { Field } from 'src/components/hook-form';
-import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
 import { Iconify } from 'src/components/iconify';
+import { EmptyContent } from 'src/components/empty-content';
+import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
+import { CustomTable, DEFAULT_PAGINATION } from 'src/components/custom-table';
 
-import { useGetBranchesQuery, useDeleteBranchMutation, useToggleBranchActiveMutation } from 'src/store/api/branches-api';
-import { useGetTenantsQuery } from 'src/store/api/tenants-api';
 import { BranchFormDialog } from '../form/branch-form-dialog';
 import { BranchDetailsDialog } from '../components/branch-details-dialog';
 
@@ -47,7 +50,7 @@ export function BranchListView() {
 
   // Pagination state
   const [pageNumber, setPageNumber] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGINATION.pageSize);
 
   // Search state (debounced)
   const [searchTerm, setSearchTerm] = useState('');
@@ -120,20 +123,17 @@ export function BranchListView() {
     }
   }, [watchedTenantId, tenantId, getTenantId]);
 
-  // Fetch tenants for dropdown (without pagination to get all tenants)
-  const { data: tenantsResponse } = useGetTenantsQuery({
-    pageSize: 1000, // Large page size to get all tenants
-  });
+  // Fetch tenants for dropdown (key = id, value = name)
+  const { data: tenantsDropdown } = useGetTenantsDropdownQuery();
 
-  // Tenant options for dropdown
+  // Tenant options for dropdown: map { key, value } to { id, label } for Autocomplete
   const tenantOptions = useMemo(() => {
-    if (!tenantsResponse) return [];
-    const tenants = tenantsResponse.data || [];
-    return tenants.map((tenant) => ({
-      id: tenant.id,
-      label: tenant.name || tenant.id,
+    if (!tenantsDropdown || !Array.isArray(tenantsDropdown)) return [];
+    return tenantsDropdown.map((item) => ({
+      id: item.key,
+      label: item.value || item.key,
     }));
-  }, [tenantsResponse]);
+  }, [tenantsDropdown]);
 
   // Debounce search term
   useEffect(() => {
@@ -192,7 +192,7 @@ export function BranchListView() {
 
   // Mutations
   const [deleteBranch] = useDeleteBranchMutation();
-  const [toggleBranchActive, { isLoading: isTogglingActive }] = useToggleBranchActiveMutation();
+  const [toggleBranchActive, { isLoading: _isTogglingActive }] = useToggleBranchActiveMutation();
 
   // Track which branch is being toggled
   const [togglingBranchId, setTogglingBranchId] = useState(null);
@@ -235,21 +235,11 @@ export function BranchListView() {
       setDeleteBranchId(null);
       setDeleteBranchName(null);
     } catch (err) {
-      // P1-005 FIX: Distinguish error types for better UX
-      const errorStatus = err?.status || err?.data?.status;
-      let errorMessage;
-      
-      if (errorStatus === 404) {
-        errorMessage = err?.data?.message || 'Branch not found';
-      } else if (errorStatus >= 500) {
-        errorMessage = 'Server error. Please try again later.';
-      } else if (!navigator.onLine) {
-        errorMessage = 'Network error. Please check your connection.';
-      } else {
-        errorMessage = err?.data?.message || 'Failed to delete branch';
-      }
-      
-      toast.error(errorMessage);
+      const { message } = getApiErrorMessage(err, {
+        defaultMessage: 'Failed to delete branch',
+        notFoundMessage: 'Branch not found',
+      });
+      toast.error(message);
       console.error('Failed to delete branch:', err);
     }
   }, [deleteBranchId, deleteBranch]);
@@ -266,21 +256,11 @@ export function BranchListView() {
       await toggleBranchActive(branchId).unwrap();
       toast.success('Branch status updated successfully');
     } catch (err) {
-      // P1-005 FIX: Distinguish error types for better UX
-      const errorStatus = err?.status || err?.data?.status;
-      let errorMessage;
-      
-      if (errorStatus === 404) {
-        errorMessage = err?.data?.message || 'Branch not found';
-      } else if (errorStatus >= 500) {
-        errorMessage = 'Server error. Please try again later.';
-      } else if (!navigator.onLine) {
-        errorMessage = 'Network error. Please check your connection.';
-      } else {
-        errorMessage = err?.data?.message || 'Failed to update branch status';
-      }
-      
-      toast.error(errorMessage);
+      const { message } = getApiErrorMessage(err, {
+        defaultMessage: 'Failed to update branch status',
+        notFoundMessage: 'Branch not found',
+      });
+      toast.error(message);
       console.error('Failed to toggle branch active status:', err);
     } finally {
       setTogglingBranchId(null);
@@ -331,8 +311,7 @@ export function BranchListView() {
   }, [searchForm]);
 
   // Prepare table rows
-  const rows = useMemo(() => {
-    return branches.map((branch) => ({
+  const rows = useMemo(() => branches.map((branch) => ({
       id: branch.id,
       name: branch.name,
       address: branch.address || '-',
@@ -340,8 +319,7 @@ export function BranchListView() {
       primaryPhone: getPrimaryPhone(branch),
       isActive: branch.isActive,
       phoneNumbers: branch.phoneNumbers || [],
-    }));
-  }, [branches]);
+    })), [branches]);
 
   // Define columns
   const columns = useMemo(
@@ -450,23 +428,8 @@ export function BranchListView() {
         order: 4,
       },
     ],
-    [handleView, handleEdit, handleToggleActive, handleDeleteClick]
+    [handleView, handleEdit, handleToggleActive, handleDeleteClick, togglingBranchId]
   );
-
-  // Error state
-  if (error) {
-    return (
-      <EmptyContent
-        title="Error loading branches"
-        description={error?.data?.message || 'An error occurred while loading branches'}
-        action={
-          <Field.Button variant="contained" onClick={() => refetch()} startIcon="solar:refresh-bold">
-            Retry
-          </Field.Button>
-        }
-      />
-    );
-  }
 
   return (
     <Box>
@@ -543,25 +506,16 @@ export function BranchListView() {
           columns={columns}
           loading={isLoading}
           actions={actions}
+          error={error}
+          onRetry={refetch}
+          errorEntityLabel="branches"
           pagination={{
-            enabled: true,
+            ...DEFAULT_PAGINATION,
             mode: 'server',
             pageSize,
-            pageSizeOptions: [10, 25, 50, 100],
             rowCount: paginationMeta.totalCount,
             onPageChange: handlePageChange,
             onPageSizeChange: handlePageSizeChange,
-          }}
-          sorting={{
-            enabled: true,
-            mode: 'client', // Keep client-side sorting for now (backend doesn't support custom sorting)
-          }}
-          filtering={{
-            enabled: false, // Disable client-side filtering (using server-side search)
-            quickFilter: false,
-          }}
-          toolbar={{
-            show: false, // Hide default toolbar, using custom search/filter bar above
           }}
           getRowId={(row) => row.id}
           emptyContent={

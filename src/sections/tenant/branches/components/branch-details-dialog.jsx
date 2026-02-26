@@ -1,16 +1,16 @@
 'use client';
 
-import { useMediaQuery, useTheme } from '@mui/material';
-
 import Box from '@mui/material/Box';
+import Stack from '@mui/material/Stack';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
-import Stack from '@mui/material/Stack';
-
-import { CustomDialog } from 'src/components/custom-dialog';
-import { Label } from 'src/components/label';
+import { useTheme, useMediaQuery } from '@mui/material';
 
 import { useGetBranchByIdQuery } from 'src/store/api/branches-api';
+
+import { Label } from 'src/components/label';
+import { CustomDialog } from 'src/components/custom-dialog';
+import { QueryStateContent } from 'src/components/query-state-content';
 
 // ----------------------------------------------------------------------
 
@@ -36,7 +36,7 @@ export function BranchDetailsDialog({ open, branchId, onClose }) {
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   // Fetch branch data
-  const { data: branch, isLoading, error: queryError, isError } = useGetBranchByIdQuery(branchId, {
+  const { data: branch, isLoading, error: queryError, isError, refetch } = useGetBranchByIdQuery(branchId, {
     skip: !branchId || !open,
   });
 
@@ -50,22 +50,21 @@ export function BranchDetailsDialog({ open, branchId, onClose }) {
       fullScreen={isMobile}
       loading={isLoading}
     >
-      {isLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-          <Typography variant="body2" color="text.secondary">
-            Loading branch details...
-          </Typography>
-        </Box>
-      ) : isError ? (
-        <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', minHeight: 200, gap: 2 }}>
-          <Typography variant="body1" color="error">
-            Failed to load branch details
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {queryError?.data?.message || queryError?.message || 'Network Error'}
-          </Typography>
-        </Box>
-      ) : branch ? (
+      <QueryStateContent
+        isLoading={isLoading}
+        isError={isError}
+        error={queryError}
+        onRetry={refetch}
+        loadingMessage="Loading branch details..."
+        errorTitle="Failed to load branch details"
+        errorMessageOptions={{
+          defaultMessage: 'Failed to load branch details',
+          notFoundMessage: 'Branch not found',
+        }}
+        isEmpty={!branch && !isLoading && !isError}
+        emptyMessage="Branch not found"
+      >
+        {branch ? (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1, pb: 3 }}>
           {/* Basic Information */}
           <Box>
@@ -160,13 +159,8 @@ export function BranchDetailsDialog({ open, branchId, onClose }) {
             )}
           </Box>
         </Box>
-      ) : (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-          <Typography variant="body2" color="text.secondary">
-            Branch not found
-          </Typography>
-        </Box>
-      )}
+        ) : null}
+      </QueryStateContent>
     </CustomDialog>
   );
 }

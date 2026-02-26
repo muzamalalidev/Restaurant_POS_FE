@@ -1,18 +1,19 @@
 'use client';
 
 import { useMemo } from 'react';
-import { useMediaQuery, useTheme } from '@mui/material';
 
 import Box from '@mui/material/Box';
+import Stack from '@mui/material/Stack';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
-import Stack from '@mui/material/Stack';
-
-import { CustomDialog } from 'src/components/custom-dialog';
-import { Field } from 'src/components/hook-form';
-import { Label } from 'src/components/label';
+import { useTheme, useMediaQuery } from '@mui/material';
 
 import { useGetAllTablesQuery } from 'src/store/api/tables-api';
+
+import { Label } from 'src/components/label';
+import { CustomDialog } from 'src/components/custom-dialog';
+import { QueryStateContent } from 'src/components/query-state-content';
+
 import {
   getAvailabilityLabel,
   getAvailabilityColor,
@@ -82,25 +83,21 @@ export function TableDetailsDialog({ open, tableId, branchId, onClose }) {
       fullScreen={isMobile}
       loading={isLoading}
     >
-      {isLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-          <Typography variant="body2" color="text.secondary">
-            Loading table details...
-          </Typography>
-        </Box>
-      ) : isError ? (
-        <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', minHeight: 200, gap: 2 }}>
-          <Typography variant="body1" color="error">
-            Failed to load table details
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {queryError?.data?.message || queryError?.message || 'Network Error'}
-          </Typography>
-          <Field.Button variant="contained" onClick={() => refetch()} startIcon="solar:refresh-bold" sx={{ mt: 1 }}>
-            Retry
-          </Field.Button>
-        </Box>
-      ) : table ? (
+      <QueryStateContent
+        isLoading={isLoading}
+        isError={isError}
+        error={queryError}
+        onRetry={refetch}
+        loadingMessage="Loading table details..."
+        errorTitle="Failed to load table details"
+        errorMessageOptions={{
+          defaultMessage: 'Failed to load table details',
+          notFoundMessage: 'Table not found',
+        }}
+        isEmpty={!table && !isLoading && !isError}
+        emptyMessage="Table not found"
+      >
+        {table ? (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1, pb: 3 }}>
           {/* Table Information */}
           <Box>
@@ -168,13 +165,8 @@ export function TableDetailsDialog({ open, tableId, branchId, onClose }) {
             </Stack>
           </Box>
         </Box>
-      ) : (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-          <Typography variant="body2" color="text.secondary">
-            Table not found
-          </Typography>
-        </Box>
-      )}
+        ) : null}
+      </QueryStateContent>
     </CustomDialog>
   );
 }

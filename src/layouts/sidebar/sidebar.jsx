@@ -1,15 +1,18 @@
 'use client';
 
+import './sidebar.css';
+
 import { useMemo } from 'react';
-import { useTheme } from '@mui/material/styles';
 import { varAlpha } from 'minimal-shared/utils';
 
-import { useAuthContext } from 'src/auth/hooks';
-import { useSettingsContext } from 'src/components/settings';
+import { useTheme } from '@mui/material/styles';
+
 import { primaryColorPresets } from 'src/theme/with-settings';
 import { dashboardNavColorVars } from 'src/layouts/dashboard/css-vars';
 
-import './sidebar.css';
+import { useSettingsContext } from 'src/components/settings';
+
+import { useAuthContext } from 'src/auth/hooks';
 
 import { useSidebar } from './sidebar-context';
 import { SidebarAILayer } from './components/sidebar-ai-layer';
@@ -35,7 +38,7 @@ export function Sidebar({ navData }) {
 
   // Get all settings
   const {
-    mode,
+    mode: _mode,
     contrast,
     direction,
     compactLayout,
@@ -50,7 +53,7 @@ export function Sidebar({ navData }) {
   const primaryPreset = primaryColorPresets[primaryColor] || primaryColorPresets.default;
 
   // Get nav color vars
-  const navColorVars = useMemo(
+  const _navColorVars = useMemo(
     () => dashboardNavColorVars(theme, navColor, navLayout),
     [theme, navColor, navLayout]
   );
@@ -66,7 +69,7 @@ export function Sidebar({ navData }) {
     const bgPaper = palette.background.paper;
 
     // Nav color affects sidebar background
-    const sidebarBgColor = navColor === 'apparent' 
+    const _sidebarBgColor = navColor === 'apparent' 
       ? (isDark ? palette.grey[800] : palette.grey[900])
       : bgDefault;
 
@@ -100,7 +103,7 @@ export function Sidebar({ navData }) {
 
     // Use theme's primary color channel for alpha calculations
     const primaryMainChannel = palette.primary.mainChannel || primaryMain;
-    const primaryLightChannel = palette.primary.lightChannel || primaryLight;
+    const _primaryLightChannel = palette.primary.lightChannel || primaryLight;
 
     // Brand gradient from primary color
     const brandGradient = `linear-gradient(135deg, ${primaryLight} 0%, ${primaryMain} 100%)`;

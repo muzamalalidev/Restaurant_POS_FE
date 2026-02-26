@@ -1,16 +1,17 @@
 'use client';
 
 import { useMemo } from 'react';
-import { useMediaQuery, useTheme } from '@mui/material';
 
 import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
 import Stack from '@mui/material/Stack';
-
-import { CustomDialog } from 'src/components/custom-dialog';
-import { Label } from 'src/components/label';
+import Typography from '@mui/material/Typography';
+import { useTheme, useMediaQuery } from '@mui/material';
 
 import { useGetStaffTypesQuery } from 'src/store/api/staff-types-api';
+
+import { Label } from 'src/components/label';
+import { CustomDialog } from 'src/components/custom-dialog';
+import { QueryStateContent } from 'src/components/query-state-content';
 
 // ----------------------------------------------------------------------
 
@@ -33,7 +34,7 @@ export function StaffTypeDetailsDialog({ open, staffTypeId, staffTypeData: initi
   // Use staffTypeData passed from list view (P0-001 FIX: Avoid fetching 1000 records)
   // Fallback: If not provided, fetch with large page size (for backward compatibility)
   const shouldFetch = !initialStaffTypeData && staffTypeId && open;
-  const { data: staffTypesResponse, isLoading, error: queryError, isError } = useGetStaffTypesQuery(
+  const { data: staffTypesResponse, isLoading, error: queryError, isError, refetch } = useGetStaffTypesQuery(
     { pageSize: 1000 },
     { skip: !shouldFetch }
   );
@@ -58,22 +59,21 @@ export function StaffTypeDetailsDialog({ open, staffTypeId, staffTypeData: initi
       fullScreen={isMobile}
       loading={isLoading}
     >
-      {isLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-          <Typography variant="body2" color="text.secondary">
-            Loading staff type details...
-          </Typography>
-        </Box>
-      ) : isError ? (
-        <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', minHeight: 200, gap: 2 }}>
-          <Typography variant="body1" color="error">
-            Failed to load staff type details
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {queryError?.data?.message || queryError?.message || 'Network Error'}
-          </Typography>
-        </Box>
-      ) : staffType ? (
+      <QueryStateContent
+        isLoading={isLoading}
+        isError={isError}
+        error={queryError}
+        onRetry={refetch}
+        loadingMessage="Loading staff type details..."
+        errorTitle="Failed to load staff type details"
+        errorMessageOptions={{
+          defaultMessage: 'Failed to load staff type details',
+          notFoundMessage: 'Staff type not found',
+        }}
+        isEmpty={!staffType && !isLoading && !isError}
+        emptyMessage="Staff type not found"
+      >
+        {staffType ? (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1, pb: 3 }}>
           {/* Staff Type Information */}
           <Box>
@@ -108,13 +108,8 @@ export function StaffTypeDetailsDialog({ open, staffTypeId, staffTypeData: initi
             </Stack>
           </Box>
         </Box>
-      ) : (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-          <Typography variant="body2" color="text.secondary">
-            Staff type not found
-          </Typography>
-        </Box>
-      )}
+        ) : null}
+      </QueryStateContent>
     </CustomDialog>
   );
 }

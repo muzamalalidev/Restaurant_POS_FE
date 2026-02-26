@@ -11,9 +11,9 @@ import { useTheme, useMediaQuery } from '@mui/material';
 import { useGetAllRecipesQuery } from 'src/store/api/recipes-api';
 
 import { Label } from 'src/components/label';
-import { Field } from 'src/components/hook-form';
 import { CustomTable } from 'src/components/custom-table';
 import { CustomDialog } from 'src/components/custom-dialog';
+import { QueryStateContent } from 'src/components/query-state-content';
 
 import { formatTimeMinutes, getActiveStatusColor, getActiveStatusLabel } from '../utils/recipe-helpers';
 
@@ -60,25 +60,21 @@ export function RecipeDetailsDialog({ open, recipeId, onClose }) {
       fullScreen={isMobile}
       loading={isLoading}
     >
-      {isLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-          <Typography variant="body2" color="text.secondary">
-            Loading recipe details...
-          </Typography>
-        </Box>
-      ) : isError ? (
-        <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', minHeight: 200, gap: 2 }}>
-          <Typography variant="body1" color="error">
-            Failed to load recipe details
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {queryError?.data?.message || queryError?.message || 'Network Error'}
-          </Typography>
-          <Field.Button variant="contained" onClick={() => refetch()} startIcon="solar:refresh-bold">
-            Retry
-          </Field.Button>
-        </Box>
-      ) : recipe ? (
+      <QueryStateContent
+        isLoading={isLoading}
+        isError={isError}
+        error={queryError}
+        onRetry={refetch}
+        loadingMessage="Loading recipe details..."
+        errorTitle="Failed to load recipe details"
+        errorMessageOptions={{
+          defaultMessage: 'Failed to load recipe details',
+          notFoundMessage: 'Recipe not found',
+        }}
+        isEmpty={!recipe && !isLoading && !isError}
+        emptyMessage="Recipe not found"
+      >
+        {recipe ? (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1, pb: 3 }}>
           {/* Recipe Information */}
           <Box>
@@ -185,9 +181,6 @@ export function RecipeDetailsDialog({ open, recipeId, onClose }) {
                   },
                 ]}
                 pagination={{ enabled: false }}
-                sorting={{ enabled: false }}
-                filtering={{ enabled: false }}
-                toolbar={{ show: false }}
                 getRowId={(row) => row.id}
               />
             ) : (
@@ -218,13 +211,8 @@ export function RecipeDetailsDialog({ open, recipeId, onClose }) {
             </Stack>
           </Box>
         </Box>
-      ) : (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-          <Typography variant="body2" color="text.secondary">
-            Recipe not found
-          </Typography>
-        </Box>
-      )}
+        ) : null}
+      </QueryStateContent>
     </CustomDialog>
   );
 }

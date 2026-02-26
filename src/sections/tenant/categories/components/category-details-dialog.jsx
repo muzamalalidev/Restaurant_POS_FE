@@ -1,15 +1,16 @@
-import { useMediaQuery, useTheme } from '@mui/material';
 import { useMemo } from 'react';
 
 import Box from '@mui/material/Box';
+import Stack from '@mui/material/Stack';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
-import Stack from '@mui/material/Stack';
+import { useTheme, useMediaQuery } from '@mui/material';
 
-import { CustomDialog } from 'src/components/custom-dialog';
+import { useGetCategoriesQuery, useGetCategoryByIdQuery } from 'src/store/api/categories-api';
+
 import { Label } from 'src/components/label';
-
-import { useGetCategoryByIdQuery, useGetCategoriesQuery } from 'src/store/api/categories-api';
+import { CustomDialog } from 'src/components/custom-dialog';
+import { QueryStateContent } from 'src/components/query-state-content';
 
 // ----------------------------------------------------------------------
 
@@ -26,7 +27,7 @@ export function CategoryDetailsDialog({ open, categoryId, onClose }) {
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   // Fetch category by ID (fully implemented endpoint)
-  const { data: category, isLoading, error: queryError, isError } = useGetCategoryByIdQuery(categoryId, {
+  const { data: category, isLoading, error: queryError, isError, refetch } = useGetCategoryByIdQuery(categoryId, {
     skip: !categoryId || !open,
   });
 
@@ -54,31 +55,21 @@ export function CategoryDetailsDialog({ open, categoryId, onClose }) {
       fullScreen={isMobile}
       loading={isLoading}
     >
-      {isLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-          <Typography variant="body2" color="text.secondary">
-            Loading category details...
-          </Typography>
-        </Box>
-      ) : isError ? (
-        <Box
-          sx={{
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
-            alignItems: 'center',
-            minHeight: 200,
-            gap: 2,
-          }}
-        >
-          <Typography variant="body1" color="error">
-            Failed to load category details
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {queryError?.data?.message || queryError?.message || 'Category not found or an error occurred.'}
-          </Typography>
-        </Box>
-      ) : category ? (
+      <QueryStateContent
+        isLoading={isLoading}
+        isError={isError}
+        error={queryError}
+        onRetry={refetch}
+        loadingMessage="Loading category details..."
+        errorTitle="Failed to load category details"
+        errorMessageOptions={{
+          defaultMessage: 'Failed to load category details',
+          notFoundMessage: 'Category not found or an error occurred.',
+        }}
+        isEmpty={!category && !isLoading && !isError}
+        emptyMessage="Category not found"
+      >
+        {category ? (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1, pb: 3 }}>
           {/* Basic Information */}
           <Box>
@@ -138,13 +129,8 @@ export function CategoryDetailsDialog({ open, categoryId, onClose }) {
             </Stack>
           </Box>
         </Box>
-      ) : (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-          <Typography variant="body2" color="text.secondary">
-            Category not found
-          </Typography>
-        </Box>
-      )}
+        ) : null}
+      </QueryStateContent>
     </CustomDialog>
   );
 }

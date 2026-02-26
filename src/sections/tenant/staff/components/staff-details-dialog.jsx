@@ -1,61 +1,38 @@
 'use client';
 
-import { useMediaQuery, useTheme } from '@mui/material';
 import { useMemo } from 'react';
 
 import Box from '@mui/material/Box';
+import Stack from '@mui/material/Stack';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
-import Stack from '@mui/material/Stack';
+import { useTheme, useMediaQuery } from '@mui/material';
 
-import { CustomDialog } from 'src/components/custom-dialog';
+import { useGetStaffByIdQuery } from 'src/store/api/staff-api';
+
 import { Label } from 'src/components/label';
-
-import { useGetStaffQuery } from 'src/store/api/staff-api';
-import { useGetBranchesQuery } from 'src/store/api/branches-api';
+import { CustomDialog } from 'src/components/custom-dialog';
+import { QueryStateContent } from 'src/components/query-state-content';
 
 // ----------------------------------------------------------------------
 
 /**
  * Staff Details Dialog Component
- * 
+ *
  * Read-only view of staff member details.
  * No action buttons - purely informational.
- * 
- * Note: Since GetById is a placeholder, we use GetAll to find the staff member by ID.
+ * Branch name is expected from getStaffById response (e.g. staff.branchName).
  */
 export function StaffDetailsDialog({ open, staffId, onClose }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
-  // Fetch all staff to find the one for details view (due to GetById placeholder)
-  const { data: staffResponse, isLoading, error: queryError, isError } = useGetStaffQuery(
-    { pageSize: 1000 }, // Fetch all to find by ID
-    { skip: !staffId || !open }
-  );
-
-  // Fetch branches to get branch name
-  const { data: branchesResponse } = useGetBranchesQuery({
-    pageSize: 1000,
+  const { data: staff, isLoading, error: queryError, isError, refetch } = useGetStaffByIdQuery(staffId, {
+    skip: !staffId || !open,
   });
 
-  const staff = useMemo(() => {
-    if (staffId && staffResponse?.data) {
-      return staffResponse.data.find((s) => s.id === staffId);
-    }
-    return null;
-  }, [staffId, staffResponse]);
-
-  // Find branch name
-  const branchName = useMemo(() => {
-    if (!staff?.branchId || !branchesResponse?.data) return null;
-    const branch = branchesResponse.data.find((b) => b.id === staff.branchId);
-    return branch?.name || null;
-  }, [staff?.branchId, branchesResponse]);
-
   // Format date for display
-  const formatDate = useMemo(() => {
-    return (dateString) => {
+  const formatDate = useMemo(() => (dateString) => {
       if (!dateString) return null;
       try {
         const date = new Date(dateString);
@@ -67,8 +44,7 @@ export function StaffDetailsDialog({ open, staffId, onClose }) {
       } catch {
         return dateString;
       }
-    };
-  }, []);
+    }, []);
 
   return (
     <CustomDialog
@@ -80,22 +56,21 @@ export function StaffDetailsDialog({ open, staffId, onClose }) {
       fullScreen={isMobile}
       loading={isLoading}
     >
-      {isLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-          <Typography variant="body2" color="text.secondary">
-            Loading staff member details...
-          </Typography>
-        </Box>
-      ) : isError ? (
-        <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', minHeight: 200, gap: 2 }}>
-          <Typography variant="body1" color="error">
-            Failed to load staff member details
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {queryError?.data?.message || queryError?.message || 'Network Error'}
-          </Typography>
-        </Box>
-      ) : staff ? (
+      <QueryStateContent
+        isLoading={isLoading}
+        isError={isError}
+        error={queryError}
+        onRetry={refetch}
+        loadingMessage="Loading staff member details..."
+        errorTitle="Failed to load staff member details"
+        errorMessageOptions={{
+          defaultMessage: 'Failed to load staff details',
+          notFoundMessage: 'Staff not found',
+        }}
+        isEmpty={!staff && !isLoading && !isError}
+        emptyMessage="Staff member not found"
+      >
+        {staff ? (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1, pb: 3 }}>
           {/* Basic Information */}
           <Box>
@@ -121,7 +96,7 @@ export function StaffDetailsDialog({ open, staffId, onClose }) {
                 <Typography variant="caption" color="text.secondary">
                   Branch
                 </Typography>
-                <Typography variant="body1">{branchName || staff.branchId || '-'}</Typography>
+                <Typography variant="body1">{staff.branchName || '-'}</Typography>
               </Box>
               <Box>
                 <Typography variant="caption" color="text.secondary">
@@ -208,13 +183,8 @@ export function StaffDetailsDialog({ open, staffId, onClose }) {
             </Stack>
           </Box>
         </Box>
-      ) : (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-          <Typography variant="body2" color="text.secondary">
-            Staff member not found
-          </Typography>
-        </Box>
-      )}
+        ) : null}
+      </QueryStateContent>
     </CustomDialog>
   );
 }

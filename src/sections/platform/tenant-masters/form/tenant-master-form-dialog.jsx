@@ -1,25 +1,26 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMediaQuery, useTheme } from '@mui/material';
+import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
-import Divider from '@mui/material/Divider';
-import Typography from '@mui/material/Typography';
+import { useTheme, useMediaQuery } from '@mui/material';
 
-import { Form, Field } from 'src/components/hook-form';
-import { CustomDialog } from 'src/components/custom-dialog';
-import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
-import { toast } from 'src/components/snackbar';
+import { getApiErrorMessage } from 'src/utils/api-error-message';
 
+import { createTenantMasterSchema, updateTenantMasterSchema } from 'src/schemas';
 import {
   useGetTenantMasterByIdQuery,
   useCreateTenantMasterMutation,
   useUpdateTenantMasterMutation,
 } from 'src/store/api/tenant-masters-api';
-import { createTenantMasterSchema, updateTenantMasterSchema } from '../schemas/tenant-master-schema';
+
+import { toast } from 'src/components/snackbar';
+import { Form, Field } from 'src/components/hook-form';
+import { CustomDialog } from 'src/components/custom-dialog';
+import { QueryStateContent } from 'src/components/query-state-content';
+import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
 
 // ----------------------------------------------------------------------
 
@@ -124,7 +125,10 @@ export function TenantMasterFormDialog({ open, mode, tenantMasterId, onClose, on
       reset();
       onClose();
     } catch (err) {
-      toast.error(err?.data?.message || err?.data?.detail || `Failed to ${mode === 'create' ? 'create' : 'update'} tenant master`);
+      const { message } = getApiErrorMessage(err, {
+        defaultMessage: `Failed to ${mode === 'create' ? 'create' : 'update'} tenant master`,
+      });
+      toast.error(message);
     } finally {
       isSubmittingRef.current = false;
     }
@@ -164,7 +168,7 @@ export function TenantMasterFormDialog({ open, mode, tenantMasterId, onClose, on
         startIcon="solar:check-circle-bold"
         sx={{ minHeight: 44 }}
       >
-        Save
+      {mode === 'create' ? 'Save' : 'Update'}
       </Field.Button>
     </Box>
   );
@@ -185,31 +189,21 @@ export function TenantMasterFormDialog({ open, mode, tenantMasterId, onClose, on
         disableClose={isSubmitting}
         actions={renderActions()}
       >
-        {isLoading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-            <Typography variant="body2" color="text.secondary">
-              Loading tenant master...
-            </Typography>
-          </Box>
-        ) : hasError ? (
-          <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', minHeight: 200, gap: 2 }}>
-            <Typography variant="body1" color="error">
-              Failed to load tenant master
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {queryError?.data?.message || queryError?.data?.detail || queryError?.message || 'Not found'}
-            </Typography>
-            <Field.Button variant="contained" onClick={() => refetchTenantMaster()} startIcon="solar:refresh-bold">
-              Retry
-            </Field.Button>
-          </Box>
-        ) : (
+        <QueryStateContent
+          isLoading={isLoading}
+          isError={hasError}
+          error={queryError}
+          onRetry={refetchTenantMaster}
+          loadingMessage="Loading tenant master..."
+          errorTitle="Failed to load tenant master"
+          errorMessageOptions={{
+            defaultMessage: 'Failed to load tenant master',
+            notFoundMessage: 'Tenant master not found',
+          }}
+        >
           <Form methods={methods} onSubmit={onSubmit}>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1 }}>
               <Box>
-                <Typography variant="subtitle2" sx={{ mb: 2 }}>
-                  Tenant Master Information
-                </Typography>
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                   <Field.Text
                     name="name"
@@ -236,7 +230,6 @@ export function TenantMasterFormDialog({ open, mode, tenantMasterId, onClose, on
                     isOptionEqualToValue={(a, b) => (a?.id ?? a) === (b?.id ?? b)}
                     slotProps={{
                       textField: {
-                        size: 'small',
                         placeholder: 'None (assign later)',
                       },
                     }}
@@ -246,7 +239,7 @@ export function TenantMasterFormDialog({ open, mode, tenantMasterId, onClose, on
               </Box>
             </Box>
           </Form>
-        )}
+        </QueryStateContent>
       </CustomDialog>
 
       <ConfirmDialog

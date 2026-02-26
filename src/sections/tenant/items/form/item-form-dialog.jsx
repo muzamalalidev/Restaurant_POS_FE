@@ -1,21 +1,26 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMediaQuery, useTheme } from '@mui/material';
+import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
+import { useTheme, useMediaQuery } from '@mui/material';
 
+import { getApiErrorMessage } from 'src/utils/api-error-message';
+
+import { createItemSchema, updateItemSchema } from 'src/schemas';
+import { useGetTenantsDropdownQuery } from 'src/store/api/tenants-api';
+import { useGetCategoriesDropdownQuery } from 'src/store/api/categories-api';
+import { useGetItemsQuery, useCreateItemMutation, useUpdateItemMutation } from 'src/store/api/items-api';
+
+import { toast } from 'src/components/snackbar';
 import { Form, Field } from 'src/components/hook-form';
 import { CustomDialog } from 'src/components/custom-dialog';
+import { QueryStateContent } from 'src/components/query-state-content';
 import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
-import { toast } from 'src/components/snackbar';
-
-import { useGetItemsQuery, useCreateItemMutation, useUpdateItemMutation } from 'src/store/api/items-api';
-import { createItemSchema, updateItemSchema } from '../schemas/item-schema';
 
 // ----------------------------------------------------------------------
 
@@ -37,21 +42,23 @@ import { createItemSchema, updateItemSchema } from '../schemas/item-schema';
  * @param {string|null} props.itemId - Item ID for edit mode
  * @param {Function} props.onClose - Callback when dialog closes
  * @param {Function} props.onSuccess - Callback when form is successfully submitted
- * @param {Array} props.tenantOptions - Tenant options for dropdown (from list view)
- * @param {Array} props.categoryOptions - Category options for dropdown (from list view)
+ * @param {Array} props.tenantOptions - Tenant options for dropdown (from list view; fallback: fetch in form when empty)
  */
-export function ItemFormDialog({ open, mode, itemId, onClose, onSuccess, tenantOptions = [], categoryOptions = [] }) {
+export function ItemFormDialog({ open, mode, itemId, onClose, onSuccess, tenantOptions = [] }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
-  // State for unsaved changes confirmation
   const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] = useState(false);
-
-  // P0-003: Ref to prevent double-submit
   const isSubmittingRef = useRef(false);
 
-  // Fetch all items to find the one we need (since GetById is placeholder)
-  const { data: itemsResponse, isLoading: isLoadingItem } = useGetItemsQuery(
+  const { data: tenantsDropdownFallback } = useGetTenantsDropdownQuery(undefined, { skip: tenantOptions.length > 0 });
+  const effectiveTenantOptions = useMemo(() => {
+    if (tenantOptions.length > 0) return tenantOptions;
+    if (!tenantsDropdownFallback || !Array.isArray(tenantsDropdownFallback)) return [];
+    return tenantsDropdownFallback.map((item) => ({ id: item.key, label: item.value || item.key }));
+  }, [tenantOptions, tenantsDropdownFallback]);
+
+  const { data: itemsResponse, isLoading: isLoadingItem, error: queryError, isError: _isError, refetch: refetchItems } = useGetItemsQuery(
     { pageSize: 1000 },
     { skip: !itemId || mode !== 'edit' || !open }
   );
@@ -80,7 +87,7 @@ export function ItemFormDialog({ open, mode, itemId, onClose, onSuccess, tenantO
     { id: 4, label: 'Deal' },
   ], []);
 
-  // Form setup
+  // Form setup (itemType starts null - user must select)
   const methods = useForm({
     resolver: zodResolver(schema),
     defaultValues: useMemo(
@@ -89,14 +96,14 @@ export function ItemFormDialog({ open, mode, itemId, onClose, onSuccess, tenantO
         categoryId: null,
         name: '',
         description: null,
-        itemType: itemTypeOptions[0],
+        itemType: null,
         price: 0,
         imageUrl: null,
         isActive: true,
         isAvailable: true,
         stockQuantity: 0,
       }),
-      [itemTypeOptions]
+      []
     ),
     mode: 'onChange',
   });
@@ -105,37 +112,36 @@ export function ItemFormDialog({ open, mode, itemId, onClose, onSuccess, tenantO
     reset,
     handleSubmit,
     watch,
+    setValue,
     formState: { isDirty },
   } = methods;
 
-  // Watch tenantId to filter category options
   const watchedTenantId = watch('tenantId');
-
-  // Category options filtered by selected tenant
-  const filteredCategoryOptions = useMemo(() => {
-    if (!watchedTenantId || categoryOptions.length === 0) {
-      return categoryOptions;
-    }
-
-    // Extract tenant ID from watchedTenantId (could be object or string)
-    const tenantIdValue = typeof watchedTenantId === 'object' && watchedTenantId !== null
+  const selectedTenantIdRaw = useMemo(
+    () => (watchedTenantId && typeof watchedTenantId === 'object' && watchedTenantId !== null
       ? watchedTenantId.id
-      : watchedTenantId;
+      : watchedTenantId),
+    [watchedTenantId]
+  );
 
-    // Filter categories by tenant
-    return categoryOptions.filter((cat) => cat.tenantId === tenantIdValue);
-  }, [watchedTenantId, categoryOptions]);
+  const { data: categoriesDropdown } = useGetCategoriesDropdownQuery(
+    { tenantId: selectedTenantIdRaw },
+    { skip: !selectedTenantIdRaw || !open }
+  );
+  const categoryOptions = useMemo(() => {
+    if (!categoriesDropdown || !Array.isArray(categoriesDropdown)) return [];
+    return categoriesDropdown.map((item) => ({ id: item.key, label: item.value || item.key }));
+  }, [categoriesDropdown]);
 
   // Load item data for edit mode or reset for create mode
   useEffect(() => {
     if (!open) {
-      // Reset form when dialog closes
       reset({
         tenantId: null,
         categoryId: null,
         name: '',
         description: null,
-        itemType: itemTypeOptions[0],
+        itemType: null,
         price: 0,
         imageUrl: null,
         isActive: true,
@@ -145,11 +151,9 @@ export function ItemFormDialog({ open, mode, itemId, onClose, onSuccess, tenantO
       return;
     }
 
-    if (mode === 'edit' && itemData && tenantOptions.length > 0) {
-      // Find matching tenant and category objects from options
-      const matchingTenant = tenantOptions.find((t) => t.id === itemData.tenantId);
-      const matchingCategory = filteredCategoryOptions.find((cat) => cat.id === itemData.categoryId);
-      // Find matching itemType option
+    if (mode === 'edit' && itemData && effectiveTenantOptions.length > 0) {
+      const matchingTenant = effectiveTenantOptions.find((t) => t.id === itemData.tenantId);
+      const matchingCategory = categoryOptions.find((cat) => cat.id === itemData.categoryId);
       const matchingItemType = itemTypeOptions.find((opt) => opt.id === itemData.itemType);
 
       reset({
@@ -157,7 +161,7 @@ export function ItemFormDialog({ open, mode, itemId, onClose, onSuccess, tenantO
         categoryId: matchingCategory || null,
         name: itemData.name || '',
         description: itemData.description || null,
-        itemType: matchingItemType || itemTypeOptions[0],
+        itemType: matchingItemType || null,
         price: itemData.price || 0,
         imageUrl: itemData.imageUrl || null,
         isActive: itemData.isActive ?? true,
@@ -170,7 +174,7 @@ export function ItemFormDialog({ open, mode, itemId, onClose, onSuccess, tenantO
         categoryId: null,
         name: '',
         description: null,
-        itemType: itemTypeOptions[0],
+        itemType: null,
         price: 0,
         imageUrl: null,
         isActive: true,
@@ -179,7 +183,15 @@ export function ItemFormDialog({ open, mode, itemId, onClose, onSuccess, tenantO
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, mode, itemData?.id, itemData?.tenantId, itemData?.categoryId, itemData?.name, itemData?.description, itemData?.itemType, itemData?.price, itemData?.imageUrl, itemData?.isActive, itemData?.isAvailable, itemData?.stockQuantity, tenantOptions, filteredCategoryOptions, reset]);
+  }, [open, mode, itemData?.id, itemData?.tenantId, itemData?.categoryId, itemData?.name, itemData?.description, itemData?.itemType, itemData?.price, itemData?.imageUrl, itemData?.isActive, itemData?.isAvailable, itemData?.stockQuantity, effectiveTenantOptions, categoryOptions, reset]);
+
+  useEffect(() => {
+    if (!open || mode !== 'edit' || !itemData?.categoryId || categoryOptions.length === 0) return;
+    const matching = categoryOptions.find((c) => c.id === itemData.categoryId);
+    if (matching) {
+      setValue('categoryId', matching, { shouldValidate: false, shouldDirty: false });
+    }
+  }, [open, mode, itemData?.categoryId, categoryOptions, setValue]);
 
   // Handle form submit
   const onSubmit = handleSubmit(async (data) => {
@@ -251,7 +263,10 @@ export function ItemFormDialog({ open, mode, itemId, onClose, onSuccess, tenantO
       onClose();
     } catch (error) {
       console.error('Failed to save item:', error);
-      toast.error(error?.data?.message || `Failed to ${mode === 'create' ? 'create' : 'update'} item`);
+      const { message } = getApiErrorMessage(error, {
+        defaultMessage: `Failed to ${mode === 'create' ? 'create' : 'update'} item`,
+      });
+      toast.error(message);
     } finally {
       isSubmittingRef.current = false;
     }
@@ -327,22 +342,18 @@ export function ItemFormDialog({ open, mode, itemId, onClose, onSuccess, tenantO
         disableClose={isSubmitting}
         actions={renderActions()}
       >
-        {isLoading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-            <Typography variant="body2" color="text.secondary">
-              Loading item data...
-            </Typography>
-          </Box>
-        ) : hasError ? (
-          <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', minHeight: 200, gap: 2 }}>
-            <Typography variant="body1" color="error">
-              Failed to load item data
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Item not found or an error occurred.
-            </Typography>
-          </Box>
-        ) : (
+        <QueryStateContent
+          isLoading={isLoading}
+          isError={hasError}
+          error={queryError}
+          onRetry={refetchItems}
+          loadingMessage="Loading item data..."
+          errorTitle="Failed to load item data"
+          errorMessageOptions={{
+            defaultMessage: 'Failed to load item data',
+            notFoundMessage: 'Item not found or an error occurred.',
+          }}
+        >
           <Form methods={methods} onSubmit={onSubmit}>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1 }}>
               {/* Basic Information Section */}
@@ -355,7 +366,7 @@ export function ItemFormDialog({ open, mode, itemId, onClose, onSuccess, tenantO
                   <Field.Autocomplete
                     name="tenantId"
                     label="Tenant"
-                    options={tenantOptions}
+                    options={effectiveTenantOptions}
                     getOptionLabel={(option) => {
                       if (!option) return '';
                       return option.label || option.name || option.id || '';
@@ -370,7 +381,7 @@ export function ItemFormDialog({ open, mode, itemId, onClose, onSuccess, tenantO
                   <Field.Autocomplete
                     name="categoryId"
                     label="Category"
-                    options={filteredCategoryOptions}
+                    options={categoryOptions}
                     getOptionLabel={(option) => {
                       if (!option) return '';
                       return option.label || option.name || option.id || '';
@@ -411,10 +422,12 @@ export function ItemFormDialog({ open, mode, itemId, onClose, onSuccess, tenantO
                     }}
                     isOptionEqualToValue={(option, value) => {
                       if (!option || !value) return option === value;
-                      // Handle both object and number comparisons
                       const optionId = typeof option === 'object' ? option.id : option;
                       const valueId = typeof value === 'object' ? value.id : value;
                       return optionId === valueId;
+                    }}
+                    slotProps={{
+                      textField: { placeholder: 'Select item type' },
                     }}
                     required
                     sx={{ flex: 1 }}
@@ -501,7 +514,7 @@ export function ItemFormDialog({ open, mode, itemId, onClose, onSuccess, tenantO
               </Box>
             </Box>
           </Form>
-        )}
+        </QueryStateContent>
       </CustomDialog>
 
       {/* Unsaved Changes Confirmation Dialog */}

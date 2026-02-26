@@ -1,23 +1,27 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMediaQuery, useTheme } from '@mui/material';
+import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
 import Stack from '@mui/material/Stack';
 import Divider from '@mui/material/Divider';
+import Typography from '@mui/material/Typography';
+import { useTheme, useMediaQuery } from '@mui/material';
 
+import { getApiErrorMessage } from 'src/utils/api-error-message';
+
+import { useGetItemsQuery } from 'src/store/api/items-api';
+import { createRecipeSchema, updateRecipeSchema } from 'src/schemas';
+import { useGetAllRecipesQuery, useCreateRecipeMutation, useUpdateRecipeMutation } from 'src/store/api/recipes-api';
+
+import { toast } from 'src/components/snackbar';
 import { Form, Field } from 'src/components/hook-form';
 import { CustomDialog } from 'src/components/custom-dialog';
+import { QueryStateContent } from 'src/components/query-state-content';
 import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
-import { toast } from 'src/components/snackbar';
 
-import { useGetAllRecipesQuery, useCreateRecipeMutation, useUpdateRecipeMutation } from 'src/store/api/recipes-api';
-import { useGetItemsQuery } from 'src/store/api/items-api';
-import { createRecipeSchema, updateRecipeSchema } from '../schemas/recipe-schema';
 import { RecipeIngredientsField } from './components/recipe-ingredients-field';
 
 // ----------------------------------------------------------------------
@@ -25,7 +29,7 @@ import { RecipeIngredientsField } from './components/recipe-ingredients-field';
 /**
  * Helper function to extract ID from object or string
  */
-const getId = (value) => {
+const _getId = (value) => {
   if (!value) return null;
   if (typeof value === 'object' && value !== null && 'id' in value) {
     return value.id;
@@ -59,7 +63,7 @@ export function RecipeFormDialog({ open, mode, recipeId, onClose, onSuccess }) {
   const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] = useState(false);
 
   // P0-003/P1-001: pageSize 200; getRecipeById is placeholder – find by ID may miss recipe if total > pageSize
-  const { data: recipesResponse, isLoading: isLoadingRecipe, refetch: refetchRecipe } = useGetAllRecipesQuery(
+  const { data: recipesResponse, isLoading: isLoadingRecipe, error: queryError, isError: _isError, refetch: refetchRecipe } = useGetAllRecipesQuery(
     { pageSize: 200 },
     { skip: !recipeId || mode !== 'edit' || !open }
   );
@@ -98,14 +102,10 @@ export function RecipeFormDialog({ open, mode, recipeId, onClose, onSuccess }) {
   }, [allRecipesResponse]);
 
   // Item options for create mode (exclude items that already have recipes)
-  const createModeItemOptions = useMemo(() => {
-    return recipeBasedItems.filter((item) => !itemsWithRecipes.has(item.id));
-  }, [recipeBasedItems, itemsWithRecipes]);
+  const createModeItemOptions = useMemo(() => recipeBasedItems.filter((item) => !itemsWithRecipes.has(item.id)), [recipeBasedItems, itemsWithRecipes]);
 
   // Item options for edit mode (include all RecipeBased items, but current item's recipe is allowed)
-  const editModeItemOptions = useMemo(() => {
-    return recipeBasedItems;
-  }, [recipeBasedItems]);
+  const editModeItemOptions = useMemo(() => recipeBasedItems, [recipeBasedItems]);
 
   // Item options based on mode
   const itemOptions = mode === 'create' ? createModeItemOptions : editModeItemOptions;
@@ -296,22 +296,12 @@ export function RecipeFormDialog({ open, mode, recipeId, onClose, onSuccess }) {
       onClose();
     } catch (error) {
       console.error('Failed to save recipe:', error);
-      const errorStatus = error?.status || error?.data?.status;
-      let errorMessage;
-
-      if (errorStatus === 404) {
-        errorMessage = error?.data?.message || 'Recipe or item not found';
-      } else if (errorStatus === 400) {
-        errorMessage = error?.data?.message || 'Validation failed. Please check your input.';
-      } else if (errorStatus >= 500) {
-        errorMessage = 'Server error. Please try again later.';
-      } else if (!navigator.onLine) {
-        errorMessage = 'Network error. Please check your connection.';
-      } else {
-        errorMessage = error?.data?.message || error?.message || `Failed to ${mode === 'create' ? 'create' : 'update'} recipe`;
-      }
-
-      toast.error(errorMessage);
+      const { message } = getApiErrorMessage(error, {
+        defaultMessage: `Failed to ${mode === 'create' ? 'create' : 'update'} recipe`,
+        notFoundMessage: 'Recipe or item not found',
+        validationMessage: 'Validation failed. Please check your input.',
+      });
+      toast.error(message);
     } finally {
       isSubmittingRef.current = false;
     }
@@ -395,25 +385,18 @@ export function RecipeFormDialog({ open, mode, recipeId, onClose, onSuccess }) {
           },
         }}
       >
-        {isLoading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-            <Typography variant="body2" color="text.secondary">
-              Loading recipe data...
-            </Typography>
-          </Box>
-        ) : hasError ? (
-          <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', minHeight: 200, gap: 2 }}>
-            <Typography variant="body1" color="error">
-              Failed to load recipe data
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Recipe not found or an error occurred.
-            </Typography>
-            <Field.Button variant="contained" onClick={() => refetchRecipe()} startIcon="solar:refresh-bold">
-              Retry
-            </Field.Button>
-          </Box>
-        ) : (
+        <QueryStateContent
+          isLoading={isLoading}
+          isError={hasError}
+          error={queryError}
+          onRetry={refetchRecipe}
+          loadingMessage="Loading recipe data..."
+          errorTitle="Failed to load recipe data"
+          errorMessageOptions={{
+            defaultMessage: 'Failed to load recipe data',
+            notFoundMessage: 'Recipe not found or an error occurred.',
+          }}
+        >
           <Form methods={methods} onSubmit={onSubmit}>
             <Box
               sx={{
@@ -587,7 +570,7 @@ export function RecipeFormDialog({ open, mode, recipeId, onClose, onSuccess }) {
               </Box>
             </Box>
           </Form>
-        )}
+        </QueryStateContent>
       </CustomDialog>
 
       {/* Unsaved Changes Confirmation Dialog */}

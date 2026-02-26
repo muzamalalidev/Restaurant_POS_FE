@@ -1,20 +1,20 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
+import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
 import Radio from '@mui/material/Radio';
 import Typography from '@mui/material/Typography';
-import CardContent from '@mui/material/CardContent';
 import IconButton from '@mui/material/IconButton';
 import RadioGroup from '@mui/material/RadioGroup';
+import CardContent from '@mui/material/CardContent';
 import FormControl from '@mui/material/FormControl';
 
+import { Label } from 'src/components/label';
 import { Iconify } from 'src/components/iconify';
 import { Field } from 'src/components/hook-form';
-import { Label } from 'src/components/label';
 
 // ----------------------------------------------------------------------
 
@@ -41,7 +41,11 @@ export function PhoneNumbersField({ name = 'phoneNumbers', mode = 'create' }) {
     name,
   });
 
-  const phoneNumbers = watch(name) || [];
+  const watchedPhones = watch(name);
+  const phoneNumbers = useMemo(
+    () => (watchedPhones && Array.isArray(watchedPhones) ? watchedPhones : []),
+    [watchedPhones]
+  );
 
   // Find primary phone index from form state
   const primaryIndexFromForm = useMemo(() => {
@@ -99,7 +103,7 @@ export function PhoneNumbersField({ name = 'phoneNumbers', mode = 'create' }) {
         setSelectedPrimaryIndex(-1);
       }
     },
-    [remove, phoneNumbers.length]
+    [remove, phoneNumbers]
   );
   
   // P0-027 FIX: Use useEffect to handle primary phone update when fields array length decreases
@@ -151,7 +155,7 @@ export function PhoneNumbersField({ name = 'phoneNumbers', mode = 'create' }) {
 
       {fields.length === 0 ? (
         <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic', py: 2 }}>
-          No phone numbers added. Click "Add Phone" to add one.
+          No phone numbers added. Click &quot;Add Phone&quot; to add one.
         </Typography>
       ) : (
         <FormControl component="fieldset" fullWidth>

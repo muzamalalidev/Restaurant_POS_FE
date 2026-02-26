@@ -69,6 +69,7 @@ export const paths = {
     },
     orders: {
       root: `${ROOTS.TENANT}/orders`,
+      list: `${ROOTS.TENANT}/orders/list`,
     },
     tables: {
       root: `${ROOTS.TENANT}/tables`,
@@ -78,6 +79,9 @@ export const paths = {
     },
     kitchens: {
       root: `${ROOTS.TENANT}/kitchens`,
+    },
+    paymentModes: {
+      root: `${ROOTS.TENANT}/payment-modes`,
     },
   },
 };

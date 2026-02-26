@@ -6,17 +6,17 @@ import Box from '@mui/material/Box';
 import Alert from '@mui/material/Alert';
 import { useTheme } from '@mui/material/styles';
 
-import { BreadcrumbsPortalProvider } from 'src/components/custom-breadcrumbs';
 import { useSettingsContext } from 'src/components/settings';
+import { BreadcrumbsPortalProvider } from 'src/components/custom-breadcrumbs';
 
-import { dashboardLayoutVars, dashboardNavColorVars } from './css-vars';
+import { NavHorizontal } from './nav-horizontal';
 import { navData } from '../nav-config-dashboard';
 import { MenuButton } from '../components/menu-button';
 import { SettingsButton } from '../components/settings-button';
 import { Sidebar, useSidebar, SidebarProvider } from '../sidebar';
 import { ModeToggleButton } from '../components/mode-toggle-button';
 import { MainSection, HeaderSection, LayoutSection } from '../core';
-import { NavHorizontal } from './nav-horizontal';
+import { dashboardLayoutVars, dashboardNavColorVars } from './css-vars';
 
 // ----------------------------------------------------------------------
 

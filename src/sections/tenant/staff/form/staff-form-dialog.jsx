@@ -1,21 +1,26 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMediaQuery, useTheme } from '@mui/material';
+import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
+import { useTheme, useMediaQuery } from '@mui/material';
 
+import { getApiErrorMessage } from 'src/utils/api-error-message';
+
+import { createStaffSchema, updateStaffSchema } from 'src/schemas';
+import { useGetBranchesDropdownQuery } from 'src/store/api/branches-api';
+import { useGetStaffTypesDropdownQuery } from 'src/store/api/staff-types-api';
+import { useGetStaffByIdQuery, useCreateStaffMutation, useUpdateStaffMutation } from 'src/store/api/staff-api';
+
+import { toast } from 'src/components/snackbar';
 import { Form, Field } from 'src/components/hook-form';
 import { CustomDialog } from 'src/components/custom-dialog';
+import { QueryStateContent } from 'src/components/query-state-content';
 import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
-import { toast } from 'src/components/snackbar';
-
-import { useGetStaffQuery, useCreateStaffMutation, useUpdateStaffMutation } from 'src/store/api/staff-api';
-import { createStaffSchema, updateStaffSchema } from '../schemas/staff-schema';
 
 // ----------------------------------------------------------------------
 
@@ -24,8 +29,6 @@ import { createStaffSchema, updateStaffSchema } from '../schemas/staff-schema';
  * 
  * Single dialog component for both create and edit operations.
  * Handles form state, validation, and API calls.
- * 
- * Note: Since GetById is a placeholder, we use GetAll to find the staff member by ID.
  * 
  * @param {Object} props
  * @param {boolean} props.open - Whether the dialog is open
@@ -41,31 +44,32 @@ export function StaffFormDialog({ open, mode, staffId, staffData: providedStaffD
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
-  // State for unsaved changes confirmation
   const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] = useState(false);
-
-  // Ref to prevent double submission (immune to React batching)
   const isSubmittingRef = useRef(false);
 
-  // Fetch staff data only if not provided from list view (fallback for backward compatibility)
-  const { data: staffResponse, isLoading: isLoadingStaff } = useGetStaffQuery(
-    { pageSize: 1000 },
-    { skip: !staffId || mode !== 'edit' || !open || !!providedStaffData }
-  );
+  // Fallback: fetch dropdowns when options not provided (e.g. dialog opened without list)
+  const { data: branchesDropdownFallback } = useGetBranchesDropdownQuery(undefined, { skip: branchOptions.length > 0 });
+  const { data: staffTypesDropdownFallback } = useGetStaffTypesDropdownQuery(undefined, { skip: staffTypeOptions.length > 0 });
+  const effectiveBranchOptions = useMemo(() => {
+    if (branchOptions.length > 0) return branchOptions;
+    if (!branchesDropdownFallback || !Array.isArray(branchesDropdownFallback)) return [];
+    return branchesDropdownFallback.map((item) => ({ id: item.key, label: item.value || item.key }));
+  }, [branchOptions, branchesDropdownFallback]);
+  const effectiveStaffTypeOptions = useMemo(() => {
+    if (staffTypeOptions.length > 0) return staffTypeOptions;
+    if (!staffTypesDropdownFallback || !Array.isArray(staffTypesDropdownFallback)) return [];
+    return staffTypesDropdownFallback.map((item) => ({ id: item.key, label: item.value || item.key }));
+  }, [staffTypeOptions, staffTypesDropdownFallback]);
 
-  // Use provided staff data if available, otherwise find from fetched response
-  // Note: If providedStaffData is stale, we'll use fetched data as fallback
+  const { data: fetchedStaff, isLoading: isLoadingStaff, error: queryError, isError: _isError, refetch: _refetchStaff } = useGetStaffByIdQuery(staffId, {
+    skip: !staffId || mode !== 'edit' || !open,
+  });
+
   const staffData = useMemo(() => {
-    // Prefer fetched data if available (more up-to-date)
-    if (staffResponse && staffId && mode === 'edit') {
-      const staff = staffResponse.data || [];
-      const fetchedStaff = staff.find((s) => s.id === staffId);
-      if (fetchedStaff) return fetchedStaff;
-    }
-    // Fallback to provided data
+    if (fetchedStaff) return fetchedStaff;
     if (providedStaffData) return providedStaffData;
     return null;
-  }, [providedStaffData, staffResponse, staffId, mode]);
+  }, [fetchedStaff, providedStaffData]);
 
   // Mutations
   const [createStaff, { isLoading: isCreating }] = useCreateStaffMutation();
@@ -119,7 +123,7 @@ export function StaffFormDialog({ open, mode, staffId, staffData: providedStaffD
         hireDate: null,
         isActive: true,
       });
-      return;
+      return () => {};
     }
 
     // If staff not found in edit mode, close dialog after a short delay
@@ -131,10 +135,9 @@ export function StaffFormDialog({ open, mode, staffId, staffData: providedStaffD
       return () => clearTimeout(timer);
     }
 
-    if (mode === 'edit' && staffData && branchOptions.length > 0 && staffTypeOptions.length > 0) {
-      // Find matching branch and staff type objects from options
-      const matchingBranch = branchOptions.find((b) => b.id === staffData.branchId);
-      const matchingStaffType = staffTypeOptions.find((st) => st.id === staffData.staffTypeId);
+    if (mode === 'edit' && staffData && effectiveBranchOptions.length > 0 && effectiveStaffTypeOptions.length > 0) {
+      const matchingBranch = effectiveBranchOptions.find((b) => b.id === staffData.branchId);
+      const matchingStaffType = effectiveStaffTypeOptions.find((st) => st.id === staffData.staffTypeId);
 
       // Convert hireDate string to Date object if present
       let hireDateValue = null;
@@ -172,8 +175,9 @@ export function StaffFormDialog({ open, mode, staffId, staffData: providedStaffD
         isActive: true,
       });
     }
+    return () => {};
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, mode, staffData?.id, staffData?.branchId, staffData?.staffTypeId, staffData?.firstName, staffData?.lastName, staffData?.email, staffData?.phone, staffData?.address, staffData?.hireDate, staffData?.isActive, branchOptions, staffTypeOptions, reset]);
+  }, [open, mode, staffData?.id, staffData?.branchId, staffData?.staffTypeId, staffData?.firstName, staffData?.lastName, staffData?.email, staffData?.phone, staffData?.address, staffData?.hireDate, staffData?.isActive, effectiveBranchOptions, effectiveStaffTypeOptions, reset]);
 
   // Handle form submit
   const onSubmit = handleSubmit(async (data) => {
@@ -238,33 +242,24 @@ export function StaffFormDialog({ open, mode, staffId, staffData: providedStaffD
       onClose();
     } catch (error) {
       console.error('Failed to save staff member:', error);
-      
-      // Distinguish between network errors and validation errors
-      const isNetworkError = !error?.data && (error?.status === 'FETCH_ERROR' || error?.status === 'TIMEOUT' || error?.status === 'PARSING_ERROR');
-      const isServerError = error?.status >= 500;
-      
-      if (isNetworkError || isServerError) {
-        toast.error(
-          isNetworkError 
-            ? 'Network error. Please check your connection and try again.'
-            : 'Server error. Please try again later.',
-          {
-            action: {
-              label: 'Retry',
-              onClick: () => {
-                // Retry the submission - onSubmit is already wrapped by handleSubmit
-                // Get current form values and resubmit
-                const formValues = methods.getValues();
-                setTimeout(() => {
-                  onSubmit({ preventDefault: () => {}, target: { checkValidity: () => true } });
-                }, 100);
-              },
+      const { message, isRetryable } = getApiErrorMessage(error, {
+        defaultMessage: `Failed to ${mode === 'create' ? 'create' : 'update'} staff member`,
+        notFoundMessage: 'Staff member or branch not found',
+        validationMessage: 'Validation failed. Please check your input.',
+      });
+      if (isRetryable) {
+        toast.error(message, {
+          action: {
+            label: 'Retry',
+            onClick: () => {
+              setTimeout(() => {
+                onSubmit({ preventDefault: () => {}, target: { checkValidity: () => true } });
+              }, 100);
             },
-          }
-        );
+          },
+        });
       } else {
-        // Validation or business rule error
-        toast.error(error?.data?.message || `Failed to ${mode === 'create' ? 'create' : 'update'} staff member`);
+        toast.error(message);
       }
     } finally {
       isSubmittingRef.current = false;
@@ -342,32 +337,18 @@ export function StaffFormDialog({ open, mode, staffId, staffData: providedStaffD
         disableClose={isSubmitting}
         actions={renderActions()}
       >
-        {isLoading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-            <Typography variant="body2" color="text.secondary">
-              Loading staff member data...
-            </Typography>
-          </Box>
-        ) : hasError ? (
-          <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', minHeight: 200, gap: 2 }}>
-            <Typography variant="body1" color="error">
-              Staff Member Not Found
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              This staff member may have been deleted. The dialog will close automatically.
-            </Typography>
-            <Field.Button
-              variant="contained"
-              onClick={() => {
-                reset();
-                onClose();
-              }}
-              sx={{ mt: 2 }}
-            >
-              Close
-            </Field.Button>
-          </Box>
-        ) : (
+        <QueryStateContent
+          isLoading={isLoading}
+          isError={hasError}
+          error={queryError}
+          onRetry={() => { reset(); onClose(); }}
+          loadingMessage="Loading staff member data..."
+          errorTitle="Staff Member Not Found"
+          errorMessageOptions={{
+            defaultMessage: 'This staff member may have been deleted. The dialog will close automatically.',
+            notFoundMessage: 'This staff member may have been deleted. The dialog will close automatically.',
+          }}
+        >
           <Form methods={methods} onSubmit={onSubmit}>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1 }}>
               {/* Basic Information Section */}
@@ -380,7 +361,7 @@ export function StaffFormDialog({ open, mode, staffId, staffData: providedStaffD
                   <Field.Autocomplete
                     name="branchId"
                     label="Branch"
-                    options={branchOptions}
+                    options={effectiveBranchOptions}
                     getOptionLabel={(option) => {
                       if (!option) return '';
                       return option.label || option.name || option.id || '';
@@ -395,7 +376,7 @@ export function StaffFormDialog({ open, mode, staffId, staffData: providedStaffD
                   <Field.Autocomplete
                     name="staffTypeId"
                     label="Staff Type"
-                    options={staffTypeOptions}
+                    options={effectiveStaffTypeOptions}
                     getOptionLabel={(option) => {
                       if (!option) return '';
                       return option.label || option.name || option.id || '';
@@ -484,7 +465,7 @@ export function StaffFormDialog({ open, mode, staffId, staffData: providedStaffD
               </Box>
             </Box>
           </Form>
-        )}
+        </QueryStateContent>
       </CustomDialog>
 
       {/* Unsaved Changes Confirmation Dialog */}

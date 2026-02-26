@@ -1,20 +1,19 @@
 'use client';
 
-import { useMediaQuery, useTheme } from '@mui/material';
-import { useMemo } from 'react';
-
 import Box from '@mui/material/Box';
+import Card from '@mui/material/Card';
+import Stack from '@mui/material/Stack';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
-import Stack from '@mui/material/Stack';
-import Card from '@mui/material/Card';
-
-import { CustomDialog } from 'src/components/custom-dialog';
-import { CustomTable } from 'src/components/custom-table';
-import { Field } from 'src/components/hook-form';
-import { Label } from 'src/components/label';
+import { useTheme, useMediaQuery } from '@mui/material';
 
 import { useGetOrderByIdQuery } from 'src/store/api/orders-api';
+
+import { Label } from 'src/components/label';
+import { CustomTable } from 'src/components/custom-table';
+import { CustomDialog } from 'src/components/custom-dialog';
+import { QueryStateContent } from 'src/components/query-state-content';
+
 import { getOrderStatusLabel, getOrderStatusColor } from '../utils/order-status';
 
 // ----------------------------------------------------------------------
@@ -62,34 +61,21 @@ export function OrderDetailsDialog({ open, orderId, onClose }) {
       fullScreen={isMobile}
       loading={isLoading}
     >
-      {isLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-          <Typography variant="body2" color="text.secondary">
-            Loading order details...
-          </Typography>
-        </Box>
-      ) : isError ? (
-        <Box
-          sx={{
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
-            alignItems: 'center',
-            minHeight: 200,
-            gap: 2,
-          }}
-        >
-          <Typography variant="body1" color="error">
-            Failed to load order details
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {queryError?.data?.message || queryError?.message || 'Order not found or an error occurred.'}
-          </Typography>
-          <Field.Button variant="contained" onClick={() => refetch()} startIcon="solar:refresh-bold" sx={{ mt: 1 }}>
-            Retry
-          </Field.Button>
-        </Box>
-      ) : orderData ? (
+      <QueryStateContent
+        isLoading={isLoading}
+        isError={isError}
+        error={queryError}
+        onRetry={refetch}
+        loadingMessage="Loading order details..."
+        errorTitle="Failed to load order details"
+        errorMessageOptions={{
+          defaultMessage: 'Failed to load order details',
+          notFoundMessage: 'Order not found or an error occurred.',
+        }}
+        isEmpty={!orderData && !isLoading && !isError}
+        emptyMessage="Order not found"
+      >
+        {orderData ? (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1, pb: 3 }}>
           {/* Basic Information */}
           <Box>
@@ -237,9 +223,6 @@ export function OrderDetailsDialog({ open, orderId, onClose }) {
                       }] : []),
                     ]}
                     pagination={{ enabled: false }}
-                    sorting={{ enabled: false }}
-                    filtering={{ enabled: false }}
-                    toolbar={{ show: false }}
                     getRowId={(row) => row.id}
                   />
                 </Card>
@@ -377,13 +360,8 @@ export function OrderDetailsDialog({ open, orderId, onClose }) {
             </>
           )}
         </Box>
-      ) : (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-          <Typography variant="body2" color="text.secondary">
-            Order not found
-          </Typography>
-        </Box>
-      )}
+        ) : null}
+      </QueryStateContent>
     </CustomDialog>
   );
 }

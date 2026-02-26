@@ -1,28 +1,31 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useForm, FormProvider } from 'react-hook-form';
+import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
+import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
-import Stack from '@mui/material/Stack';
 
-import { CustomTable } from 'src/components/custom-table';
-import { Label } from 'src/components/label';
-import { EmptyContent } from 'src/components/empty-content';
-import { toast } from 'src/components/snackbar';
-import { Field } from 'src/components/hook-form';
-import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
-import { Iconify } from 'src/components/iconify';
+import { getApiErrorMessage } from 'src/utils/api-error-message';
 
 import {
   useGetTenantMastersQuery,
   useDeleteTenantMasterMutation,
   useToggleTenantMasterActiveMutation,
 } from 'src/store/api/tenant-masters-api';
+
+import { Label } from 'src/components/label';
+import { toast } from 'src/components/snackbar';
+import { Field } from 'src/components/hook-form';
+import { Iconify } from 'src/components/iconify';
+import { EmptyContent } from 'src/components/empty-content';
+import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
+import { CustomTable, DEFAULT_PAGINATION } from 'src/components/custom-table';
+
 import { TenantMasterFormDialog } from '../form/tenant-master-form-dialog';
 import { TenantMasterDetailsDialog } from '../components/tenant-master-details-dialog';
 import { getActiveStatusLabel, getActiveStatusColor } from '../utils/tenant-master-helpers';
@@ -50,7 +53,7 @@ export function TenantMasterListView() {
   const [deleteTenantMasterName, setDeleteTenantMasterName] = useState(null);
 
   const [pageNumber, setPageNumber] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGINATION.pageSize);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
@@ -130,7 +133,7 @@ export function TenantMasterListView() {
   );
 
   const [deleteTenantMaster, { isLoading: isDeleting }] = useDeleteTenantMasterMutation();
-  const [toggleTenantMasterActive, { isLoading: isTogglingActive }] = useToggleTenantMasterActiveMutation();
+  const [toggleTenantMasterActive, { isLoading: _isTogglingActive }] = useToggleTenantMasterActiveMutation();
   const [togglingTenantMasterId, setTogglingTenantMasterId] = useState(null);
   // P0-004: Ref guard to prevent rapid toggle clicks
   const inFlightIdsRef = useRef(new Set());
@@ -167,7 +170,10 @@ export function TenantMasterListView() {
       setDeleteTenantMasterId(null);
       setDeleteTenantMasterName(null);
     } catch (err) {
-      toast.error(err?.data?.message || err?.data?.detail || 'Failed to delete tenant master');
+      const { message } = getApiErrorMessage(err, {
+        defaultMessage: 'Failed to delete tenant master',
+      });
+      toast.error(message);
     }
   }, [deleteTenantMasterId, deleteTenantMaster]);
 
@@ -181,7 +187,10 @@ export function TenantMasterListView() {
         await toggleTenantMasterActive(id).unwrap();
         toast.success('Tenant master status updated successfully');
       } catch (err) {
-        toast.error(err?.data?.message || err?.data?.detail || 'Failed to update status');
+        const { message } = getApiErrorMessage(err, {
+          defaultMessage: 'Failed to update status',
+        });
+        toast.error(message);
         if (onRevert) onRevert();
       } finally {
         inFlightIdsRef.current.delete(id);
@@ -388,36 +397,22 @@ export function TenantMasterListView() {
         </Stack>
 
         {/* P0-005: show error in table area so search/filters/Create remain; P0-001: sorting disabled */}
-        {error ? (
-          <Card sx={{ p: 6 }}>
-            <EmptyContent
-              title="Error loading tenant masters"
-              description={error?.data?.message || error?.data?.detail || 'An error occurred while loading tenant masters'}
-              action={
-                <Field.Button variant="contained" onClick={() => refetch()} startIcon="solar:refresh-bold">
-                  Retry
-                </Field.Button>
-              }
-            />
-          </Card>
-        ) : (
         <CustomTable
           rows={rows}
           columns={columns}
           loading={isLoading}
           actions={actions}
+          error={error}
+          onRetry={refetch}
+          errorEntityLabel="tenant masters"
           pagination={{
-            enabled: true,
+            ...DEFAULT_PAGINATION,
             mode: 'server',
             pageSize,
-            pageSizeOptions: [10, 25, 50, 100],
             rowCount: paginationMeta.totalCount,
             onPageChange: handlePageChange,
             onPageSizeChange: handlePageSizeChange,
           }}
-          sorting={{ enabled: false }}
-          filtering={{ enabled: false, quickFilter: false }}
-          toolbar={{ show: false }}
           getRowId={(row) => row.id}
           emptyContent={
             <EmptyContent
@@ -428,7 +423,6 @@ export function TenantMasterListView() {
             />
           }
         />
-        )}
         </Card>
 
         <TenantMasterFormDialog

@@ -94,6 +94,14 @@ export const tenantsApi = baseApi.injectEndpoints({
         'Tenant',
       ],
     }),
+
+    getTenantsDropdown: builder.query({
+      query: () => ({
+        url: '/api/tenants/dropdown',
+        method: 'GET',
+      }),
+      providesTags: ['Tenant'],
+    }),
   }),
 });
 
@@ -107,5 +115,6 @@ export const {
   useUpdateTenantMutation,
   useDeleteTenantMutation,
   useToggleTenantActiveMutation,
+  useGetTenantsDropdownQuery,
 } = tenantsApi;
 

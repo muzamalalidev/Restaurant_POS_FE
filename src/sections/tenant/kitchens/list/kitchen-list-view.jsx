@@ -1,41 +1,44 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useForm, FormProvider } from 'react-hook-form';
+import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
+import Stack from '@mui/material/Stack';
+import Alert from '@mui/material/Alert';
+import Switch from '@mui/material/Switch';
+import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
-import Stack from '@mui/material/Stack';
-import Switch from '@mui/material/Switch';
-import Tooltip from '@mui/material/Tooltip';
-import Alert from '@mui/material/Alert';
 
-import { CustomTable } from 'src/components/custom-table';
-import { Label } from 'src/components/label';
-import { EmptyContent } from 'src/components/empty-content';
-import { toast } from 'src/components/snackbar';
-import { Field } from 'src/components/hook-form';
-import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
-import { Iconify } from 'src/components/iconify';
+import { getApiErrorMessage } from 'src/utils/api-error-message';
 
+import { useGetTenantsDropdownQuery } from 'src/store/api/tenants-api';
+import { useGetBranchesDropdownQuery } from 'src/store/api/branches-api';
 import {
   useGetAllKitchensQuery,
   useDeleteKitchenMutation,
   useToggleKitchenActiveMutation,
 } from 'src/store/api/kitchens-api';
-import { useGetTenantsQuery } from 'src/store/api/tenants-api';
-import { useGetBranchesQuery } from 'src/store/api/branches-api';
+
+import { Label } from 'src/components/label';
+import { toast } from 'src/components/snackbar';
+import { Field } from 'src/components/hook-form';
+import { Iconify } from 'src/components/iconify';
+import { EmptyContent } from 'src/components/empty-content';
+import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
+import { CustomTable, DEFAULT_PAGINATION } from 'src/components/custom-table';
+
 import { KitchenFormDialog } from '../form/kitchen-form-dialog';
 import { KitchenDetailsDialog } from '../components/kitchen-details-dialog';
 import {
-  getActiveStatusLabel,
-  getActiveStatusColor,
   canEdit,
   canDelete,
   canToggleActive,
+  getActiveStatusLabel,
+  getActiveStatusColor,
 } from '../utils/kitchen-helpers';
 
 // ----------------------------------------------------------------------
@@ -77,7 +80,7 @@ export function KitchenListView() {
 
   // Pagination state
   const [pageNumber, setPageNumber] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGINATION.pageSize);
 
   // Search state (debounced)
   const [searchTerm, setSearchTerm] = useState('');
@@ -187,34 +190,21 @@ export function KitchenListView() {
     }
   }, [watchedBranchId, branchId, tenantFilterForm]);
 
-  // Fetch tenants for dropdown (P0-003/P1-004: limit 200)
-  const { data: tenantsResponse } = useGetTenantsQuery({ pageSize: 200 });
-  const tenantOptions = useMemo(() => {
-    if (!tenantsResponse) return [];
-    const tenants = tenantsResponse.data || [];
-    return tenants.map((tenant) => ({
-      id: tenant.id,
-      label: tenant.name || tenant.id,
-    }));
-  }, [tenantsResponse]);
-
-  // Fetch branches for dropdown (filtered by selected tenant if tenant is selected and branch is not)
   const selectedTenantId = getTenantId(tenantId);
-  const { data: branchesResponse } = useGetBranchesQuery(
-    {
-      tenantId: selectedTenantId || undefined,
-      pageSize: 200,
-    },
+  const { data: tenantsDropdown } = useGetTenantsDropdownQuery();
+  const tenantOptions = useMemo(() => {
+    if (!tenantsDropdown || !Array.isArray(tenantsDropdown)) return [];
+    return tenantsDropdown.map((item) => ({ id: item.key, label: item.value || item.key }));
+  }, [tenantsDropdown]);
+
+  const { data: branchesDropdown } = useGetBranchesDropdownQuery(
+    { tenantId: selectedTenantId || undefined },
     { skip: false }
   );
   const branchOptions = useMemo(() => {
-    if (!branchesResponse) return [];
-    const branches = branchesResponse.data || [];
-    return branches.map((branch) => ({
-      id: branch.id,
-      label: branch.name || branch.id,
-    }));
-  }, [branchesResponse]);
+    if (!branchesDropdown || !Array.isArray(branchesDropdown)) return [];
+    return branchesDropdown.map((item) => ({ id: item.key, label: item.value || item.key }));
+  }, [branchesDropdown]);
 
   // Debounce search term
   useEffect(() => {
@@ -349,20 +339,11 @@ export function KitchenListView() {
       setDeleteKitchenId(null);
       setDeleteKitchenName(null);
     } catch (err) {
-      const errorStatus = err?.status || err?.data?.status;
-      let errorMessage;
-
-      if (errorStatus === 404) {
-        errorMessage = err?.data?.message || 'Kitchen not found';
-      } else if (errorStatus >= 500) {
-        errorMessage = 'Server error. Please try again later.';
-      } else if (!navigator.onLine) {
-        errorMessage = 'Network error. Please check your connection.';
-      } else {
-        errorMessage = err?.data?.message || 'Failed to delete kitchen';
-      }
-
-      toast.error(errorMessage);
+      const { message } = getApiErrorMessage(err, {
+        defaultMessage: 'Failed to delete kitchen',
+        notFoundMessage: 'Kitchen not found',
+      });
+      toast.error(message);
       console.error('Failed to delete kitchen:', err);
     }
   }, [deleteKitchenId, deleteKitchen]);
@@ -376,20 +357,11 @@ export function KitchenListView() {
       await toggleKitchenActive(kitchenId).unwrap();
       toast.success('Kitchen status updated successfully');
     } catch (err) {
-      const errorStatus = err?.status || err?.data?.status;
-      let errorMessage;
-
-      if (errorStatus === 404) {
-        errorMessage = err?.data?.message || 'Kitchen not found';
-      } else if (errorStatus >= 500) {
-        errorMessage = 'Server error. Please try again later.';
-      } else if (!navigator.onLine) {
-        errorMessage = 'Network error. Please check your connection.';
-      } else {
-        errorMessage = err?.data?.message || 'Failed to update kitchen status';
-      }
-
-      toast.error(errorMessage);
+      const { message } = getApiErrorMessage(err, {
+        defaultMessage: 'Failed to update kitchen status',
+        notFoundMessage: 'Kitchen not found',
+      });
+      toast.error(message);
       console.error('Failed to toggle kitchen active status:', err);
     } finally {
       inFlightIdsRef.current.delete(kitchenId);
@@ -430,13 +402,10 @@ export function KitchenListView() {
   }, [searchForm]);
 
   // Check if both tenant and branch are selected (show warning)
-  const showPrecedenceWarning = useMemo(() => {
-    return !!getId(branchId) && !!getTenantId(tenantId);
-  }, [branchId, tenantId, getTenantId]);
+  const showPrecedenceWarning = useMemo(() => !!getId(branchId) && !!getTenantId(tenantId), [branchId, tenantId, getTenantId]);
 
   // Prepare table rows
-  const rows = useMemo(() => {
-    return kitchens.map((kitchen) => ({
+  const rows = useMemo(() => kitchens.map((kitchen) => ({
       id: kitchen.id,
       name: kitchen.name,
       tenantName: getTenantName(kitchen.tenantId),
@@ -444,8 +413,7 @@ export function KitchenListView() {
       description: kitchen.description || '-',
       location: kitchen.location || '-',
       isActive: kitchen.isActive,
-    }));
-  }, [kitchens, getTenantName, getBranchName]);
+    })), [kitchens, getTenantName, getBranchName]);
 
   // Define columns
   const columns = useMemo(
@@ -697,40 +665,21 @@ export function KitchenListView() {
         </Card>
 
         {/* Table - P0-005: show error in table area so filters/Create remain; P0-001: sorting disabled with server pagination */}
-        {error ? (
-          <Card sx={{ p: 6 }}>
-            <EmptyContent
-              title="Error loading kitchens"
-              description={error?.data?.message || 'An error occurred while loading kitchens'}
-              action={
-                <Field.Button variant="contained" onClick={() => refetch()} startIcon="solar:refresh-bold">
-                  Retry
-                </Field.Button>
-              }
-            />
-          </Card>
-        ) : (
         <CustomTable
           rows={rows}
           columns={columns}
           loading={isLoading || isFetching}
           actions={actions}
+          error={error}
+          onRetry={refetch}
+          errorEntityLabel="kitchens"
           pagination={{
-            enabled: true,
+            ...DEFAULT_PAGINATION,
             mode: 'server',
             pageSize,
-            pageSizeOptions: [10, 25, 50, 100],
             rowCount: paginationMeta.totalCount,
             onPageChange: handlePageChange,
             onPageSizeChange: handlePageSizeChange,
-          }}
-          sorting={{ enabled: false }}
-          filtering={{
-            enabled: false,
-            quickFilter: false,
-          }}
-          toolbar={{
-            show: false,
           }}
           getRowId={(row) => row.id}
           emptyContent={
@@ -744,7 +693,6 @@ export function KitchenListView() {
             />
           }
         />
-        )}
       </Card>
 
       {/* Form Dialog */}
@@ -754,6 +702,7 @@ export function KitchenListView() {
         kitchenId={formDialogKitchenId}
         onClose={handleFormClose}
         onSuccess={handleFormSuccess}
+        tenantOptions={tenantOptions}
       />
 
       {/* Details Dialog */}

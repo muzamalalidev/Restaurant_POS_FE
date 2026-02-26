@@ -1,46 +1,48 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useForm, FormProvider } from 'react-hook-form';
+import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
-import Typography from '@mui/material/Typography';
-import IconButton from '@mui/material/IconButton';
-import InputAdornment from '@mui/material/InputAdornment';
 import Stack from '@mui/material/Stack';
 import Switch from '@mui/material/Switch';
 import Tooltip from '@mui/material/Tooltip';
-import MenuItem from '@mui/material/MenuItem';
+import Typography from '@mui/material/Typography';
+import IconButton from '@mui/material/IconButton';
+import InputAdornment from '@mui/material/InputAdornment';
 
-import { CustomTable } from 'src/components/custom-table';
-import { Label } from 'src/components/label';
-import { EmptyContent } from 'src/components/empty-content';
-import { toast } from 'src/components/snackbar';
-import { Field } from 'src/components/hook-form';
-import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
-import { Iconify } from 'src/components/iconify';
+import { getApiErrorMessage } from 'src/utils/api-error-message';
 
+import { useGetTenantsDropdownQuery } from 'src/store/api/tenants-api';
+import { useGetBranchesDropdownQuery } from 'src/store/api/branches-api';
 import {
   useGetAllStockDocumentsQuery,
   useDeleteStockDocumentMutation,
   useToggleStockDocumentActiveMutation,
 } from 'src/store/api/stock-documents-api';
-import { useGetTenantsQuery } from 'src/store/api/tenants-api';
-import { useGetBranchesQuery } from 'src/store/api/branches-api';
+
+import { Label } from 'src/components/label';
+import { toast } from 'src/components/snackbar';
+import { Field } from 'src/components/hook-form';
+import { Iconify } from 'src/components/iconify';
+import { EmptyContent } from 'src/components/empty-content';
+import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
+import { CustomTable, DEFAULT_PAGINATION } from 'src/components/custom-table';
+
 import { StockDocumentFormDialog } from '../form/stock-document-form-dialog';
-import { StockDocumentDetailsDialog } from '../components/stock-document-details-dialog';
 import { PostStockDocumentDialog } from '../components/post-stock-document-dialog';
+import { StockDocumentDetailsDialog } from '../components/stock-document-details-dialog';
 import {
-  getDocumentTypeLabel,
-  getDocumentTypeColor,
+  canEdit,
+  canPost,
+  canDelete,
   getStatusLabel,
   getStatusColor,
-  DOCUMENT_TYPE_OPTIONS,
   STATUS_OPTIONS,
-  canEdit,
-  canDelete,
-  canPost,
+  getDocumentTypeLabel,
+  getDocumentTypeColor,
+  DOCUMENT_TYPE_OPTIONS,
 } from '../utils/stock-document-helpers';
 
 // ----------------------------------------------------------------------
@@ -102,7 +104,7 @@ export function StockDocumentsListView() {
 
   // Pagination state
   const [pageNumber, setPageNumber] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGINATION.pageSize);
 
   // Search state (debounced)
   const [searchTerm, setSearchTerm] = useState('');
@@ -282,36 +284,19 @@ export function StockDocumentsListView() {
     }
   }, [watchedDocumentType, documentType, getId]);
 
-  // Fetch tenants for dropdown (P0-003: limit to 200 for scale)
-  const { data: tenantsResponse } = useGetTenantsQuery({
-    pageSize: 200,
-  });
-
-  // Fetch branches for dropdown (filtered by tenant) (P0-003: limit to 200)
-  const { data: branchesResponse } = useGetBranchesQuery({
-    tenantId: getId(tenantId) || undefined,
-    pageSize: 200,
-  });
-
-  // Tenant options for dropdown
+  const { data: tenantsDropdown } = useGetTenantsDropdownQuery();
   const tenantOptions = useMemo(() => {
-    if (!tenantsResponse) return [];
-    const tenants = tenantsResponse.data || [];
-    return tenants.map((tenant) => ({
-      id: tenant.id,
-      label: tenant.name || tenant.id,
-    }));
-  }, [tenantsResponse]);
+    if (!tenantsDropdown || !Array.isArray(tenantsDropdown)) return [];
+    return tenantsDropdown.map((item) => ({ id: item.key, label: item.value || item.key }));
+  }, [tenantsDropdown]);
 
-  // Branch options for dropdown (filtered by tenant)
+  const { data: branchesDropdown } = useGetBranchesDropdownQuery({
+    tenantId: getId(tenantId) || undefined,
+  });
   const branchOptions = useMemo(() => {
-    if (!branchesResponse) return [];
-    const branches = branchesResponse.data || [];
-    return branches.map((branch) => ({
-      id: branch.id,
-      label: branch.name || branch.id,
-    }));
-  }, [branchesResponse]);
+    if (!branchesDropdown || !Array.isArray(branchesDropdown)) return [];
+    return branchesDropdown.map((item) => ({ id: item.key, label: item.value || item.key }));
+  }, [branchesDropdown]);
 
   // Debounce search term
   useEffect(() => {
@@ -428,10 +413,12 @@ export function StockDocumentsListView() {
       try {
         await toggleStockDocumentActive(documentId).unwrap();
         toast.success(`Document ${currentIsActive ? 'deactivated' : 'activated'} successfully`);
-      } catch (error) {
-        console.error('Failed to toggle document active status:', error);
-        const errorMessage = error?.data?.message || error?.data || error?.message || 'Failed to toggle document active status';
-        toast.error(errorMessage);
+      } catch (err) {
+        console.error('Failed to toggle document active status:', err);
+        const { message } = getApiErrorMessage(err, {
+          defaultMessage: 'Failed to toggle document active status',
+        });
+        toast.error(message);
       } finally {
         togglingIdsRef.current.delete(documentId);
         setTogglingDocumentId(null);
@@ -498,10 +485,12 @@ export function StockDocumentsListView() {
       setDeleteDocumentId(null);
       setDeleteDocumentIdDisplay(null);
       refetch();
-    } catch (error) {
-      console.error('Failed to delete stock document:', error);
-      const errorMessage = error?.data?.message || error?.data || error?.message || 'Failed to delete stock document';
-      toast.error(errorMessage);
+    } catch (err) {
+      console.error('Failed to delete stock document:', err);
+      const { message } = getApiErrorMessage(err, {
+        defaultMessage: 'Failed to delete stock document',
+      });
+      toast.error(message);
     }
   }, [deleteDocumentId, deleteStockDocument, refetch]);
 
@@ -812,7 +801,6 @@ export function StockDocumentsListView() {
               <EmptyContent
                 title="Select Filters"
                 description="Please select both Tenant and Branch to view stock documents."
-                imgUrl="/assets/icons/empty/ic-empty-folder.svg"
               />
             </Card>
           ) : isLoading ? (
@@ -820,39 +808,20 @@ export function StockDocumentsListView() {
               <EmptyContent
                 title="Loading..."
                 description="Loading stock documents..."
-                imgUrl="/assets/icons/empty/ic-empty-folder.svg"
-              />
-            </Card>
-          ) : error ? (
-            <Card sx={{ p: 6 }}>
-              <EmptyContent
-                title="Error"
-                description={error?.data?.message || error?.message || 'Failed to load stock documents'}
-                imgUrl="/assets/icons/empty/ic-empty-folder.svg"
-                action={
-                  <Field.Button variant="contained" startIcon="solar:refresh-bold" onClick={() => refetch()}>
-                    Retry
-                  </Field.Button>
-                }
-              />
-            </Card>
-          ) : rows.length === 0 ? (
-            <Card sx={{ p: 6 }}>
-              <EmptyContent
-                title="No Documents Found"
-                description="No stock documents found matching your filters."
-                imgUrl="/assets/icons/empty/ic-empty-folder.svg"
               />
             </Card>
           ) : (
             <CustomTable
               rows={rows}
               columns={columns}
+              loading={isLoading}
+              error={error}
+              onRetry={refetch}
+              errorEntityLabel="stock documents"
               pagination={{
-                enabled: true,
+                ...DEFAULT_PAGINATION,
                 mode: 'server',
                 pageSize,
-                pageSizeOptions: [10, 25, 50, 100],
                 rowCount: paginationMeta.totalCount,
                 onPageChange: (newPage) => setPageNumber(newPage + 1),
                 onPageSizeChange: (newPageSize) => {
@@ -860,10 +829,17 @@ export function StockDocumentsListView() {
                   setPageNumber(1);
                 },
               }}
-              sorting={{ enabled: false }}
-              filtering={{ enabled: false }}
-              toolbar={{ show: true }}
               getRowId={(row) => row.id}
+              emptyContent={
+                <EmptyContent
+                  title="No stock documents found"
+                  description={
+                    searchTerm || tenantId || branchId || status || documentType
+                      ? "Try adjusting your search or filter criteria"
+                      : "Get started by creating a new stock document"
+                  }
+                />
+              }
             />
           )}
         </Stack>
@@ -876,6 +852,7 @@ export function StockDocumentsListView() {
         documentId={formDialogDocumentId}
         onClose={() => setFormDialogOpen(false)}
         onSuccess={handleFormDialogSuccess}
+        tenantOptions={tenantOptions}
       />
 
       {/* Details Dialog */}

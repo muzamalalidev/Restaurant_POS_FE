@@ -6,19 +6,19 @@ export const DEFAULT_PAGINATION = {
   enabled: true,
   mode: 'client',
   pageSize: 10,
-  pageSizeOptions: [5, 10, 20, 50, 100],
+  pageSizeOptions: [10, 25, 50, 100],
 };
 
 export const DEFAULT_SORTING = {
-  enabled: true,
+  enabled: false,
   mode: 'client',
   disableMultipleColumns: false,
 };
 
 export const DEFAULT_FILTERING = {
-  enabled: true,
+  enabled: false,
   mode: 'client',
-  quickFilter: true,
+  quickFilter: false,
   disableMultipleColumns: false,
 };
 
@@ -29,8 +29,8 @@ export const DEFAULT_SELECTION = {
 };
 
 export const DEFAULT_TOOLBAR = {
-  show: true,
-  quickFilter: true,
+  show: false,
+  quickFilter: false,
   export: false,
   columns: true,
   filter: true,

@@ -4,14 +4,14 @@ import { CONFIG } from 'src/global-config';
 
 // ----------------------------------------------------------------------
 
-const OrderListView = createLazyView(
-  () => import('src/sections/tenant/orders/list/order-list-view'),
-  'OrderListView'
+const PosOrderView = createLazyView(
+  () => import('src/sections/tenant/orders/pos/pos-order-view'),
+  'PosOrderView'
 );
 
-export const metadata = { title: `Orders - ${CONFIG.appName}` };
+export const metadata = { title: `POS - ${CONFIG.appName}` };
 
 export default function Page() {
-  return <OrderListView />;
+  return <PosOrderView />;
 }
 

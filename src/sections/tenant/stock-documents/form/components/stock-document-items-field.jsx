@@ -1,13 +1,13 @@
 'use client';
 
-import { useCallback, useMemo } from 'react';
+import { useMemo, useCallback } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
 
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
+import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
-import Stack from '@mui/material/Stack';
 
 import { Iconify } from 'src/components/iconify';
 import { Field } from 'src/components/hook-form';
@@ -27,7 +27,11 @@ export function StockDocumentItemsField({ name = 'items', itemOptions = [] }) {
     name,
   });
 
-  const items = watch(name) || [];
+  const watchedItems = watch(name);
+  const items = useMemo(
+    () => (watchedItems && Array.isArray(watchedItems) ? watchedItems : []),
+    [watchedItems]
+  );
 
   // Calculate subtotal for each item
   const calculateSubtotal = useCallback((index) => {
@@ -39,9 +43,7 @@ export function StockDocumentItemsField({ name = 'items', itemOptions = [] }) {
   }, [items]);
 
   // Calculate total subtotal
-  const totalSubtotal = useMemo(() => {
-    return items.reduce((sum, _, index) => sum + calculateSubtotal(index), 0);
-  }, [items, calculateSubtotal]);
+  const totalSubtotal = useMemo(() => items.reduce((sum, _, index) => sum + calculateSubtotal(index), 0), [items, calculateSubtotal]);
 
   // Handle add item
   const handleAdd = useCallback(() => {
@@ -75,9 +77,7 @@ export function StockDocumentItemsField({ name = 'items', itemOptions = [] }) {
   );
 
   // Filter items to active and available only
-  const filteredItemOptions = useMemo(() => {
-    return itemOptions.filter((item) => item.isActive && item.isAvailable);
-  }, [itemOptions]);
+  const filteredItemOptions = useMemo(() => itemOptions.filter((item) => item.isActive && item.isAvailable), [itemOptions]);
 
   return (
     <Box>
@@ -97,7 +97,7 @@ export function StockDocumentItemsField({ name = 'items', itemOptions = [] }) {
       {fields.length === 0 ? (
         <Card sx={{ p: 3, textAlign: 'center' }}>
           <Typography variant="body2" color="text.secondary">
-            No items added. Click "Add Item" to add items to this document.
+            No items added. Click &quot;Add Item&quot; to add items to this document.
           </Typography>
         </Card>
       ) : (
@@ -248,9 +248,6 @@ export function StockDocumentItemsField({ name = 'items', itemOptions = [] }) {
               },
             ]}
             pagination={{ enabled: false }}
-            sorting={{ enabled: false }}
-            filtering={{ enabled: false }}
-            toolbar={{ show: false }}
             getRowId={(row) => row.id}
           />
 

@@ -44,7 +44,21 @@ Multi-tenant isolation is non-negotiable.
 
 ---
 
-# BEFORE Implementation
+# LINTER STANDARDS (MANDATORY)
+
+For EVERY task, follow project linter rules so that no new linter issues are introduced and none need to be fixed later.
+
+Rules:
+
+- Adhere to the project's ESLint (and any other lint) configuration for every file you create or edit.
+- Before considering a task complete, ensure all touched files pass the linter with zero new errors or warnings.
+- If you introduce a lint issue, fix it in the same change; do not leave linter fixes for later.
+- When editing a file, preserve or improve existing lint compliance (e.g. no unused variables, consistent quotes, correct hook dependencies).
+- Run or rely on the project's lint command (e.g. `npm run lint` or IDE diagnostics) on changed paths to verify.
+
+Goal: No new linter issues during the task; no follow-up work required to satisfy the linter.
+
+---
 
 1. Restate the business goal briefly
 2. Identify:
@@ -168,6 +182,89 @@ Rules:
 - If enhancement needed → modify shared component.
 - Never fork or duplicate table logic.
 
+### List-view error handling (MANDATORY)
+
+When the list is driven by an RTK Query (or similar) that can error, pass the query error and retry into CustomTable so error UI is consistent and uses getApiErrorMessage internally.
+
+On every CustomTable used for a list view that fetches list data:
+
+- Pass `error={error}` (the query error from useGetXQuery or equivalent).
+- Pass `onRetry={refetch}` (the query refetch function).
+- Pass `errorEntityLabel="<entity>"` (plural or label used in the title, e.g. "items", "tenants", "recipes", "payment modes").
+
+Example:
+
+```jsx
+<CustomTable
+  rows={rows}
+  columns={columns}
+  loading={isLoading}
+  actions={actions}
+  error={error}
+  onRetry={refetch}
+  errorEntityLabel="items"
+  pagination={{ ... }}
+  emptyContent={...}
+/>
+```
+
+Rules:
+
+- Do NOT render a separate list error UI in list views (no early return with EmptyContent, no `error ? (Card + EmptyContent) : (CustomTable)`). CustomTable shows error in the table area when `error` is set and keeps search/filters/Create visible (inline error UX).
+- Do NOT inline error message logic (e.g. `error?.data?.message || 'An error occurred...'`) in list views; CustomTable uses getApiErrorMessage(error, { defaultMessage }) and shows Retry only when isRetryable.
+- If the list view has a prerequisite state (e.g. "Select a branch"), keep that as a separate branch (e.g. Card with EmptyContent); pass error/onRetry/errorEntityLabel to CustomTable for the data-fetch error only.
+
+---
+
+## API ERROR MESSAGE (MANDATORY)
+
+All RTK Query / API error handling (list views, form dialogs, details dialogs) MUST use the shared helper:
+
+import { getApiErrorMessage } from 'src/utils/api-error-message';
+
+Rules:
+
+- Do NOT inline error status checks (404, 500, offline, FETCH_ERROR) in catch blocks or query error UI.
+- Use getApiErrorMessage(err, { defaultMessage, notFoundMessage?, validationMessage? }) for mutation catch and query error display.
+- Use the returned message for toast or in-dialog error text; use isRetryable when showing a Retry action.
+- If new error scenarios are needed, extend src/utils/api-error-message.js; never duplicate logic in features.
+- **List views:** Do not render list-fetch error UI in the list view; pass `error`, `onRetry`, and `errorEntityLabel` to CustomTable (see TABLE / GRID RULE → List-view error handling). CustomTable uses getApiErrorMessage internally for list errors.
+
+---
+
+## QUERY STATE CONTENT (MANDATORY)
+
+Dialog content that depends on API data (details dialogs, form dialogs in edit mode) MUST use the shared wrapper for loading, error, empty, and success states:
+
+import { QueryStateContent } from 'src/components/query-state-content';
+
+Use for:
+
+- Details dialogs: loading, error (with Retry), optional empty (e.g. "not found"), then content.
+- Form dialogs (edit mode): loading, error (with Retry), then form. Create mode: no wrapper needed (no fetch).
+
+Rules:
+
+- Do NOT duplicate inline loading/error UI (Box + Typography + Retry button) in dialog content. Use QueryStateContent.
+- Pass a single `isLoading` (caller may combine multiple APIs, e.g. main entity + dropdowns).
+- Pass `error` and `errorMessageOptions` (defaultMessage, notFoundMessage?, validationMessage?) so the wrapper uses getApiErrorMessage internally. Do NOT inline getApiErrorMessage in dialog body for these states.
+- Pass `onRetry` (e.g. refetch from the query) when the user should be able to retry; omit when no retry is appropriate.
+- For details dialogs, set `isEmpty` and `emptyMessage` when the entity is missing after a successful response (e.g. "not found").
+- Loading UI: default is skeleton (reduces layout shift). Use `loadingVariant="spinner"` or `loadingNode` only when needed.
+- If enhancement is needed (e.g. new loading variant), extend src/components/query-state-content; do not fork in features.
+
+
+All form validation MUST use centralized schemas from:
+
+import { createBranchSchema, updateBranchSchema } from 'src/schemas';
+// or other createXSchema / updateXSchema from src/schemas
+
+Rules:
+
+- Do NOT define validation schemas in section-level files (e.g. src/sections/**/schemas/*-schema.js).
+- Do NOT use raw Zod without the shared builders from src/schemas/fields.js and src/schemas/phone.js where applicable.
+- Import create/update (and other) schemas from `src/schemas` or `src/schemas/<entity>`; domain schemas live under src/schemas and compose from fields.js and phone.js only.
+
 ---
 
 ## DIALOG USAGE & UX DECISION RULE (MANDATORY)
@@ -250,6 +347,7 @@ Never create separate Add/Edit form components.
 - Avoid unnecessary re-renders
 - Avoid memory-heavy client components
 - Follow RTK Query best practices (tagTypes + invalidation)
+- Follow linter standards on every edit; fix any new lint errors or warnings immediately—do not defer
 
 ---
 
@@ -267,6 +365,7 @@ Perform internal QA simulation:
 8. Tenant isolation test  
 9. Role permission test  
 10. Large dataset grid test (50k+ records)  
+11. Lint check: ensure no new linter errors or warnings on changed files
 
 Provide:
 
@@ -309,3 +408,4 @@ Provide:
 - Use heavy grids inside checkout
 - Duplicate shared components
 - Create separate Add/Edit pages unnecessarily
+- Leave linter errors or warnings to fix later; fix them within the same task

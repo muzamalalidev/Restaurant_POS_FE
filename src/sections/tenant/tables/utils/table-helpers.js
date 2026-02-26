@@ -3,9 +3,7 @@
 /**
  * Get availability label
  */
-export const getAvailabilityLabel = (isAvailable) => {
-  return isAvailable ? 'Available' : 'Unavailable';
-};
+export const getAvailabilityLabel = (isAvailable) => isAvailable ? 'Available' : 'Unavailable';
 
 // ----------------------------------------------------------------------
 
@@ -13,18 +11,14 @@ export const getAvailabilityLabel = (isAvailable) => {
  * Get availability color for badge
  * Returns MUI color variant based on availability status
  */
-export const getAvailabilityColor = (isAvailable) => {
-  return isAvailable ? 'success' : 'error';
-};
+export const getAvailabilityColor = (isAvailable) => isAvailable ? 'success' : 'error';
 
 // ----------------------------------------------------------------------
 
 /**
  * Get active status label
  */
-export const getActiveStatusLabel = (isActive) => {
-  return isActive ? 'Active' : 'Inactive';
-};
+export const getActiveStatusLabel = (isActive) => isActive ? 'Active' : 'Inactive';
 
 // ----------------------------------------------------------------------
 
@@ -32,9 +26,7 @@ export const getActiveStatusLabel = (isActive) => {
  * Get active status color for badge
  * Returns MUI color variant based on active status
  */
-export const getActiveStatusColor = (isActive) => {
-  return isActive ? 'success' : 'default';
-};
+export const getActiveStatusColor = (isActive) => isActive ? 'success' : 'default';
 
 // ----------------------------------------------------------------------
 
@@ -42,9 +34,7 @@ export const getActiveStatusColor = (isActive) => {
  * Check if table can be edited
  * Only active tables can be edited
  */
-export const canEdit = (isActive) => {
-  return isActive === true;
-};
+export const canEdit = (isActive) => isActive === true;
 
 // ----------------------------------------------------------------------
 
@@ -52,9 +42,7 @@ export const canEdit = (isActive) => {
  * Check if table can be deleted
  * Only active tables can be deleted
  */
-export const canDelete = (isActive) => {
-  return isActive === true;
-};
+export const canDelete = (isActive) => isActive === true;
 
 // ----------------------------------------------------------------------
 
@@ -62,7 +50,5 @@ export const canDelete = (isActive) => {
  * Check if table can be released
  * Only unavailable tables can be released
  */
-export const canRelease = (isAvailable) => {
-  return isAvailable === false;
-};
+export const canRelease = (isAvailable) => isAvailable === false;
 

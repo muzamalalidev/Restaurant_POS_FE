@@ -1,42 +1,44 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useForm, FormProvider } from 'react-hook-form';
+import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
+import Stack from '@mui/material/Stack';
+import Switch from '@mui/material/Switch';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
-import Stack from '@mui/material/Stack';
-import Switch from '@mui/material/Switch';
-import Tooltip from '@mui/material/Tooltip';
 
-import { CustomTable } from 'src/components/custom-table';
-import { Label } from 'src/components/label';
-import { EmptyContent } from 'src/components/empty-content';
-import { toast } from 'src/components/snackbar';
-import { Field } from 'src/components/hook-form';
-import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
-import { Iconify } from 'src/components/iconify';
+import { getApiErrorMessage } from 'src/utils/api-error-message';
 
+import { useGetBranchesDropdownQuery } from 'src/store/api/branches-api';
 import {
   useGetAllTablesQuery,
   useDeleteTableMutation,
   useReleaseTableMutation,
   useToggleTableActiveMutation,
 } from 'src/store/api/tables-api';
-import { useGetBranchesQuery } from 'src/store/api/branches-api';
+
+import { Label } from 'src/components/label';
+import { toast } from 'src/components/snackbar';
+import { Field } from 'src/components/hook-form';
+import { Iconify } from 'src/components/iconify';
+import { EmptyContent } from 'src/components/empty-content';
+import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
+import { CustomTable, DEFAULT_PAGINATION } from 'src/components/custom-table';
+
 import { TableFormDialog } from '../form/table-form-dialog';
 import { TableDetailsDialog } from '../components/table-details-dialog';
 import {
+  canEdit,
+  canDelete,
+  canRelease,
   getAvailabilityLabel,
   getAvailabilityColor,
   getActiveStatusLabel,
   getActiveStatusColor,
-  canEdit,
-  canDelete,
-  canRelease,
 } from '../utils/table-helpers';
 
 // ----------------------------------------------------------------------
@@ -79,7 +81,7 @@ export function TableListView() {
 
   // Pagination state
   const [pageNumber, setPageNumber] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGINATION.pageSize);
 
   // Search state (debounced)
   const [searchTerm, setSearchTerm] = useState('');
@@ -139,20 +141,11 @@ export function TableListView() {
     }
   }, [watchedBranchId, branchId]);
 
-  // Fetch branches for dropdown (P0-003: limit to 200 for scale)
-  const { data: branchesResponse } = useGetBranchesQuery({
-    pageSize: 200,
-  });
-
-  // Branch options for dropdown
+  const { data: branchesDropdown } = useGetBranchesDropdownQuery();
   const branchOptions = useMemo(() => {
-    if (!branchesResponse) return [];
-    const branches = branchesResponse.data || [];
-    return branches.map((branch) => ({
-      id: branch.id,
-      label: branch.name || branch.id,
-    }));
-  }, [branchesResponse]);
+    if (!branchesDropdown || !Array.isArray(branchesDropdown)) return [];
+    return branchesDropdown.map((item) => ({ id: item.key, label: item.value || item.key }));
+  }, [branchesDropdown]);
 
   // Debounce search term
   useEffect(() => {
@@ -165,9 +158,7 @@ export function TableListView() {
   }, [searchTerm]);
 
   // Check if required filters are present
-  const hasRequiredFilters = useMemo(() => {
-    return !!getId(branchId);
-  }, [branchId]);
+  const hasRequiredFilters = useMemo(() => !!getId(branchId), [branchId]);
 
   // Fetch tables with pagination and search params
   const queryParams = useMemo(
@@ -214,8 +205,8 @@ export function TableListView() {
 
   // Mutations
   const [deleteTable] = useDeleteTableMutation();
-  const [releaseTable, { isLoading: isReleasing }] = useReleaseTableMutation();
-  const [toggleTableActive, { isLoading: isTogglingActive }] = useToggleTableActiveMutation();
+  const [releaseTable, { isLoading: _isReleasing }] = useReleaseTableMutation();
+  const [toggleTableActive, { isLoading: _isTogglingActive }] = useToggleTableActiveMutation();
 
   // Track which table is being released or toggled
   const [releasingTableId, setReleasingTableId] = useState(null);
@@ -265,20 +256,11 @@ export function TableListView() {
       setDeleteTableId(null);
       setDeleteTableNumber(null);
     } catch (err) {
-      const errorStatus = err?.status || err?.data?.status;
-      let errorMessage;
-      
-      if (errorStatus === 404) {
-        errorMessage = err?.data?.message || 'Table not found';
-      } else if (errorStatus >= 500) {
-        errorMessage = 'Server error. Please try again later.';
-      } else if (!navigator.onLine) {
-        errorMessage = 'Network error. Please check your connection.';
-      } else {
-        errorMessage = err?.data?.message || 'Failed to delete table';
-      }
-      
-      toast.error(errorMessage);
+      const { message } = getApiErrorMessage(err, {
+        defaultMessage: 'Failed to delete table',
+        notFoundMessage: 'Table not found',
+      });
+      toast.error(message);
       console.error('Failed to delete table:', err);
     }
   }, [deleteTableId, deleteTable]);
@@ -292,22 +274,11 @@ export function TableListView() {
       await releaseTable(tableId).unwrap();
       toast.success('Table released successfully');
     } catch (err) {
-      const errorStatus = err?.status || err?.data?.status;
-      let errorMessage;
-      
-      if (errorStatus === 404) {
-        errorMessage = err?.data?.message || 'Table not found';
-      } else if (errorStatus === 400) {
-        errorMessage = err?.data?.message || 'Table is already available';
-      } else if (errorStatus >= 500) {
-        errorMessage = 'Server error. Please try again later.';
-      } else if (!navigator.onLine) {
-        errorMessage = 'Network error. Please check your connection.';
-      } else {
-        errorMessage = err?.data?.message || 'Failed to release table';
-      }
-      
-      toast.error(errorMessage);
+      const { message } = getApiErrorMessage(err, {
+        defaultMessage: 'Failed to release table',
+        notFoundMessage: 'Table not found',
+      });
+      toast.error(message);
       console.error('Failed to release table:', err);
     } finally {
       inFlightIdsRef.current.delete(`release:${tableId}`);
@@ -324,20 +295,11 @@ export function TableListView() {
       await toggleTableActive(tableId).unwrap();
       toast.success('Table status updated successfully');
     } catch (err) {
-      const errorStatus = err?.status || err?.data?.status;
-      let errorMessage;
-      
-      if (errorStatus === 404) {
-        errorMessage = err?.data?.message || 'Table not found';
-      } else if (errorStatus >= 500) {
-        errorMessage = 'Server error. Please try again later.';
-      } else if (!navigator.onLine) {
-        errorMessage = 'Network error. Please check your connection.';
-      } else {
-        errorMessage = err?.data?.message || 'Failed to update table status';
-      }
-      
-      toast.error(errorMessage);
+      const { message } = getApiErrorMessage(err, {
+        defaultMessage: 'Failed to update table status',
+        notFoundMessage: 'Table not found',
+      });
+      toast.error(message);
       console.error('Failed to toggle table active status:', err);
     } finally {
       inFlightIdsRef.current.delete(`toggle:${tableId}`);
@@ -378,8 +340,7 @@ export function TableListView() {
   }, [searchForm]);
 
   // Prepare table rows
-  const rows = useMemo(() => {
-    return tables.map((table) => ({
+  const rows = useMemo(() => tables.map((table) => ({
       id: table.id,
       tableNumber: table.tableNumber,
       branchName: table.branchName || '-',
@@ -387,8 +348,7 @@ export function TableListView() {
       location: table.location || '-',
       isAvailable: table.isAvailable,
       isActive: table.isActive,
-    }));
-  }, [tables]);
+    })), [tables]);
 
   // Define columns
   const columns = useMemo(
@@ -607,40 +567,22 @@ export function TableListView() {
               description="Please select a branch to view tables"
             />
           </Card>
-        ) : error ? (
-          <Card sx={{ p: 6 }}>
-            <EmptyContent
-              title="Error loading tables"
-              description={error?.data?.message || 'An error occurred while loading tables'}
-              action={
-                <Field.Button variant="contained" onClick={() => refetch()} startIcon="solar:refresh-bold">
-                  Retry
-                </Field.Button>
-              }
-            />
-          </Card>
         ) : (
           <CustomTable
             rows={rows}
             columns={columns}
             loading={isLoading}
             actions={actions}
+            error={error}
+            onRetry={refetch}
+            errorEntityLabel="tables"
             pagination={{
-              enabled: true,
+              ...DEFAULT_PAGINATION,
               mode: 'server',
               pageSize,
-              pageSizeOptions: [10, 25, 50, 100],
               rowCount: paginationMeta.totalCount,
               onPageChange: handlePageChange,
               onPageSizeChange: handlePageSizeChange,
-            }}
-            sorting={{ enabled: false }}
-            filtering={{
-              enabled: false,
-              quickFilter: false,
-            }}
-            toolbar={{
-              show: false,
             }}
             getRowId={(row) => row.id}
             emptyContent={

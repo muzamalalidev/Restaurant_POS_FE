@@ -1,27 +1,27 @@
 'use client';
 
-import { useRef } from 'react';
-import { useMediaQuery, useTheme } from '@mui/material';
-import { useMemo } from 'react';
+import { useRef , useMemo } from 'react';
 
 import Box from '@mui/material/Box';
+import Card from '@mui/material/Card';
+import Stack from '@mui/material/Stack';
+import Alert from '@mui/material/Alert';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
-import Stack from '@mui/material/Stack';
-import Card from '@mui/material/Card';
-import Alert from '@mui/material/Alert';
-
-import { CustomDialog } from 'src/components/custom-dialog';
-import { CustomTable } from 'src/components/custom-table';
-import { Field } from 'src/components/hook-form';
-import { Label } from 'src/components/label';
-import { toast } from 'src/components/snackbar';
+import { useTheme, useMediaQuery } from '@mui/material';
 
 import { useGetStockDocumentQuery, usePostStockDocumentMutation } from 'src/store/api/stock-documents-api';
+
+import { Label } from 'src/components/label';
+import { toast } from 'src/components/snackbar';
+import { Field } from 'src/components/hook-form';
+import { CustomTable } from 'src/components/custom-table';
+import { CustomDialog } from 'src/components/custom-dialog';
+import { QueryStateContent } from 'src/components/query-state-content';
+
 import {
   getDocumentTypeLabel,
   getDocumentTypeColor,
-  DOCUMENT_TYPE_OPTIONS,
 } from '../utils/stock-document-helpers';
 
 // ----------------------------------------------------------------------
@@ -29,7 +29,7 @@ import {
 /**
  * Format amount as currency
  */
-const formatCurrency = (amount) => {
+const _formatCurrency = (amount) => {
   if (amount === null || amount === undefined) return '-';
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
@@ -58,7 +58,7 @@ export function PostStockDocumentDialog({ open, documentId, onClose, onSuccess }
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   // Fetch document data
-  const { data: documentData, isLoading } = useGetStockDocumentQuery(documentId, {
+  const { data: documentData, isLoading, error: queryError, isError, refetch } = useGetStockDocumentQuery(documentId, {
     skip: !documentId || !open,
   });
 
@@ -175,28 +175,21 @@ export function PostStockDocumentDialog({ open, documentId, onClose, onSuccess }
       disableClose={isPosting}
       actions={renderActions()}
     >
-      {isLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-          <Typography variant="body2" color="text.secondary">
-            Loading document information...
-          </Typography>
-        </Box>
-      ) : !documentData ? (
-        <Box
-          sx={{
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
-            alignItems: 'center',
-            minHeight: 200,
-            gap: 2,
-          }}
-        >
-          <Typography variant="body1" color="error">
-            Document not found
-          </Typography>
-        </Box>
-      ) : (
+      <QueryStateContent
+        isLoading={isLoading}
+        isError={isError}
+        error={queryError}
+        onRetry={refetch}
+        loadingMessage="Loading document information..."
+        errorTitle="Failed to load document"
+        errorMessageOptions={{
+          defaultMessage: 'Failed to load document',
+          notFoundMessage: 'Document not found',
+        }}
+        isEmpty={!documentData && !isLoading && !isError}
+        emptyMessage="Document not found"
+      >
+        {documentData ? (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1, pb: 3 }}>
           {/* Warnings */}
           <Stack spacing={2}>
@@ -253,8 +246,7 @@ export function PostStockDocumentDialog({ open, documentId, onClose, onSuccess }
 
           {/* Stock Impact Preview */}
           {stockImpactPreview && (
-            <>
-              <Box>
+            <Box>
                 <Typography variant="subtitle2" sx={{ mb: 2 }}>
                   Stock Impact Preview
                 </Typography>
@@ -314,14 +306,10 @@ export function PostStockDocumentDialog({ open, documentId, onClose, onSuccess }
                       },
                     ]}
                     pagination={{ enabled: false }}
-                    sorting={{ enabled: false }}
-                    filtering={{ enabled: false }}
-                    toolbar={{ show: false }}
                     getRowId={(row) => row.id}
                   />
                 </Card>
               </Box>
-            </>
           )}
 
           {!hasItems && (
@@ -330,7 +318,8 @@ export function PostStockDocumentDialog({ open, documentId, onClose, onSuccess }
             </Alert>
           )}
         </Box>
-      )}
+        ) : null}
+      </QueryStateContent>
     </CustomDialog>
   );
 }

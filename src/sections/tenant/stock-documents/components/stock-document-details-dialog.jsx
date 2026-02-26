@@ -1,28 +1,30 @@
 'use client';
 
-import { useMediaQuery, useTheme } from '@mui/material';
 import { useMemo } from 'react';
 
 import Box from '@mui/material/Box';
+import Card from '@mui/material/Card';
+import Stack from '@mui/material/Stack';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
-import Stack from '@mui/material/Stack';
-import Card from '@mui/material/Card';
-
-import { CustomDialog } from 'src/components/custom-dialog';
-import { CustomTable } from 'src/components/custom-table';
-import { Field } from 'src/components/hook-form';
-import { Label } from 'src/components/label';
+import { useTheme, useMediaQuery } from '@mui/material';
 
 import { useGetStockDocumentQuery } from 'src/store/api/stock-documents-api';
+
+import { Label } from 'src/components/label';
+import { Field } from 'src/components/hook-form';
+import { CustomTable } from 'src/components/custom-table';
+import { CustomDialog } from 'src/components/custom-dialog';
+import { QueryStateContent } from 'src/components/query-state-content';
+
 import {
-  getDocumentTypeLabel,
-  getDocumentTypeColor,
+  canEdit,
+  canPost,
+  canDelete,
   getStatusLabel,
   getStatusColor,
-  canEdit,
-  canDelete,
-  canPost,
+  getDocumentTypeLabel,
+  getDocumentTypeColor,
 } from '../utils/stock-document-helpers';
 
 // ----------------------------------------------------------------------
@@ -87,7 +89,7 @@ export function StockDocumentDetailsDialog({
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   // Fetch document data
-  const { data: documentData, isLoading, error: queryError, isError } = useGetStockDocumentQuery(
+  const { data: documentData, isLoading, error: queryError, isError, refetch } = useGetStockDocumentQuery(
     documentId,
     { skip: !documentId || !open }
   );
@@ -164,31 +166,21 @@ export function StockDocumentDetailsDialog({
       loading={isLoading}
       actions={renderActions()}
     >
-      {isLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-          <Typography variant="body2" color="text.secondary">
-            Loading document details...
-          </Typography>
-        </Box>
-      ) : isError ? (
-        <Box
-          sx={{
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
-            alignItems: 'center',
-            minHeight: 200,
-            gap: 2,
-          }}
-        >
-          <Typography variant="body1" color="error">
-            Failed to load document details
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {queryError?.data?.message || queryError?.message || 'Document not found or an error occurred.'}
-          </Typography>
-        </Box>
-      ) : documentData ? (
+      <QueryStateContent
+        isLoading={isLoading}
+        isError={isError}
+        error={queryError}
+        onRetry={refetch}
+        loadingMessage="Loading document details..."
+        errorTitle="Failed to load document details"
+        errorMessageOptions={{
+          defaultMessage: 'Failed to load document details',
+          notFoundMessage: 'Document not found or an error occurred.',
+        }}
+        isEmpty={!documentData && !isLoading && !isError}
+        emptyMessage="Document not found"
+      >
+        {documentData ? (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1, pb: 3 }}>
           {/* Document Header */}
           <Box>
@@ -289,8 +281,7 @@ export function StockDocumentDetailsDialog({
 
           {/* Document Items */}
           {documentData.items && documentData.items.length > 0 && (
-            <>
-              <Box>
+            <Box>
                 <Typography variant="subtitle2" sx={{ mb: 2 }}>
                   Document Items ({documentData.items.length})
                 </Typography>
@@ -350,14 +341,10 @@ export function StockDocumentDetailsDialog({
                       },
                     ]}
                     pagination={{ enabled: false }}
-                    sorting={{ enabled: false }}
-                    filtering={{ enabled: false }}
-                    toolbar={{ show: false }}
                     getRowId={(row) => row.id}
                   />
                 </Card>
               </Box>
-            </>
           )}
 
           {(!documentData.items || documentData.items.length === 0) && (
@@ -368,7 +355,8 @@ export function StockDocumentDetailsDialog({
             </Box>
           )}
         </Box>
-      ) : null}
+        ) : null}
+      </QueryStateContent>
     </CustomDialog>
   );
 }

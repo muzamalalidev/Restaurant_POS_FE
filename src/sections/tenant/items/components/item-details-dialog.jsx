@@ -1,18 +1,19 @@
-import { useMediaQuery, useTheme } from '@mui/material';
 import { useMemo } from 'react';
 
 import Box from '@mui/material/Box';
+import Link from '@mui/material/Link';
+import Stack from '@mui/material/Stack';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
-import Stack from '@mui/material/Stack';
-import Link from '@mui/material/Link';
-
-import { CustomDialog } from 'src/components/custom-dialog';
-import { Label } from 'src/components/label';
+import { useTheme, useMediaQuery } from '@mui/material';
 
 import { useGetItemsQuery } from 'src/store/api/items-api';
-import { useGetCategoriesQuery } from 'src/store/api/categories-api';
 import { useGetTenantsQuery } from 'src/store/api/tenants-api';
+import { useGetCategoriesQuery } from 'src/store/api/categories-api';
+
+import { Label } from 'src/components/label';
+import { CustomDialog } from 'src/components/custom-dialog';
+import { QueryStateContent } from 'src/components/query-state-content';
 
 // ----------------------------------------------------------------------
 
@@ -68,7 +69,7 @@ export function ItemDetailsDialog({ open, itemId, onClose }) {
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   // Fetch all items to find the one we need (since GetById is placeholder)
-  const { data: itemsResponse, isLoading, error: queryError, isError } = useGetItemsQuery(
+  const { data: itemsResponse, isLoading, error: queryError, isError, refetch } = useGetItemsQuery(
     { pageSize: 1000 },
     { skip: !itemId || !open }
   );
@@ -89,7 +90,7 @@ export function ItemDetailsDialog({ open, itemId, onClose }) {
   // Find the item by ID from the response
   const item = useMemo(() => {
     if (itemId && itemsResponse?.data) {
-      return itemsResponse.data.find((item) => item.id === itemId);
+      return itemsResponse.data.find((i) => i.id === itemId);
     }
     return null;
   }, [itemId, itemsResponse]);
@@ -118,31 +119,21 @@ export function ItemDetailsDialog({ open, itemId, onClose }) {
       fullScreen={isMobile}
       loading={isLoading}
     >
-      {isLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-          <Typography variant="body2" color="text.secondary">
-            Loading item details...
-          </Typography>
-        </Box>
-      ) : isError ? (
-        <Box
-          sx={{
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
-            alignItems: 'center',
-            minHeight: 200,
-            gap: 2,
-          }}
-        >
-          <Typography variant="body1" color="error">
-            Failed to load item details
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {queryError?.data?.message || queryError?.message || 'Item not found or an error occurred.'}
-          </Typography>
-        </Box>
-      ) : item ? (
+      <QueryStateContent
+        isLoading={isLoading}
+        isError={isError}
+        error={queryError}
+        onRetry={refetch}
+        loadingMessage="Loading item details..."
+        errorTitle="Failed to load item details"
+        errorMessageOptions={{
+          defaultMessage: 'Failed to load item details',
+          notFoundMessage: 'Item not found or an error occurred.',
+        }}
+        isEmpty={!item && !isLoading && !isError}
+        emptyMessage="Item not found"
+      >
+        {item ? (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1, pb: 3 }}>
           {/* Basic Information */}
           <Box>
@@ -254,13 +245,8 @@ export function ItemDetailsDialog({ open, itemId, onClose }) {
             </Stack>
           </Box>
         </Box>
-      ) : (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-          <Typography variant="body2" color="text.secondary">
-            Item not found
-          </Typography>
-        </Box>
-      )}
+        ) : null}
+      </QueryStateContent>
     </CustomDialog>
   );
 }

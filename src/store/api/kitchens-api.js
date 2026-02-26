@@ -97,6 +97,18 @@ export const kitchensApi = baseApi.injectEndpoints({
         'Kitchen',
       ],
     }),
+
+    getKitchensDropdown: builder.query({
+      query: (params) => ({
+        url: '/api/kitchens/dropdown',
+        method: 'GET',
+        params: {
+          tenantId: params?.tenantId || undefined,
+          branchId: params?.branchId || undefined,
+        },
+      }),
+      providesTags: ['Kitchen'],
+    }),
   }),
 });
 
@@ -110,5 +122,6 @@ export const {
   useUpdateKitchenMutation,
   useDeleteKitchenMutation,
   useToggleKitchenActiveMutation,
+  useGetKitchensDropdownQuery,
 } = kitchensApi;
 

@@ -1,4 +1,5 @@
 import { createLazyView } from 'src/utils/dynamic-imports';
+
 import { CONFIG } from 'src/global-config';
 
 // ----------------------------------------------------------------------

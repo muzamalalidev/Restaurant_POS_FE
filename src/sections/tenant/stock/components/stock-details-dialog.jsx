@@ -1,18 +1,17 @@
 'use client';
 
-import { useMediaQuery, useTheme } from '@mui/material';
-import { useMemo } from 'react';
-
 import Box from '@mui/material/Box';
+import Stack from '@mui/material/Stack';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
-import Stack from '@mui/material/Stack';
-
-import { CustomDialog } from 'src/components/custom-dialog';
-import { Field } from 'src/components/hook-form';
-import { Label } from 'src/components/label';
+import { useTheme, useMediaQuery } from '@mui/material';
 
 import { useGetStockQuery } from 'src/store/api/stock-api';
+
+import { Label } from 'src/components/label';
+import { CustomDialog } from 'src/components/custom-dialog';
+import { QueryStateContent } from 'src/components/query-state-content';
+
 import { isLowStock, getStockColor, formatStockQuantity, LOW_STOCK_THRESHOLD } from '../utils/stock-helpers';
 
 // ----------------------------------------------------------------------
@@ -27,15 +26,13 @@ import { isLowStock, getStockColor, formatStockQuantity, LOW_STOCK_THRESHOLD } f
  * @param {boolean} props.open - Whether the dialog is open
  * @param {string} props.itemId - Item ID for stock details
  * @param {Function} props.onClose - Callback when dialog closes
- * @param {Function} props.onUpdate - Callback to open update dialog
- * @param {Function} props.onAdjust - Callback to open adjust dialog
  */
-export function StockDetailsDialog({ open, itemId, onClose, onUpdate, onAdjust }) {
+export function StockDetailsDialog({ open, itemId, onClose }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   // Fetch stock data
-  const { data: stockData, isLoading, error: queryError, isError } = useGetStockQuery(
+  const { data: stockData, isLoading, error: queryError, isError, refetch } = useGetStockQuery(
     itemId,
     { skip: !itemId || !open }
   );
@@ -50,31 +47,21 @@ export function StockDetailsDialog({ open, itemId, onClose, onUpdate, onAdjust }
       fullScreen={isMobile}
       loading={isLoading}
     >
-      {isLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-          <Typography variant="body2" color="text.secondary">
-            Loading stock details...
-          </Typography>
-        </Box>
-      ) : isError ? (
-        <Box
-          sx={{
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'center',
-            alignItems: 'center',
-            minHeight: 200,
-            gap: 2,
-          }}
-        >
-          <Typography variant="body1" color="error">
-            Failed to load stock details
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {queryError?.data?.message || queryError?.message || 'Item not found or an error occurred.'}
-          </Typography>
-        </Box>
-      ) : stockData ? (
+      <QueryStateContent
+        isLoading={isLoading}
+        isError={isError}
+        error={queryError}
+        onRetry={refetch}
+        loadingMessage="Loading stock details..."
+        errorTitle="Failed to load stock details"
+        errorMessageOptions={{
+          defaultMessage: 'Failed to load stock details',
+          notFoundMessage: 'Item not found or an error occurred.',
+        }}
+        isEmpty={!stockData && !isLoading && !isError}
+        emptyMessage="Stock information not found"
+      >
+        {stockData ? (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1, pb: 3 }}>
           {/* Item Information */}
           <Box>
@@ -87,14 +74,6 @@ export function StockDetailsDialog({ open, itemId, onClose, onUpdate, onAdjust }
                   Item Name
                 </Typography>
                 <Typography variant="body1">{stockData.itemName || '-'}</Typography>
-              </Box>
-              <Box>
-                <Typography variant="caption" color="text.secondary">
-                  Item ID
-                </Typography>
-                <Typography variant="body1" sx={{ fontFamily: 'monospace', fontSize: '0.875rem' }}>
-                  {stockData.itemId?.substring(0, 8) + '...' || '-'}
-                </Typography>
               </Box>
             </Stack>
           </Box>
@@ -138,47 +117,9 @@ export function StockDetailsDialog({ open, itemId, onClose, onUpdate, onAdjust }
               </Box>
             </Stack>
           </Box>
-
-          {/* Actions */}
-          {(onUpdate || onAdjust) && (
-            <>
-              <Divider sx={{ borderStyle: 'dashed' }} />
-              <Stack direction="row" spacing={2}>
-                {onUpdate && (
-                  <Field.Button
-                    variant="outlined"
-                    onClick={() => {
-                      onClose();
-                      onUpdate();
-                    }}
-                    sx={{ flex: 1, minHeight: 44 }}
-                  >
-                    Update Stock
-                  </Field.Button>
-                )}
-                {onAdjust && (
-                  <Field.Button
-                    variant="contained"
-                    onClick={() => {
-                      onClose();
-                      onAdjust();
-                    }}
-                    sx={{ flex: 1, minHeight: 44 }}
-                  >
-                    Adjust Stock
-                  </Field.Button>
-                )}
-              </Stack>
-            </>
-          )}
         </Box>
-      ) : (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-          <Typography variant="body2" color="text.secondary">
-            Stock information not found
-          </Typography>
-        </Box>
-      )}
+        ) : null}
+      </QueryStateContent>
     </CustomDialog>
   );
 }

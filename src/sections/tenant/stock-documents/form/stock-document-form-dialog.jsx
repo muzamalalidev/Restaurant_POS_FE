@@ -1,30 +1,34 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMediaQuery, useTheme } from '@mui/material';
+import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
-import Divider from '@mui/material/Divider';
-import Typography from '@mui/material/Typography';
 import Alert from '@mui/material/Alert';
 import Stack from '@mui/material/Stack';
+import Divider from '@mui/material/Divider';
+import Typography from '@mui/material/Typography';
+import { useTheme, useMediaQuery } from '@mui/material';
 
-import { Form, Field } from 'src/components/hook-form';
-import { CustomDialog } from 'src/components/custom-dialog';
-import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
-import { toast } from 'src/components/snackbar';
+import { getApiErrorMessage } from 'src/utils/api-error-message';
 
+import { useGetItemsQuery } from 'src/store/api/items-api';
+import { useGetTenantsDropdownQuery } from 'src/store/api/tenants-api';
+import { useGetBranchesDropdownQuery } from 'src/store/api/branches-api';
+import { createStockDocumentSchema, updateStockDocumentSchema } from 'src/schemas';
 import {
   useGetStockDocumentQuery,
   useCreateStockDocumentMutation,
   useUpdateStockDocumentMutation,
 } from 'src/store/api/stock-documents-api';
-import { useGetTenantsQuery } from 'src/store/api/tenants-api';
-import { useGetBranchesQuery } from 'src/store/api/branches-api';
-import { useGetItemsQuery } from 'src/store/api/items-api';
-import { createStockDocumentSchema, updateStockDocumentSchema } from '../schemas/stock-document-schema';
+
+import { toast } from 'src/components/snackbar';
+import { Form, Field } from 'src/components/hook-form';
+import { CustomDialog } from 'src/components/custom-dialog';
+import { QueryStateContent } from 'src/components/query-state-content';
+import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
+
 import { DOCUMENT_TYPE_OPTIONS } from '../utils/stock-document-helpers';
 import { StockDocumentItemsField } from './components/stock-document-items-field';
 
@@ -42,35 +46,27 @@ import { StockDocumentItemsField } from './components/stock-document-items-field
  * @param {string|null} props.documentId - Document ID for edit mode
  * @param {Function} props.onClose - Callback when dialog closes
  * @param {Function} props.onSuccess - Callback when form is successfully submitted
+ * @param {Array} props.tenantOptions - Tenant options (from list view; fallback: fetch in form when empty)
  */
-export function StockDocumentFormDialog({ open, mode, documentId, onClose, onSuccess }) {
+export function StockDocumentFormDialog({ open, mode, documentId, onClose, onSuccess, tenantOptions = [] }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
-  // State for unsaved changes confirmation
   const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] = useState(false);
-  
-  // State for items replacement warning (edit mode)
   const [itemsReplacementWarningOpen, setItemsReplacementWarningOpen] = useState(false);
   const [pendingSubmit, setPendingSubmit] = useState(null);
 
-  // Fetch document data for edit mode
-  const { data: documentData, isLoading: isLoadingDocument } = useGetStockDocumentQuery(documentId, {
+  const { data: documentData, isLoading: isLoadingDocument, error: queryError, isError: _isError, refetch: refetchDocument } = useGetStockDocumentQuery(documentId, {
     skip: !documentId || mode !== 'edit' || !open,
   });
 
-  // Mutations
   const [createStockDocument, { isLoading: isCreating }] = useCreateStockDocumentMutation();
   const [updateStockDocument, { isLoading: isUpdating }] = useUpdateStockDocumentMutation();
 
   const isSubmitting = isCreating || isUpdating;
-  // P0-002: Ref guard to prevent double-submit
   const isSubmittingRef = useRef(false);
-
-  // Determine schema based on mode
   const schema = mode === 'create' ? createStockDocumentSchema : updateStockDocumentSchema;
 
-  // Form setup (before option queries that depend on watch)
   const methods = useForm({
     resolver: zodResolver(schema),
     defaultValues: useMemo(
@@ -97,7 +93,7 @@ export function StockDocumentFormDialog({ open, mode, documentId, onClose, onSuc
 
   const watchedTenantId = watch('tenantId');
   const watchedBranchId = watch('branchId');
-  const watchedItems = watch('items');
+  const _watchedItems = watch('items');
 
   const tenantIdForBranches = (() => {
     if (!watchedTenantId) return undefined;
@@ -106,33 +102,23 @@ export function StockDocumentFormDialog({ open, mode, documentId, onClose, onSuc
       : watchedTenantId;
   })();
 
-  // Fetch options for dropdowns (P0-003: limit 200; P1-001: branches filtered by tenant)
-  const { data: tenantsResponse } = useGetTenantsQuery({ pageSize: 200 });
-  const { data: branchesResponse } = useGetBranchesQuery({
-    tenantId: tenantIdForBranches,
-    pageSize: 200,
-  });
-  const { data: itemsResponse } = useGetItemsQuery({ pageSize: 200 });
+  const { data: tenantsDropdownFallback } = useGetTenantsDropdownQuery(undefined, { skip: tenantOptions.length > 0 });
+  const effectiveTenantOptions = useMemo(() => {
+    if (tenantOptions.length > 0) return tenantOptions;
+    if (!tenantsDropdownFallback || !Array.isArray(tenantsDropdownFallback)) return [];
+    return tenantsDropdownFallback.map((item) => ({ id: item.key, label: item.value || item.key }));
+  }, [tenantOptions, tenantsDropdownFallback]);
 
-  // Tenant options
-  const tenantOptions = useMemo(() => {
-    if (!tenantsResponse) return [];
-    const tenants = tenantsResponse.data || [];
-    return tenants.map((tenant) => ({
-      id: tenant.id,
-      label: tenant.name || tenant.id,
-    }));
-  }, [tenantsResponse]);
-
-  // Branch options (from API, already filtered by tenant when tenantIdForBranches is set)
+  const { data: branchesDropdown } = useGetBranchesDropdownQuery(
+    { tenantId: tenantIdForBranches },
+    { skip: !tenantIdForBranches || !open }
+  );
   const branchOptions = useMemo(() => {
-    if (!branchesResponse) return [];
-    const branches = branchesResponse.data || [];
-    return branches.map((branch) => ({
-      id: branch.id,
-      label: branch.name || branch.id,
-    }));
-  }, [branchesResponse]);
+    if (!branchesDropdown || !Array.isArray(branchesDropdown)) return [];
+    return branchesDropdown.map((item) => ({ id: item.key, label: item.value || item.key }));
+  }, [branchesDropdown]);
+
+  const { data: itemsResponse } = useGetItemsQuery({ pageSize: 200 });
 
   // Validate branch is in current options (e.g. belongs to selected tenant)
   const branchValidationError = useMemo(() => {
@@ -208,7 +194,7 @@ export function StockDocumentFormDialog({ open, mode, documentId, onClose, onSuc
         items: itemsData,
       });
     }
-  }, [open, mode, documentData, tenantOptions, branchOptions, itemOptions, reset]);
+  }, [open, mode, documentData, effectiveTenantOptions, tenantOptions, branchOptions, itemOptions, reset]);
 
   // Handle branch change - validate it belongs to tenant
   useEffect(() => {
@@ -300,8 +286,10 @@ export function StockDocumentFormDialog({ open, mode, documentId, onClose, onSuc
       }
     } catch (error) {
       console.error(`Failed to ${mode} stock document:`, error);
-      const errorMessage = error?.data?.message || error?.data || error?.message || `Failed to ${mode} stock document`;
-      toast.error(errorMessage);
+      const { message } = getApiErrorMessage(error, {
+        defaultMessage: `Failed to ${mode} stock document`,
+      });
+      toast.error(message);
     } finally {
       isSubmittingRef.current = false;
     }
@@ -391,22 +379,18 @@ export function StockDocumentFormDialog({ open, mode, documentId, onClose, onSuc
         disableClose={isSubmitting}
         actions={renderActions()}
       >
-        {isLoading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-            <Typography variant="body2" color="text.secondary">
-              Loading document information...
-            </Typography>
-          </Box>
-        ) : hasError ? (
-          <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', minHeight: 200, gap: 2 }}>
-            <Typography variant="body1" color="error">
-              Failed to load document
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Document not found or an error occurred.
-            </Typography>
-          </Box>
-        ) : (
+        <QueryStateContent
+          isLoading={isLoading}
+          isError={hasError}
+          error={queryError}
+          onRetry={refetchDocument}
+          loadingMessage="Loading document information..."
+          errorTitle="Failed to load document"
+          errorMessageOptions={{
+            defaultMessage: 'Failed to load document',
+            notFoundMessage: 'Document not found or an error occurred.',
+          }}
+        >
           <Form methods={methods} onSubmit={onSubmit}>
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1 }}>
               {/* Branch validation error */}
@@ -424,7 +408,7 @@ export function StockDocumentFormDialog({ open, mode, documentId, onClose, onSuc
                   <Field.Autocomplete
                     name="tenantId"
                     label="Tenant"
-                    options={tenantOptions}
+                    options={effectiveTenantOptions}
                     required
                     disabled={mode === 'edit'}
                     slotProps={{
@@ -487,7 +471,7 @@ export function StockDocumentFormDialog({ open, mode, documentId, onClose, onSuc
               </Box>
             </Box>
           </Form>
-        )}
+        </QueryStateContent>
       </CustomDialog>
 
       {/* Unsaved Changes Confirmation Dialog */}

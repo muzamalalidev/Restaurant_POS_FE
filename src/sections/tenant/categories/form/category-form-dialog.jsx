@@ -1,21 +1,29 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMediaQuery, useTheme } from '@mui/material';
+import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
-import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
+import { useTheme, useMediaQuery } from '@mui/material';
 
+import { getApiErrorMessage } from 'src/utils/api-error-message';
+
+import { useGetTenantsDropdownQuery } from 'src/store/api/tenants-api';
+import { createCategorySchema, updateCategorySchema } from 'src/schemas';
+import {
+  useGetCategoryByIdQuery,
+  useCreateCategoryMutation,
+  useUpdateCategoryMutation,
+  useGetCategoriesDropdownQuery,
+} from 'src/store/api/categories-api';
+
+import { toast } from 'src/components/snackbar';
 import { Form, Field } from 'src/components/hook-form';
 import { CustomDialog } from 'src/components/custom-dialog';
+import { QueryStateContent } from 'src/components/query-state-content';
 import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
-import { toast } from 'src/components/snackbar';
-
-import { useGetCategoryByIdQuery, useCreateCategoryMutation, useUpdateCategoryMutation } from 'src/store/api/categories-api';
-import { createCategorySchema, updateCategorySchema } from '../schemas/category-schema';
 
 // ----------------------------------------------------------------------
 
@@ -46,10 +54,9 @@ import { createCategorySchema, updateCategorySchema } from '../schemas/category-
  * @param {string|null} props.categoryId - Category ID for edit mode
  * @param {Function} props.onClose - Callback when dialog closes
  * @param {Function} props.onSuccess - Callback when form is successfully submitted
- * @param {Array} props.tenantOptions - Tenant options for dropdown (from list view)
- * @param {Array} props.categoryOptions - Category options for parent dropdown (from list view)
+ * @param {Array} props.tenantOptions - Tenant options for dropdown (from list view; fallback: fetch in form when empty)
  */
-export function CategoryFormDialog({ open, mode, categoryId, onClose, onSuccess, tenantOptions = [], categoryOptions = [] }) {
+export function CategoryFormDialog({ open, mode, categoryId, onClose, onSuccess, tenantOptions = [] }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
@@ -60,9 +67,17 @@ export function CategoryFormDialog({ open, mode, categoryId, onClose, onSuccess,
   const isSubmittingRef = useRef(false);
 
   // Fetch category data for edit mode (GetCategoryById is fully implemented)
-  const { data: categoryData, isLoading: isLoadingCategory, error: queryError, isError } = useGetCategoryByIdQuery(categoryId, {
+  const { data: categoryData, isLoading: isLoadingCategory, error: queryError, isError, refetch: refetchCategory } = useGetCategoryByIdQuery(categoryId, {
     skip: !categoryId || mode !== 'edit' || !open,
   });
+
+  // Tenant options: use props when provided; otherwise fetch via dropdown (e.g. when dialog opened without list)
+  const { data: tenantsDropdownFallback } = useGetTenantsDropdownQuery(undefined, { skip: tenantOptions.length > 0 });
+  const effectiveTenantOptions = useMemo(() => {
+    if (tenantOptions.length > 0) return tenantOptions;
+    if (!tenantsDropdownFallback || !Array.isArray(tenantsDropdownFallback)) return [];
+    return tenantsDropdownFallback.map((item) => ({ id: item.key, label: item.value || item.key }));
+  }, [tenantOptions, tenantsDropdownFallback]);
 
   // Mutations
   const [createCategory, { isLoading: isCreating }] = useCreateCategoryMutation();
@@ -93,53 +108,37 @@ export function CategoryFormDialog({ open, mode, categoryId, onClose, onSuccess,
     reset,
     handleSubmit,
     watch,
+    setValue,
     formState: { isDirty },
   } = methods;
 
-  // Watch tenantId to filter parent options
+  // Watch tenantId for dependent category dropdown
   const watchedTenantId = watch('tenantId');
-
-  // Parent category options filtered by selected tenant
-  const parentCategoryOptions = useMemo(() => {
-    const options = [
-      {
-        id: null,
-        label: 'None (Root Category)',
-      },
-    ];
-
-    if (!watchedTenantId || categoryOptions.length === 0) {
-      return options;
-    }
-
-    // Extract tenant ID from watchedTenantId (could be object or string)
-    const tenantIdValue = typeof watchedTenantId === 'object' && watchedTenantId !== null
+  const selectedTenantIdRaw = useMemo(
+    () => (watchedTenantId && typeof watchedTenantId === 'object' && watchedTenantId !== null
       ? watchedTenantId.id
-      : watchedTenantId;
+      : watchedTenantId),
+    [watchedTenantId]
+  );
 
-    // Filter categories by tenant and exclude current category in edit mode
-    const filtered = categoryOptions.filter((cat) => {
-      // Filter by tenant
-      if (cat.tenantId !== tenantIdValue) return false;
-      // In edit mode, exclude current category (circular reference prevention)
-      if (mode === 'edit' && categoryId && cat.id === categoryId) return false;
-      return true;
+  // Parent category options: fetch in form when tenant is selected (dependent dropdown)
+  const { data: categoriesDropdown } = useGetCategoriesDropdownQuery(
+    { tenantId: selectedTenantIdRaw },
+    { skip: !selectedTenantIdRaw || !open }
+  );
+  const parentCategoryOptions = useMemo(() => {
+    const options = [{ id: null, label: 'None (Root Category)' }];
+    if (!categoriesDropdown || !Array.isArray(categoriesDropdown)) return options;
+    categoriesDropdown.forEach((item) => {
+      if (mode === 'edit' && categoryId && item.key === categoryId) return;
+      options.push({ id: item.key, label: item.value || item.key });
     });
-
-    filtered.forEach((category) => {
-      options.push({
-        id: category.id,
-        label: category.name || category.id,
-      });
-    });
-
     return options;
-  }, [watchedTenantId, categoryOptions, mode, categoryId]);
+  }, [categoriesDropdown, mode, categoryId]);
 
   // Load category data for edit mode or reset for create mode
   useEffect(() => {
     if (!open) {
-      // Reset form when dialog closes
       reset({
         tenantId: null,
         parentId: null,
@@ -150,27 +149,13 @@ export function CategoryFormDialog({ open, mode, categoryId, onClose, onSuccess,
       return;
     }
 
-    if (mode === 'edit' && categoryData && tenantOptions.length > 0) {
-      // Find matching tenant object from tenantOptions
-      const matchingTenant = categoryData.tenantId && tenantOptions.length > 0
-        ? tenantOptions.find((t) => t.id === categoryData.tenantId)
+    if (mode === 'edit' && categoryData && effectiveTenantOptions.length > 0) {
+      const matchingTenant = categoryData.tenantId
+        ? effectiveTenantOptions.find((t) => t.id === categoryData.tenantId)
         : null;
-
-      // Find matching parent category object (if parentId is not null)
-      let matchingParent = null;
-      if (categoryData.parentId && categoryOptions.length > 0) {
-        matchingParent = categoryOptions.find((cat) => cat.id === categoryData.parentId);
-        if (matchingParent) {
-          matchingParent = {
-            id: matchingParent.id,
-            label: matchingParent.name || matchingParent.id,
-          };
-        }
-      }
-
       reset({
         tenantId: matchingTenant || null,
-        parentId: matchingParent || null,
+        parentId: null,
         name: categoryData.name || '',
         description: categoryData.description || null,
         isActive: categoryData.isActive ?? true,
@@ -184,8 +169,16 @@ export function CategoryFormDialog({ open, mode, categoryId, onClose, onSuccess,
         isActive: true,
       });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, mode, categoryData?.id, categoryData?.tenantId, categoryData?.parentId, categoryData?.name, categoryData?.description, categoryData?.isActive, tenantOptions, categoryOptions, reset]);
+  }, [open, mode, categoryData, categoryData?.id, categoryData?.tenantId, categoryData?.name, categoryData?.description, categoryData?.isActive, effectiveTenantOptions, reset]);
+
+  // Edit mode: set parentId when parent options have loaded (dependent on tenant selection)
+  useEffect(() => {
+    if (!open || mode !== 'edit' || !categoryData?.parentId || parentCategoryOptions.length <= 1) return;
+    const matchingParent = parentCategoryOptions.find((opt) => opt.id === categoryData.parentId);
+    if (matchingParent) {
+      setValue('parentId', matchingParent, { shouldValidate: false, shouldDirty: false });
+    }
+  }, [open, mode, categoryData?.parentId, parentCategoryOptions, setValue]);
 
   // Handle form submit
   const onSubmit = handleSubmit(async (data) => {
@@ -240,7 +233,10 @@ export function CategoryFormDialog({ open, mode, categoryId, onClose, onSuccess,
       onClose();
     } catch (error) {
       console.error('Failed to save category:', error);
-      toast.error(error?.data?.message || `Failed to ${mode === 'create' ? 'create' : 'update'} category`);
+      const { message } = getApiErrorMessage(error, {
+        defaultMessage: `Failed to ${mode === 'create' ? 'create' : 'update'} category`,
+      });
+      toast.error(message);
     } finally {
       isSubmittingRef.current = false;
     }
@@ -316,22 +312,18 @@ export function CategoryFormDialog({ open, mode, categoryId, onClose, onSuccess,
         disableClose={isSubmitting}
         actions={renderActions()}
       >
-        {isLoading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-            <Typography variant="body2" color="text.secondary">
-              Loading category data...
-            </Typography>
-          </Box>
-        ) : hasError ? (
-          <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', minHeight: 200, gap: 2 }}>
-            <Typography variant="body1" color="error">
-              Failed to load category data
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {queryError?.data?.message || queryError?.message || 'Category not found or an error occurred.'}
-            </Typography>
-          </Box>
-        ) : (
+        <QueryStateContent
+          isLoading={isLoading}
+          isError={hasError}
+          error={queryError}
+          onRetry={refetchCategory}
+          loadingMessage="Loading category data..."
+          errorTitle="Failed to load category data"
+          errorMessageOptions={{
+            defaultMessage: 'Failed to load category data',
+            notFoundMessage: 'Category not found or an error occurred.',
+          }}
+        >
           <Form methods={methods} onSubmit={onSubmit}>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1 }}>
               {/* Basic Information Section */}
@@ -343,7 +335,7 @@ export function CategoryFormDialog({ open, mode, categoryId, onClose, onSuccess,
                   <Field.Autocomplete
                     name="tenantId"
                     label="Tenant"
-                    options={tenantOptions}
+                    options={effectiveTenantOptions}
                     getOptionLabel={(option) => {
                       if (!option) return '';
                       return option.label || option.name || option.id || '';
@@ -394,7 +386,7 @@ export function CategoryFormDialog({ open, mode, categoryId, onClose, onSuccess,
               </Box>
             </Box>
           </Form>
-        )}
+        </QueryStateContent>
       </CustomDialog>
 
       {/* Unsaved Changes Confirmation Dialog */}

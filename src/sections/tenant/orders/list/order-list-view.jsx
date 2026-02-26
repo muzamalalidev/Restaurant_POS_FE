@@ -1,26 +1,33 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import { useForm, FormProvider } from 'react-hook-form';
+import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
+import Stack from '@mui/material/Stack';
+import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
-import Stack from '@mui/material/Stack';
 
-import { CustomTable } from 'src/components/custom-table';
+import { paths } from 'src/routes/paths';
+
+import { getApiErrorMessage } from 'src/utils/api-error-message';
+
+import { useGetStaffDropdownQuery } from 'src/store/api/staff-api';
+import { useGetBranchesDropdownQuery } from 'src/store/api/branches-api';
+import { useGetOrdersQuery, useDeleteOrderMutation } from 'src/store/api/orders-api';
+
 import { Label } from 'src/components/label';
-import { EmptyContent } from 'src/components/empty-content';
 import { toast } from 'src/components/snackbar';
 import { Field } from 'src/components/hook-form';
-import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
 import { Iconify } from 'src/components/iconify';
+import { EmptyContent } from 'src/components/empty-content';
+import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
+import { CustomTable, DEFAULT_PAGINATION } from 'src/components/custom-table';
 
-import { useGetOrdersQuery, useDeleteOrderMutation } from 'src/store/api/orders-api';
-import { useGetBranchesQuery } from 'src/store/api/branches-api';
-import { useGetStaffQuery } from 'src/store/api/staff-api';
 import { OrderFormDialog } from '../form/order-form-dialog';
 import { OrderUpdateDialog } from '../form/order-update-dialog';
 import { OrderDetailsDialog } from '../components/order-details-dialog';
@@ -69,7 +76,7 @@ export function OrderListView() {
 
   // Pagination state
   const [pageNumber, setPageNumber] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGINATION.pageSize);
 
   // Search state (debounced)
   const [searchTerm, setSearchTerm] = useState('');
@@ -262,29 +269,18 @@ export function OrderListView() {
     }
   }, [watchedStatus, status, getId]);
 
-  // Fetch options for dropdowns (P0-003: limit to 200 for scale)
-  const { data: branchesResponse } = useGetBranchesQuery({ pageSize: 200 });
-  const { data: staffResponse } = useGetStaffQuery({ pageSize: 200 });
+  const { data: branchesDropdown } = useGetBranchesDropdownQuery();
+  const { data: staffDropdown } = useGetStaffDropdownQuery();
 
-  // Branch options
   const branchOptions = useMemo(() => {
-    if (!branchesResponse) return [];
-    const branches = branchesResponse.data || [];
-    return branches.map((branch) => ({
-      id: branch.id,
-      label: branch.name || branch.id,
-    }));
-  }, [branchesResponse]);
+    if (!branchesDropdown || !Array.isArray(branchesDropdown)) return [];
+    return branchesDropdown.map((item) => ({ id: item.key, label: item.value || item.key }));
+  }, [branchesDropdown]);
 
-  // Staff options
   const staffOptions = useMemo(() => {
-    if (!staffResponse) return [];
-    const staff = staffResponse.data || [];
-    return staff.map((s) => ({
-      id: s.id,
-      label: s.name || s.id,
-    }));
-  }, [staffResponse]);
+    if (!staffDropdown || !Array.isArray(staffDropdown)) return [];
+    return staffDropdown.map((item) => ({ id: item.key, label: item.value || item.key }));
+  }, [staffDropdown]);
 
   // Debounce search term
   useEffect(() => {
@@ -401,7 +397,10 @@ export function OrderListView() {
       setDeleteOrderId(null);
       setDeleteOrderIdDisplay(null);
     } catch (err) {
-      toast.error(err?.data?.message || 'Failed to delete order');
+      const { message } = getApiErrorMessage(err, {
+        defaultMessage: 'Failed to delete order',
+      });
+      toast.error(message);
       console.error('Failed to delete order:', err);
     }
   }, [deleteOrderId, deleteOrder]);
@@ -453,8 +452,7 @@ export function OrderListView() {
   }, [searchForm]);
 
   // Prepare table rows
-  const rows = useMemo(() => {
-    return orders.map((order) => ({
+  const rows = useMemo(() => orders.map((order) => ({
       id: order.id,
       branchId: order.branchId,
       orderTypeId: order.orderTypeId,
@@ -469,8 +467,7 @@ export function OrderListView() {
       tableId: order.tableId,
       customerId: order.customerId,
       notes: order.notes || '-',
-    }));
-  }, [orders]);
+    })), [orders]);
 
   // Define columns
   const columns = useMemo(
@@ -573,14 +570,10 @@ export function OrderListView() {
   );
 
   // Check if branchId is selected (for disabling staffId and customerId filters)
-  const isBranchSelected = useMemo(() => {
-    return branchId !== null && branchId !== undefined;
-  }, [branchId]);
+  const isBranchSelected = useMemo(() => branchId !== null && branchId !== undefined, [branchId]);
 
   // Check if staffId is selected (for disabling customerId filter)
-  const isStaffSelected = useMemo(() => {
-    return staffId !== null && staffId !== undefined;
-  }, [staffId]);
+  const isStaffSelected = useMemo(() => staffId !== null && staffId !== undefined, [staffId]);
 
   return (
     <Box>
@@ -718,44 +711,34 @@ export function OrderListView() {
               sx={{ minWidth: { sm: 200 } }}
             />
           </FormProvider>
+          <Button
+            component={Link}
+            href={paths.tenant.orders.root}
+            variant="contained"
+            startIcon={<Iconify icon="solar:cart-large-2-bold" />}
+            sx={{ ml: 'auto', flexShrink: 0 }}
+          >
+            POS
+          </Button>
         </Stack>
       </Card>
 
       {/* Data Grid - P0-005: show error in table area so filters/Create remain; P0-001: sorting disabled with server pagination; P1-005: no initialState */}
-      {error ? (
-        <Card sx={{ p: 6 }}>
-          <EmptyContent
-            title="Error loading orders"
-            description={error?.data?.message || 'An error occurred while loading orders'}
-            action={
-              <Field.Button variant="contained" onClick={() => refetch()} startIcon="solar:refresh-bold">
-                Retry
-              </Field.Button>
-            }
-          />
-        </Card>
-      ) : (
       <CustomTable
         rows={rows}
         columns={columns}
         actions={actions}
         loading={isLoading}
+        error={error}
+        onRetry={refetch}
+        errorEntityLabel="orders"
         pagination={{
-          enabled: true,
+          ...DEFAULT_PAGINATION,
           mode: 'server',
           pageSize,
-          pageSizeOptions: [10, 25, 50, 100],
           rowCount: paginationMeta.totalCount,
           onPageChange: handlePageChange,
           onPageSizeChange: handlePageSizeChange,
-        }}
-        sorting={{ enabled: false }}
-        filtering={{
-          enabled: false,
-          quickFilter: false,
-        }}
-        toolbar={{
-          show: false,
         }}
         getRowId={(row) => row.id}
         emptyContent={
@@ -774,13 +757,14 @@ export function OrderListView() {
           />
         }
       />
-      )}
 
       {/* Create Order Dialog */}
       <OrderFormDialog
         open={formDialogOpen}
         onClose={handleFormClose}
         onSuccess={handleFormSuccess}
+        branchOptions={branchOptions}
+        staffOptions={staffOptions}
       />
 
       {/* Update Order Dialog */}

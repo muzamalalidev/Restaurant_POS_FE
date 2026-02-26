@@ -1,14 +1,14 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 
+import { DEFAULT_SORTING, DEFAULT_FILTERING, DEFAULT_SELECTION, DEFAULT_PAGINATION } from './table-defaults';
 import {
-  normalizePagination,
+  getSafePage,
   normalizeSorting,
+  getValidPageSize,
   normalizeFiltering,
   normalizeSelection,
-  getSafePage,
-  getValidPageSize,
+  normalizePagination,
 } from './table-utils';
-import { DEFAULT_PAGINATION, DEFAULT_SORTING, DEFAULT_FILTERING, DEFAULT_SELECTION } from './table-defaults';
 
 // ----------------------------------------------------------------------
 // Custom Hook for CustomTable State Management
@@ -71,9 +71,7 @@ export function useCustomTable({
   });
 
   // Selection state - Always ensure it's an array
-  const [selectionModel, setSelectionModel] = useState(() => {
-    return Array.isArray(selectionConfig.selectionModel) ? selectionConfig.selectionModel : [];
-  });
+  const [selectionModel, setSelectionModel] = useState(() => Array.isArray(selectionConfig.selectionModel) ? selectionConfig.selectionModel : []);
 
   // Calculate total rows for pagination
   const totalRows = useMemo(() => {
@@ -151,10 +149,7 @@ export function useCustomTable({
     },
     [
       totalRows,
-      paginationConfig.mode,
-      paginationConfig.pageSizeOptions,
-      paginationConfig.onPageChange,
-      paginationConfig.onPageSizeChange,
+      paginationConfig,
       onPageChangeProp,
       onPageSizeChangeProp,
     ]
@@ -173,7 +168,7 @@ export function useCustomTable({
         sortingConfig.onSortModelChange(newModel);
       }
     },
-    [sortingConfig.onSortModelChange, onSortModelChangeProp]
+    [sortingConfig, onSortModelChangeProp]
   );
 
   // Handle filter model change
@@ -189,7 +184,7 @@ export function useCustomTable({
         filteringConfig.onFilterModelChange(newModel);
       }
     },
-    [filteringConfig.onFilterModelChange, onFilterModelChangeProp]
+    [filteringConfig, onFilterModelChangeProp]
   );
 
   // Handle selection change
@@ -205,7 +200,7 @@ export function useCustomTable({
         selectionConfig.onSelectionChange(newModel);
       }
     },
-    [selectionConfig.onSelectionChange, onSelectionChangeProp]
+    [selectionConfig, onSelectionChangeProp]
   );
 
   // Sync controlled props

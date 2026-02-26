@@ -1,39 +1,41 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useForm, FormProvider } from 'react-hook-form';
+import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
+import Stack from '@mui/material/Stack';
+import Switch from '@mui/material/Switch';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
-import Stack from '@mui/material/Stack';
-import Switch from '@mui/material/Switch';
-import Tooltip from '@mui/material/Tooltip';
 
-import { CustomTable } from 'src/components/custom-table';
-import { Label } from 'src/components/label';
-import { EmptyContent } from 'src/components/empty-content';
-import { toast } from 'src/components/snackbar';
-import { Field } from 'src/components/hook-form';
-import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
-import { Iconify } from 'src/components/iconify';
+import { getApiErrorMessage } from 'src/utils/api-error-message';
 
+import { useGetItemsQuery } from 'src/store/api/items-api';
 import {
   useGetAllRecipesQuery,
   useDeleteRecipeMutation,
   useToggleRecipeActiveMutation,
 } from 'src/store/api/recipes-api';
-import { useGetItemsQuery } from 'src/store/api/items-api';
+
+import { Label } from 'src/components/label';
+import { toast } from 'src/components/snackbar';
+import { Field } from 'src/components/hook-form';
+import { Iconify } from 'src/components/iconify';
+import { EmptyContent } from 'src/components/empty-content';
+import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
+import { CustomTable, DEFAULT_PAGINATION } from 'src/components/custom-table';
+
 import { RecipeFormDialog } from '../form/recipe-form-dialog';
 import { RecipeDetailsDialog } from '../components/recipe-details-dialog';
 import {
-  getActiveStatusLabel,
-  getActiveStatusColor,
-  formatTimeMinutes,
   canEdit,
   canDelete,
+  formatTimeMinutes,
+  getActiveStatusLabel,
+  getActiveStatusColor,
 } from '../utils/recipe-helpers';
 
 // ----------------------------------------------------------------------
@@ -61,7 +63,7 @@ export function RecipeListView() {
 
   // Pagination state
   const [pageNumber, setPageNumber] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGINATION.pageSize);
 
   // Search state (debounced)
   const [searchTerm, setSearchTerm] = useState('');
@@ -137,7 +139,7 @@ export function RecipeListView() {
 
   // Mutations
   const [deleteRecipe] = useDeleteRecipeMutation();
-  const [toggleRecipeActive, { isLoading: isTogglingActive }] = useToggleRecipeActiveMutation();
+  const [toggleRecipeActive, { isLoading: _isTogglingActive }] = useToggleRecipeActiveMutation();
 
   // Track which recipe is being toggled
   const [togglingRecipeId, setTogglingRecipeId] = useState(null);
@@ -182,20 +184,11 @@ export function RecipeListView() {
       setDeleteRecipeId(null);
       setDeleteRecipeName(null);
     } catch (err) {
-      const errorStatus = err?.status || err?.data?.status;
-      let errorMessage;
-      
-      if (errorStatus === 404) {
-        errorMessage = err?.data?.message || 'Recipe not found';
-      } else if (errorStatus >= 500) {
-        errorMessage = 'Server error. Please try again later.';
-      } else if (!navigator.onLine) {
-        errorMessage = 'Network error. Please check your connection.';
-      } else {
-        errorMessage = err?.data?.message || 'Failed to delete recipe';
-      }
-      
-      toast.error(errorMessage);
+      const { message } = getApiErrorMessage(err, {
+        defaultMessage: 'Failed to delete recipe',
+        notFoundMessage: 'Recipe not found',
+      });
+      toast.error(message);
       console.error('Failed to delete recipe:', err);
     }
   }, [deleteRecipeId, deleteRecipe]);
@@ -209,20 +202,11 @@ export function RecipeListView() {
       await toggleRecipeActive(recipeId).unwrap();
       toast.success('Recipe status updated successfully');
     } catch (err) {
-      const errorStatus = err?.status || err?.data?.status;
-      let errorMessage;
-      
-      if (errorStatus === 404) {
-        errorMessage = err?.data?.message || 'Recipe not found';
-      } else if (errorStatus >= 500) {
-        errorMessage = 'Server error. Please try again later.';
-      } else if (!navigator.onLine) {
-        errorMessage = 'Network error. Please check your connection.';
-      } else {
-        errorMessage = err?.data?.message || 'Failed to update recipe status';
-      }
-      
-      toast.error(errorMessage);
+      const { message } = getApiErrorMessage(err, {
+        defaultMessage: 'Failed to update recipe status',
+        notFoundMessage: 'Recipe not found',
+      });
+      toast.error(message);
       console.error('Failed to toggle recipe active status:', err);
     } finally {
       inFlightIdsRef.current.delete(recipeId);
@@ -474,40 +458,21 @@ export function RecipeListView() {
         </Card>
 
         {/* Table - P0-005: show error in table area so search/Create remain; P0-001: sorting disabled with server pagination */}
-        {error ? (
-          <Card sx={{ p: 6 }}>
-            <EmptyContent
-              title="Error loading recipes"
-              description={error?.data?.message || 'An error occurred while loading recipes'}
-              action={
-                <Field.Button variant="contained" onClick={() => refetch()} startIcon="solar:refresh-bold">
-                  Retry
-                </Field.Button>
-              }
-            />
-          </Card>
-        ) : (
         <CustomTable
           rows={rows}
           columns={columns}
           loading={isLoading}
           actions={actions}
+          error={error}
+          onRetry={refetch}
+          errorEntityLabel="recipes"
           pagination={{
-            enabled: true,
+            ...DEFAULT_PAGINATION,
             mode: 'server',
             pageSize,
-            pageSizeOptions: [10, 25, 50, 100],
             rowCount: paginationMeta.totalCount,
             onPageChange: handlePageChange,
             onPageSizeChange: handlePageSizeChange,
-          }}
-          sorting={{ enabled: false }}
-          filtering={{
-            enabled: false,
-            quickFilter: false,
-          }}
-          toolbar={{
-            show: false,
           }}
           getRowId={(row) => row.id}
           emptyContent={
@@ -521,7 +486,6 @@ export function RecipeListView() {
             />
           }
         />
-        )}
       </Card>
 
       {/* Form Dialog */}

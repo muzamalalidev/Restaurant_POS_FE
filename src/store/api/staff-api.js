@@ -94,6 +94,18 @@ export const staffApi = baseApi.injectEndpoints({
         'Staff',
       ],
     }),
+
+    getStaffDropdown: builder.query({
+      query: (params) => ({
+        url: '/api/staff/dropdown',
+        method: 'GET',
+        params: {
+          branchId: params?.branchId || undefined,
+          staffTypeId: params?.staffTypeId || undefined,
+        },
+      }),
+      providesTags: ['Staff'],
+    }),
   }),
 });
 
@@ -107,5 +119,6 @@ export const {
   useUpdateStaffMutation,
   useDeleteStaffMutation,
   useToggleStaffActiveMutation,
+  useGetStaffDropdownQuery,
 } = staffApi;
 

@@ -1,27 +1,30 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useForm, FormProvider } from 'react-hook-form';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
+import Stack from '@mui/material/Stack';
+import Switch from '@mui/material/Switch';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
-import Stack from '@mui/material/Stack';
-import Switch from '@mui/material/Switch';
 
-import { CustomTable } from 'src/components/custom-table';
+import { getApiErrorMessage } from 'src/utils/api-error-message';
+
+import { useGetBranchesDropdownQuery } from 'src/store/api/branches-api';
+import { useGetStaffTypesDropdownQuery } from 'src/store/api/staff-types-api';
+import { useGetStaffQuery, useDeleteStaffMutation, useToggleStaffActiveMutation } from 'src/store/api/staff-api';
+
 import { Label } from 'src/components/label';
-import { EmptyContent } from 'src/components/empty-content';
 import { toast } from 'src/components/snackbar';
 import { Field } from 'src/components/hook-form';
-import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
 import { Iconify } from 'src/components/iconify';
+import { EmptyContent } from 'src/components/empty-content';
+import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
+import { CustomTable, DEFAULT_PAGINATION } from 'src/components/custom-table';
 
-import { useGetStaffQuery, useDeleteStaffMutation, useToggleStaffActiveMutation } from 'src/store/api/staff-api';
-import { useGetBranchesQuery } from 'src/store/api/branches-api';
-import { useGetStaffTypesQuery } from 'src/store/api/staff-types-api';
 import { StaffFormDialog } from '../form/staff-form-dialog';
 import { StaffDetailsDialog } from '../components/staff-details-dialog';
 
@@ -49,7 +52,7 @@ export function StaffListView() {
 
   // Pagination state
   const [pageNumber, setPageNumber] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGINATION.pageSize);
 
   // Search state (debounced)
   const [searchTerm, setSearchTerm] = useState('');
@@ -128,35 +131,18 @@ export function StaffListView() {
     }
   }, [watchedStaffTypeId, staffTypeId, branchId, getId]);
 
-  // Fetch branches for dropdown
-  const { data: branchesResponse } = useGetBranchesQuery({
-    pageSize: 1000, // Large page size to get all branches
-  });
+  const { data: branchesDropdown } = useGetBranchesDropdownQuery();
+  const { data: staffTypesDropdown } = useGetStaffTypesDropdownQuery();
 
-  // Fetch staff types for dropdown
-  const { data: staffTypesResponse } = useGetStaffTypesQuery({
-    pageSize: 1000, // Large page size to get all staff types
-  });
-
-  // Branch options for dropdown
   const branchOptions = useMemo(() => {
-    if (!branchesResponse) return [];
-    const branches = branchesResponse.data || [];
-    return branches.map((branch) => ({
-      id: branch.id,
-      label: branch.name || branch.id,
-    }));
-  }, [branchesResponse]);
+    if (!branchesDropdown || !Array.isArray(branchesDropdown)) return [];
+    return branchesDropdown.map((item) => ({ id: item.key, label: item.value || item.key }));
+  }, [branchesDropdown]);
 
-  // Staff type options for dropdown
   const staffTypeOptions = useMemo(() => {
-    if (!staffTypesResponse) return [];
-    const staffTypes = staffTypesResponse.data || [];
-    return staffTypes.map((staffType) => ({
-      id: staffType.id,
-      label: staffType.name || staffType.id,
-    }));
-  }, [staffTypesResponse]);
+    if (!staffTypesDropdown || !Array.isArray(staffTypesDropdown)) return [];
+    return staffTypesDropdown.map((item) => ({ id: item.key, label: item.value || item.key }));
+  }, [staffTypesDropdown]);
 
   // Debounce search term
   useEffect(() => {
@@ -223,7 +209,7 @@ export function StaffListView() {
 
   // Mutations
   const [deleteStaff] = useDeleteStaffMutation();
-  const [toggleStaffActive, { isLoading: isTogglingActive }] = useToggleStaffActiveMutation();
+  const [toggleStaffActive, { isLoading: _isTogglingActive }] = useToggleStaffActiveMutation();
 
   // Track which staff is being toggled
   const [togglingStaffId, setTogglingStaffId] = useState(null);
@@ -278,27 +264,16 @@ export function StaffListView() {
       setDeleteStaffName(null);
     } catch (err) {
       console.error('Failed to delete staff member:', err);
-      
-      // Distinguish between network errors and validation errors
-      const isNetworkError = !err?.data && (err?.status === 'FETCH_ERROR' || err?.status === 'TIMEOUT' || err?.status === 'PARSING_ERROR');
-      const isServerError = err?.status >= 500;
-      
-      if (isNetworkError || isServerError) {
-        toast.error(
-          isNetworkError 
-            ? 'Network error. Please check your connection and try again.'
-            : 'Server error. Please try again later.',
-          {
-            action: {
-              label: 'Retry',
-              onClick: () => {
-                handleDeleteConfirm();
-              },
-            },
-          }
-        );
+      const { message, isRetryable } = getApiErrorMessage(err, {
+        defaultMessage: 'Failed to delete staff member',
+        notFoundMessage: 'Staff member not found',
+      });
+      if (isRetryable) {
+        toast.error(message, {
+          action: { label: 'Retry', onClick: () => handleDeleteConfirm() },
+        });
       } else {
-        toast.error(err?.data?.message || 'Failed to delete staff member');
+        toast.error(message);
       }
     }
   }, [deleteStaffId, deleteStaff, deleteStaffName]);
@@ -310,7 +285,7 @@ export function StaffListView() {
     if (!currentStaff) return;
 
     const previousIsActive = currentStaff.isActive;
-    const newIsActive = !previousIsActive;
+    const _newIsActive = !previousIsActive;
 
     // Optimistic update: update local cache immediately
     // RTK Query will handle the actual cache update, but we need to update the displayed rows
@@ -336,26 +311,16 @@ export function StaffListView() {
       // Revert optimistic update by refetching
       refetch();
       
-      // Distinguish between network errors and validation errors
-      const isNetworkError = !err?.data && (err?.status === 'FETCH_ERROR' || err?.status === 'TIMEOUT' || err?.status === 'PARSING_ERROR');
-      const isServerError = err?.status >= 500;
-      
-      if (isNetworkError || isServerError) {
-        toast.error(
-          isNetworkError 
-            ? 'Network error. Please check your connection and try again.'
-            : 'Server error. Please try again later.',
-          {
-            action: {
-              label: 'Retry',
-              onClick: () => {
-                handleToggleActive(staffId);
-              },
-            },
-          }
-        );
+      const { message, isRetryable } = getApiErrorMessage(err, {
+        defaultMessage: 'Failed to update staff member status',
+        notFoundMessage: 'Staff member not found',
+      });
+      if (isRetryable) {
+        toast.error(message, {
+          action: { label: 'Retry', onClick: () => handleToggleActive(staffId) },
+        });
       } else {
-        toast.error(err?.data?.message || 'Failed to update staff member status');
+        toast.error(message);
       }
     } finally {
       setTogglingStaffId(null);
@@ -419,8 +384,7 @@ export function StaffListView() {
   }, []);
 
   // Prepare table rows with optimistic update for toggling
-  const rows = useMemo(() => {
-    return staff.map((staffMember) => {
+  const rows = useMemo(() => staff.map((staffMember) => {
       // Apply optimistic update if this staff is being toggled
       let isActive = staffMember.isActive;
       if (togglingStaffId === staffMember.id) {
@@ -438,8 +402,7 @@ export function StaffListView() {
         hireDate: formatDate(staffMember.hireDate),
         isActive,
       };
-    });
-  }, [staff, formatDate, togglingStaffId]);
+    }), [staff, formatDate, togglingStaffId]);
 
   // Define columns
   const columns = useMemo(
@@ -584,21 +547,6 @@ export function StaffListView() {
     [handleView, handleEdit, handleToggleActive, handleDeleteClick, togglingStaffId]
   );
 
-  // Error state
-  if (error) {
-    return (
-      <EmptyContent
-        title="Error loading staff"
-        description={error?.data?.message || 'An error occurred while loading staff'}
-        action={
-          <Field.Button variant="contained" onClick={() => refetch()} startIcon="solar:refresh-bold">
-            Retry
-          </Field.Button>
-        }
-      />
-    );
-  }
-
   return (
     <Box>
       <Card variant="outlined" sx={{ p: 2 }}>
@@ -697,25 +645,16 @@ export function StaffListView() {
           columns={columns}
           loading={isLoading}
           actions={actions}
+          error={error}
+          onRetry={refetch}
+          errorEntityLabel="staff"
           pagination={{
-            enabled: true,
+            ...DEFAULT_PAGINATION,
             mode: 'server',
             pageSize,
-            pageSizeOptions: [10, 25, 50, 100],
             rowCount: paginationMeta.totalCount,
             onPageChange: handlePageChange,
             onPageSizeChange: handlePageSizeChange,
-          }}
-          sorting={{
-            enabled: true,
-            mode: 'client', // Keep client-side sorting for now (backend doesn't support custom sorting)
-          }}
-          filtering={{
-            enabled: false, // Disable client-side filtering (using server-side search)
-            quickFilter: false,
-          }}
-          toolbar={{
-            show: false, // Hide default toolbar, using custom search/filter bar above
           }}
           getRowId={(row) => row.id}
           emptyContent={

@@ -77,6 +77,8 @@ export const baseApi = createApi({
     'Recipe',
     'Kitchen',
     'TenantMaster',
+    'PaymentMode',
+    'OrderType',
     // Add more as needed for new features
   ],
   endpoints: () => ({}),

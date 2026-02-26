@@ -1,23 +1,24 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMediaQuery, useTheme } from '@mui/material';
+import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
 import Alert from '@mui/material/Alert';
+import { useTheme, useMediaQuery } from '@mui/material';
 
+import { updateOrderSchema } from 'src/schemas';
+import { useGetStaffQuery } from 'src/store/api/staff-api';
+import { useGetOrderByIdQuery, useUpdateOrderMutation } from 'src/store/api/orders-api';
+
+import { toast } from 'src/components/snackbar';
 import { Form, Field } from 'src/components/hook-form';
 import { CustomDialog } from 'src/components/custom-dialog';
+import { QueryStateContent } from 'src/components/query-state-content';
 import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
-import { toast } from 'src/components/snackbar';
 
-import { useGetOrderByIdQuery, useUpdateOrderMutation } from 'src/store/api/orders-api';
-import { useGetStaffQuery } from 'src/store/api/staff-api';
-import { updateOrderSchema } from '../schemas/order-schema';
-import { ORDER_STATUS_OPTIONS, isCompletionStatus, isActiveStatus } from '../utils/order-status';
+import { isActiveStatus, isCompletionStatus, ORDER_STATUS_OPTIONS } from '../utils/order-status';
 
 // ----------------------------------------------------------------------
 
@@ -41,7 +42,7 @@ export function OrderUpdateDialog({ open, orderId, onClose, onSuccess }) {
   const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] = useState(false);
 
   // Fetch order data (P1-006: refetch for Retry on error)
-  const { data: orderData, isLoading: isLoadingOrder, refetch: refetchOrder } = useGetOrderByIdQuery(
+  const { data: orderData, isLoading: isLoadingOrder, error: queryError, isError: _isError, refetch: refetchOrder } = useGetOrderByIdQuery(
     { id: orderId, includeItems: false },
     { skip: !orderId || !open }
   );
@@ -240,25 +241,18 @@ export function OrderUpdateDialog({ open, orderId, onClose, onSuccess }) {
         disableClose={isSubmitting}
         actions={renderActions()}
       >
-        {isLoading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-            <Typography variant="body2" color="text.secondary">
-              Loading order data...
-            </Typography>
-          </Box>
-        ) : hasError ? (
-          <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', minHeight: 200, gap: 2 }}>
-            <Typography variant="body1" color="error">
-              Failed to load order data
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Order not found or an error occurred.
-            </Typography>
-            <Field.Button variant="contained" onClick={() => refetchOrder()} startIcon="solar:refresh-bold" sx={{ mt: 1 }}>
-              Retry
-            </Field.Button>
-          </Box>
-        ) : (
+        <QueryStateContent
+          isLoading={isLoading}
+          isError={hasError}
+          error={queryError}
+          onRetry={refetchOrder}
+          loadingMessage="Loading order data..."
+          errorTitle="Failed to load order data"
+          errorMessageOptions={{
+            defaultMessage: 'Failed to load order data',
+            notFoundMessage: 'Order not found or an error occurred.',
+          }}
+        >
           <Form methods={methods} onSubmit={onSubmit}>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1 }}>
               {/* Table Availability Warning */}
@@ -326,7 +320,7 @@ export function OrderUpdateDialog({ open, orderId, onClose, onSuccess }) {
               />
             </Box>
           </Form>
-        )}
+        </QueryStateContent>
       </CustomDialog>
 
       {/* Unsaved Changes Confirmation Dialog */}

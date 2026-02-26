@@ -109,6 +109,17 @@ export const tablesApi = baseApi.injectEndpoints({
         'Table',
       ],
     }),
+
+    getTablesDropdown: builder.query({
+      query: (params) => ({
+        url: '/api/tables/dropdown',
+        method: 'GET',
+        params: {
+          branchId: params?.branchId || undefined,
+        },
+      }),
+      providesTags: ['Table'],
+    }),
   }),
 });
 
@@ -123,5 +134,6 @@ export const {
   useDeleteTableMutation,
   useReleaseTableMutation,
   useToggleTableActiveMutation,
+  useGetTablesDropdownQuery,
 } = tablesApi;
 

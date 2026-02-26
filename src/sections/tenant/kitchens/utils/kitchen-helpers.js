@@ -3,9 +3,7 @@
 /**
  * Get active status label
  */
-export const getActiveStatusLabel = (isActive) => {
-  return isActive ? 'Active' : 'Inactive';
-};
+export const getActiveStatusLabel = (isActive) => isActive ? 'Active' : 'Inactive';
 
 // ----------------------------------------------------------------------
 
@@ -13,9 +11,7 @@ export const getActiveStatusLabel = (isActive) => {
  * Get active status color for badge
  * Returns MUI color variant based on active status
  */
-export const getActiveStatusColor = (isActive) => {
-  return isActive ? 'success' : 'default';
-};
+export const getActiveStatusColor = (isActive) => isActive ? 'success' : 'default';
 
 // ----------------------------------------------------------------------
 
@@ -23,9 +19,7 @@ export const getActiveStatusColor = (isActive) => {
  * Check if kitchen can be edited
  * Only active kitchens can be edited
  */
-export const canEdit = (isActive) => {
-  return isActive === true;
-};
+export const canEdit = (isActive) => isActive === true;
 
 // ----------------------------------------------------------------------
 
@@ -33,9 +27,7 @@ export const canEdit = (isActive) => {
  * Check if kitchen can be deleted
  * Only active kitchens can be deleted
  */
-export const canDelete = (isActive) => {
-  return isActive === true;
-};
+export const canDelete = (isActive) => isActive === true;
 
 // ----------------------------------------------------------------------
 
@@ -43,7 +35,5 @@ export const canDelete = (isActive) => {
  * Check if kitchen active status can be toggled.
  * P2-003: Toggle is shown for all rows; API allows toggle for any non-deleted kitchen (argument unused).
  */
-export const canToggleActive = () => {
-  return true;
-};
+export const canToggleActive = () => true;
 

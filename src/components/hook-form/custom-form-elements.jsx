@@ -1,9 +1,8 @@
-import { lazy, Suspense, useId } from 'react';
-import { merge } from 'es-toolkit';
 import dayjs from 'dayjs';
+import { lazy, Suspense } from 'react';
+import { MuiOtpInput } from 'mui-one-time-password-input';
 import { Controller, useFormContext } from 'react-hook-form';
 import { transformValue, transformValueOnBlur, transformValueOnChange } from 'minimal-shared/utils';
-import { MuiOtpInput } from 'mui-one-time-password-input';
 
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
@@ -16,23 +15,22 @@ import Checkbox from '@mui/material/Checkbox';
 import TextField from '@mui/material/TextField';
 import FormGroup from '@mui/material/FormGroup';
 import FormLabel from '@mui/material/FormLabel';
-import FormControl from '@mui/material/FormControl';
-import IconButton from '@mui/material/IconButton';
-import Autocomplete from '@mui/material/Autocomplete';
 import RadioGroup from '@mui/material/RadioGroup';
+import FormControl from '@mui/material/FormControl';
+import Autocomplete from '@mui/material/Autocomplete';
 import InputAdornment from '@mui/material/InputAdornment';
-import FormControlLabel from '@mui/material/FormControlLabel';
+import { inputBaseClasses } from '@mui/material/InputBase';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
+import FormControlLabel from '@mui/material/FormControlLabel';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
-import { inputBaseClasses } from '@mui/material/InputBase';
 
 import { Iconify } from '../iconify';
+import { HelperText } from './help-text';
 import { PhoneInput } from '../phone-input';
 import { NumberInput } from '../number-input';
 import { CountrySelect } from '../country-select';
 import { Upload, UploadBox, UploadAvatar } from '../upload';
-import { HelperText } from './help-text';
 
 // ----------------------------------------------------------------------
 // Helper Functions
@@ -1371,9 +1369,9 @@ function RHFButtonBase({
   // Filter out internal MUI ButtonBase ref props that shouldn't be passed to DOM elements
   // These are internal refs used by ButtonBase and should not be spread to the Button component
   const {
-    touchRippleRef,
-    focusRipple,
-    centerRipple,
+    touchRippleRef: _touchRippleRef,
+    focusRipple: _focusRipple,
+    centerRipple: _centerRipple,
     ...buttonProps
   } = other;
 
@@ -1446,15 +1444,20 @@ export function RHFButton({
   loading: loadingProp,
   ...buttonProps
 }) {
-  // If useFormState is true, get form context
   if (useFormState) {
-    const formContext = useFormContext();
-    const formLoading = formContext?.formState?.isSubmitting ?? false;
-    return <RHFButtonWithForm loading={loadingProp} formLoading={formLoading} {...buttonProps} />;
+    return <RHFButtonFormLoader loading={loadingProp} {...buttonProps} />;
   }
-
-  // No form state needed - use base component
   return <RHFButtonBase loading={loadingProp} {...buttonProps} />;
+}
+
+/**
+ * Loader that reads form context and passes formLoading to RHFButtonWithForm.
+ * Only rendered when useFormState is true so hooks are not conditional in parent.
+ */
+function RHFButtonFormLoader({ loading: loadingProp, ...buttonProps }) {
+  const formContext = useFormContext();
+  const formLoading = formContext?.formState?.isSubmitting ?? false;
+  return <RHFButtonWithForm loading={loadingProp} formLoading={formLoading} {...buttonProps} />;
 }
 
 // ----------------------------------------------------------------------

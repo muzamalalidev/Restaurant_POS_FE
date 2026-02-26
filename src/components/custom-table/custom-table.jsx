@@ -1,12 +1,17 @@
 'use client';
 
-import { useMemo, useCallback, memo, Component, useRef, useEffect } from 'react';
+import { memo, useRef, useMemo, Component, useEffect } from 'react';
 
 import Box from '@mui/material/Box';
-import { DataGrid, gridClasses, Toolbar } from '@mui/x-data-grid';
+import Card from '@mui/material/Card';
+import Button from '@mui/material/Button';
+import { Toolbar, DataGrid, gridClasses } from '@mui/x-data-grid';
 
+import { getApiErrorMessage } from 'src/utils/api-error-message';
+import { useActionsColumn, createActionsColumn } from 'src/utils/create-actions-column';
+
+import { Iconify } from 'src/components/iconify';
 import { EmptyContent } from 'src/components/empty-content';
-import { createActionsColumn, useActionsColumn } from 'src/utils/create-actions-column';
 import {
   useToolbarSettings,
   CustomToolbarQuickFilter,
@@ -17,16 +22,12 @@ import {
 } from 'src/components/custom-data-grid';
 
 import { useCustomTable } from './use-custom-table';
-import { normalizeRows, normalizeColumns, normalizeToolbar, hasConfirmationDialogs } from './table-utils';
 import {
-  DEFAULT_PAGINATION,
-  DEFAULT_SORTING,
-  DEFAULT_FILTERING,
-  DEFAULT_SELECTION,
   DEFAULT_TOOLBAR,
   DEFAULT_DENSITY,
   DEFAULT_ACTIONS_COLUMN,
 } from './table-defaults';
+import { normalizeRows, normalizeColumns, normalizeToolbar, hasConfirmationDialogs } from './table-utils';
 
 // ----------------------------------------------------------------------
 // CustomTable Component
@@ -58,6 +59,9 @@ import {
  * @param {Function} props.getRowClassName - Dynamic row className
  * @param {object} props.initialState - Initial grid state
  * @param {ReactNode} props.emptyContent - Custom empty content component
+ * @param {unknown} props.error - RTK Query / API error; when set, table shows error state instead of grid
+ * @param {Function} [props.onRetry] - Callback when user clicks Retry (e.g. refetch)
+ * @param {string} [props.errorEntityLabel] - Label for error message, e.g. "recipes" -> "Error loading recipes"
  * @param {object} props.otherProps - All other DataGrid props
  */
 function CustomTableComponent({
@@ -83,6 +87,9 @@ function CustomTableComponent({
   getRowClassName,
   initialState: initialStateProp,
   emptyContent,
+  error: errorProp,
+  onRetry,
+  errorEntityLabel = 'data',
   ...otherProps
 }) {
   // Normalize and validate data with error handling
@@ -229,16 +236,14 @@ function CustomTableComponent({
 
     if (toolbarConfig && typeof toolbarConfig === 'object' && toolbarConfig.columns !== false) {
       defaultSlotProps.columnsManagement = {
-        getTogglableColumns: () => {
-          return columns
+        getTogglableColumns: () => columns
             .filter((col) => {
               if (col.type === 'actions') return false;
               if (col.field === 'actions') return false;
               if (col.hideable === false) return false;
               return col.field;
             })
-            .map((col) => col.field);
-        },
+            .map((col) => col.field),
       };
     }
 
@@ -436,6 +441,29 @@ function CustomTableComponent({
     return <EmptyContent title="No columns defined" description="Please provide at least one column definition." />;
   }
 
+  // API error state: show error in table area (inline UX), use getApiErrorMessage for message and isRetryable
+  if (errorProp) {
+    const { message, isRetryable } = getApiErrorMessage(errorProp, {
+      defaultMessage: `Error loading ${errorEntityLabel}`,
+    });
+    const title = `Error loading ${errorEntityLabel}`;
+    return (
+      <Card sx={{ p: 6 }}>
+        <EmptyContent
+          title={title}
+          description={message}
+          action={
+            isRetryable && onRetry ? (
+              <Button variant="contained" onClick={onRetry} startIcon={<Iconify icon="solar:refresh-bold" />}>
+                Retry
+              </Button>
+            ) : null
+          }
+        />
+      </Card>
+    );
+  }
+
   // Edge case: Handle empty rows (already handled by DataGrid's noRowsOverlay slot)
 
   return (
@@ -503,7 +531,10 @@ export const CustomTable = memo(CustomTableComponent, (prevProps, nextProps) => 
     prevProps.selection !== nextProps.selection ||
     prevProps.toolbar !== nextProps.toolbar ||
     prevProps.density !== nextProps.density ||
-    prevProps.height !== nextProps.height
+    prevProps.height !== nextProps.height ||
+    prevProps.error !== nextProps.error ||
+    prevProps.onRetry !== nextProps.onRetry ||
+    prevProps.errorEntityLabel !== nextProps.errorEntityLabel
   ) {
     return false;
   }

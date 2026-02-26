@@ -57,16 +57,14 @@ export const getOrderStatusColor = (statusId) => {
 /**
  * Check if status is a completion status (frees table)
  */
-export const isCompletionStatus = (statusId) => {
-  return [11, 8, 10, 12].includes(statusId); // Completed, Served, Delivered, Cancelled
-};
+export const isCompletionStatus = (statusId) => 
+   [11, 8, 10, 12].includes(statusId) // Completed, Served, Delivered, Cancelled
+;
 
 // ----------------------------------------------------------------------
 
 /**
  * Check if status is an active status (reserves table)
  */
-export const isActiveStatus = (statusId) => {
-  return !isCompletionStatus(statusId);
-};
+export const isActiveStatus = (statusId) => !isCompletionStatus(statusId);
 

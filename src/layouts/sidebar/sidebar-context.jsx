@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'; // eslint-disable-line perfectionist/sort-named-imports
 
 import { usePathname } from 'src/routes/hooks';
+
 import { useSettingsContext } from 'src/components/settings';
 
 // ----------------------------------------------------------------------

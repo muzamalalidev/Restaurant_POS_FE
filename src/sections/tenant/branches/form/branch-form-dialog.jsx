@@ -1,21 +1,25 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMediaQuery, useTheme } from '@mui/material';
+import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
+import { useTheme, useMediaQuery } from '@mui/material';
 
+import { getApiErrorMessage } from 'src/utils/api-error-message';
+
+import { createBranchSchema, updateBranchSchema } from 'src/schemas';
+import { useGetBranchByIdQuery, useCreateBranchMutation, useUpdateBranchMutation } from 'src/store/api/branches-api';
+
+import { toast } from 'src/components/snackbar';
 import { Form, Field } from 'src/components/hook-form';
 import { CustomDialog } from 'src/components/custom-dialog';
+import { QueryStateContent } from 'src/components/query-state-content';
 import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
-import { toast } from 'src/components/snackbar';
 
-import { useGetBranchByIdQuery, useCreateBranchMutation, useUpdateBranchMutation } from 'src/store/api/branches-api';
-import { createBranchSchema, updateBranchSchema } from '../schemas/branch-schema';
 import { PhoneNumbersField } from './components/phone-numbers-field';
 
 // ----------------------------------------------------------------------
@@ -63,7 +67,7 @@ export function BranchFormDialog({ open, mode, branchId, onClose, onSuccess, ten
   const [originalPhoneNumbers, setOriginalPhoneNumbers] = useState(null);
 
   // Fetch branch data for edit mode
-  const { data: branchData, isLoading: isLoadingBranch, error: queryError, isError } = useGetBranchByIdQuery(branchId, {
+  const { data: branchData, isLoading: isLoadingBranch, error: queryError, isError, refetch: refetchBranch } = useGetBranchByIdQuery(branchId, {
     skip: !branchId || mode !== 'edit',
   });
 
@@ -253,7 +257,7 @@ export function BranchFormDialog({ open, mode, branchId, onClose, onSuccess, ten
           // User has valid phones - send full replacement
           phoneNumbersValue = validPhones.map((phone) => ({
             id: phone.id || '', // Empty string for new phones, UUID for existing
-            branchId: branchId, // Must match path parameter (all phones belong to this branch)
+            branchId, // Must match path parameter (all phones belong to this branch)
             phoneNumber: normalizePhoneNumber(phone.phoneNumber), // P0-003 FIX: Normalize before sending
             isPrimary: phone.isPrimary || false,
             phoneLabel: phone.phoneLabel || null,
@@ -280,23 +284,12 @@ export function BranchFormDialog({ open, mode, branchId, onClose, onSuccess, ten
       onClose();
     } catch (error) {
       console.error('Failed to save branch:', error);
-      // P1-005 FIX: Distinguish error types for better UX
-      const errorStatus = error?.status || error?.data?.status;
-      let errorMessage;
-      
-      if (errorStatus === 404) {
-        errorMessage = error?.data?.message || 'Branch or tenant not found';
-      } else if (errorStatus === 400) {
-        errorMessage = error?.data?.message || 'Validation failed. Please check your input.';
-      } else if (errorStatus >= 500) {
-        errorMessage = 'Server error. Please try again later.';
-      } else if (!navigator.onLine) {
-        errorMessage = 'Network error. Please check your connection.';
-      } else {
-        errorMessage = error?.data?.message || error?.message || `Failed to ${mode === 'create' ? 'create' : 'update'} branch`;
-      }
-      
-      toast.error(errorMessage);
+      const { message } = getApiErrorMessage(error, {
+        defaultMessage: `Failed to ${mode === 'create' ? 'create' : 'update'} branch`,
+        notFoundMessage: 'Branch or tenant not found',
+        validationMessage: 'Validation failed. Please check your input.',
+      });
+      toast.error(message);
     }
   });
 
@@ -380,22 +373,18 @@ export function BranchFormDialog({ open, mode, branchId, onClose, onSuccess, ten
           },
         }}
       >
-        {isLoading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-            <Typography variant="body2" color="text.secondary">
-              Loading branch data...
-            </Typography>
-          </Box>
-        ) : hasError ? (
-          <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', minHeight: 200, gap: 2 }}>
-            <Typography variant="body1" color="error">
-              Failed to load branch data
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {queryError?.data?.message || queryError?.message || 'Network Error'}
-            </Typography>
-          </Box>
-        ) : (
+        <QueryStateContent
+          isLoading={isLoading}
+          isError={hasError}
+          error={queryError}
+          onRetry={refetchBranch}
+          loadingMessage="Loading branch data..."
+          errorTitle="Failed to load branch data"
+          errorMessageOptions={{
+            defaultMessage: 'Failed to load branch data',
+            notFoundMessage: 'Branch not found',
+          }}
+        >
           <Form methods={methods} onSubmit={onSubmit}>
             <Box 
               sx={{ 
@@ -498,7 +487,7 @@ export function BranchFormDialog({ open, mode, branchId, onClose, onSuccess, ten
               </Box>
             </Box>
           </Form>
-        )}
+        </QueryStateContent>
       </CustomDialog>
 
       {/* Unsaved Changes Confirmation Dialog */}

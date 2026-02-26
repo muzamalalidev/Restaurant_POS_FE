@@ -94,6 +94,17 @@ export const branchesApi = baseApi.injectEndpoints({
         'Branch',
       ],
     }),
+
+    getBranchesDropdown: builder.query({
+      query: (params) => ({
+        url: '/api/branches/dropdown',
+        method: 'GET',
+        params: {
+          tenantId: params?.tenantId || undefined,
+        },
+      }),
+      providesTags: ['Branch'],
+    }),
   }),
 });
 
@@ -107,5 +118,6 @@ export const {
   useUpdateBranchMutation,
   useDeleteBranchMutation,
   useToggleBranchActiveMutation,
+  useGetBranchesDropdownQuery,
 } = branchesApi;
 

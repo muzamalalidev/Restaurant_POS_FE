@@ -1,11 +1,13 @@
 'use client';
 
-import { useTheme } from '@mui/material/styles';
 import Backdrop from '@mui/material/Backdrop';
+import { useTheme } from '@mui/material/styles';
 
 import { paths } from 'src/routes/paths';
-import { useSettingsContext } from 'src/components/settings';
+
 import { primaryColorPresets } from 'src/theme/with-settings';
+
+import { useSettingsContext } from 'src/components/settings';
 
 import { useAuthContext } from 'src/auth/hooks';
 
@@ -16,7 +18,7 @@ import { useSidebar } from '../sidebar-context';
 export function SidebarMobileHeader() {
   const { isMobileOpen, openMobile } = useSidebar();
   const { user } = useAuthContext();
-  const theme = useTheme();
+  const _theme = useTheme();
   const settings = useSettingsContext();
 
   const initials = getInitials(user?.displayName || user?.email || '');

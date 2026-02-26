@@ -11,15 +11,22 @@ import IconButton from '@mui/material/IconButton';
 import Typography from '@mui/material/Typography';
 import InputAdornment from '@mui/material/InputAdornment';
 
-import { useGetStaffTypesQuery, useDeleteStaffTypeMutation, useToggleStaffTypeActiveMutation } from 'src/store/api/staff-types-api';
+import { getApiErrorMessage } from 'src/utils/api-error-message';
+
+import {
+  useGetStaffTypesQuery,
+  useDeleteStaffTypeMutation,
+  useGetStaffTypesDropdownQuery,
+  useToggleStaffTypeActiveMutation,
+} from 'src/store/api/staff-types-api';
 
 import { Label } from 'src/components/label';
 import { toast } from 'src/components/snackbar';
 import { Field } from 'src/components/hook-form';
 import { Iconify } from 'src/components/iconify';
-import { CustomTable } from 'src/components/custom-table';
 import { EmptyContent } from 'src/components/empty-content';
 import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
+import { CustomTable, DEFAULT_PAGINATION } from 'src/components/custom-table';
 
 import { StaffTypeFormDialog } from '../form/staff-type-form-dialog';
 import { StaffTypeDetailsDialog } from '../components/staff-type-details-dialog';
@@ -48,7 +55,7 @@ export function StaffTypeListView() {
 
   // Pagination state
   const [pageNumber, setPageNumber] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGINATION.pageSize);
 
   // Search state (debounced)
   const [searchTerm, setSearchTerm] = useState('');
@@ -90,24 +97,16 @@ export function StaffTypeListView() {
 
   const { data: staffTypesResponse, isLoading, error, refetch } = useGetStaffTypesQuery(queryParams);
 
-  // P2-REMAINING-001 FIX: Fetch all staff types for duplicate validation (pass to form dialog)
-  // This avoids fetching 1000 records in the form dialog
-  const { data: allStaffTypesResponse } = useGetStaffTypesQuery(
-    { pageSize: 1000 },
-    { skip: false } // Always fetch for duplicate validation
-  );
+  const { data: staffTypesDropdown } = useGetStaffTypesDropdownQuery();
+  const allStaffTypes = useMemo(() => {
+    if (!staffTypesDropdown || !Array.isArray(staffTypesDropdown)) return [];
+    return staffTypesDropdown.map((item) => ({ id: item.key, name: item.value || item.key }));
+  }, [staffTypesDropdown]);
 
-  // Extract data from paginated response
   const staffTypes = useMemo(() => {
     if (!staffTypesResponse) return [];
     return staffTypesResponse.data || [];
   }, [staffTypesResponse]);
-
-  // P2-REMAINING-001 FIX: Extract all staff types for duplicate validation
-  const allStaffTypes = useMemo(() => {
-    if (!allStaffTypesResponse) return [];
-    return allStaffTypesResponse.data || [];
-  }, [allStaffTypesResponse]);
 
   // Extract pagination metadata
   const paginationMeta = useMemo(() => {
@@ -129,7 +128,7 @@ export function StaffTypeListView() {
 
   // Mutations
   const [deleteStaffTypeMutation] = useDeleteStaffTypeMutation();
-  const [toggleStaffTypeActive, { isLoading: isTogglingActive }] = useToggleStaffTypeActiveMutation();
+  const [toggleStaffTypeActive, { isLoading: _isTogglingActive }] = useToggleStaffTypeActiveMutation();
 
   // Track which staff type is being toggled
   const [togglingStaffTypeId, setTogglingStaffTypeId] = useState(null);
@@ -177,29 +176,12 @@ export function StaffTypeListView() {
       setDeleteStaffTypeId(null);
       setDeleteStaffType(null);
     } catch (err) {
-      // P1-004 FIX: Distinguish error types
-      const errorStatus = err?.status || err?.data?.status;
-      let errorMessage;
-      
-      if (errorStatus === 404) {
-        errorMessage = err?.data?.message || 'Staff type not found or has been deleted';
-      } else if (errorStatus === 400) {
-        // Check if it's the "in use" error
-        const message = err?.data?.message || '';
-        if (message.includes('being used by staff members')) {
-          errorMessage = 'Cannot delete staff type because it is being used by staff members. Please reassign or remove those staff members first.';
-        } else {
-          errorMessage = err?.data?.message || 'Validation failed. Please check your input.';
-        }
-      } else if (errorStatus >= 500) {
-        errorMessage = 'Server error. Please try again later.';
-      } else if (typeof navigator !== 'undefined' && !navigator.onLine) {
-        errorMessage = 'Network error. Please check your connection.';
-      } else {
-        errorMessage = err?.data?.message || 'Failed to delete staff type';
-      }
-      
-      toast.error(errorMessage);
+      const { message } = getApiErrorMessage(err, {
+        defaultMessage: 'Failed to delete staff type',
+        notFoundMessage: 'Staff type not found or has been deleted',
+        validationMessage: 'Validation failed. Please check your input.',
+      });
+      toast.error(message);
       console.error('Failed to delete staff type:', err);
     } finally {
       setIsDeleting(false);
@@ -246,26 +228,16 @@ export function StaffTypeListView() {
         return updated;
       });
       
-      // P1-004 FIX: Distinguish error types
-      const errorStatus = err?.status || err?.data?.status;
-      let errorMessage;
-      
-      if (errorStatus === 404) {
-        errorMessage = err?.data?.message || 'Staff type not found or has been deleted';
-      } else if (errorStatus >= 500) {
-        errorMessage = 'Server error. Please try again later.';
-      } else if (typeof navigator !== 'undefined' && !navigator.onLine) {
-        errorMessage = 'Network error. Please check your connection.';
-      } else {
-        errorMessage = err?.data?.message || 'Failed to update staff type status';
-      }
-      
-      toast.error(errorMessage);
+      const { message } = getApiErrorMessage(err, {
+        defaultMessage: 'Failed to update staff type status',
+        notFoundMessage: 'Staff type not found or has been deleted',
+      });
+      toast.error(message);
       console.error('Failed to toggle staff type active status:', err);
     } finally {
       setTogglingStaffTypeId(null);
     }
-  }, [toggleStaffTypeActive, togglingStaffTypeId, staffTypes]);
+  }, [toggleStaffTypeActive, togglingStaffTypeId, staffTypes, optimisticToggleUpdates]);
 
   // Handle form dialog success
   const handleFormSuccess = useCallback((id, action) => {
@@ -405,21 +377,6 @@ export function StaffTypeListView() {
     [handleView, handleEdit, handleToggleActive, handleDeleteClick, togglingStaffTypeId]
   );
 
-  // Error state
-  if (error) {
-    return (
-      <EmptyContent
-        title="Error loading staff types"
-        description={error?.data?.message || 'An error occurred while loading staff types'}
-        action={
-          <Field.Button variant="contained" onClick={() => refetch()} startIcon="solar:refresh-bold">
-            Retry
-          </Field.Button>
-        }
-      />
-    );
-  }
-
   return (
     <Box>
       <Card variant="outlined" sx={{ p: 2 }}>
@@ -473,24 +430,16 @@ export function StaffTypeListView() {
           columns={columns}
           loading={isLoading}
           actions={actions}
+          error={error}
+          onRetry={refetch}
+          errorEntityLabel="staff types"
           pagination={{
-            enabled: true,
+            ...DEFAULT_PAGINATION,
             mode: 'server',
             pageSize,
-            pageSizeOptions: [10, 25, 50, 100],
             rowCount: paginationMeta.totalCount,
             onPageChange: handlePageChange,
             onPageSizeChange: handlePageSizeChange,
-          }}
-          sorting={{
-            enabled: false, // P1-008 FIX: Disable sorting since backend doesn't support custom sort parameters and client-side only sorts current page
-          }}
-          filtering={{
-            enabled: false, // Disable client-side filtering (using server-side search)
-            quickFilter: false,
-          }}
-          toolbar={{
-            show: false, // Hide default toolbar, using custom search/filter bar above
           }}
           getRowId={(row) => row.id}
           emptyContent={

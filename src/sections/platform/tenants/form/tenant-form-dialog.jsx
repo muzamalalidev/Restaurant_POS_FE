@@ -1,21 +1,25 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMediaQuery, useTheme } from '@mui/material';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
+import { useTheme, useMediaQuery } from '@mui/material';
 
+import { getApiErrorMessage } from 'src/utils/api-error-message';
+
+import { createTenantSchema, updateTenantSchema } from 'src/schemas';
+import { useGetTenantByIdQuery, useCreateTenantMutation, useUpdateTenantMutation } from 'src/store/api/tenants-api';
+
+import { toast } from 'src/components/snackbar';
 import { Form, Field } from 'src/components/hook-form';
 import { CustomDialog } from 'src/components/custom-dialog';
+import { QueryStateContent } from 'src/components/query-state-content';
 import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
-import { toast } from 'src/components/snackbar';
 
-import { useGetTenantByIdQuery, useCreateTenantMutation, useUpdateTenantMutation } from 'src/store/api/tenants-api';
-import { createTenantSchema, updateTenantSchema } from '../schemas/tenant-schema';
 import { PhoneNumbersField } from './components/phone-numbers-field';
 
 // ----------------------------------------------------------------------
@@ -34,7 +38,7 @@ export function TenantFormDialog({ open, mode, tenantId, onClose, onSuccess }) {
   const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] = useState(false);
 
   // Fetch tenant data for edit mode
-  const { data: tenantData, isLoading: isLoadingTenant, error: queryError, isError } = useGetTenantByIdQuery(tenantId, {
+  const { data: tenantData, isLoading: isLoadingTenant, error: queryError, isError, refetch: refetchTenant } = useGetTenantByIdQuery(tenantId, {
     skip: !tenantId || mode !== 'edit',
   });
 
@@ -146,7 +150,7 @@ export function TenantFormDialog({ open, mode, tenantId, onClose, onSuccess }) {
             validPhones.length > 0
               ? validPhones.map((phone) => ({
                   id: phone.id || '', // Empty string for new phones, UUID for existing
-                  tenantId: tenantId, // Must match path parameter (all phones belong to this tenant)
+                  tenantId, // Must match path parameter (all phones belong to this tenant)
                   phoneNumber: phone.phoneNumber,
                   isPrimary: phone.isPrimary || false,
                   label: phone.label || null,
@@ -163,7 +167,10 @@ export function TenantFormDialog({ open, mode, tenantId, onClose, onSuccess }) {
       onClose();
     } catch (error) {
       console.error('Failed to save tenant:', error);
-      toast.error(error?.data?.message || `Failed to ${mode === 'create' ? 'create' : 'update'} tenant`);
+      const { message } = getApiErrorMessage(error, {
+        defaultMessage: `Failed to ${mode === 'create' ? 'create' : 'update'} tenant`,
+      });
+      toast.error(message);
     }
   });
 
@@ -238,22 +245,18 @@ export function TenantFormDialog({ open, mode, tenantId, onClose, onSuccess }) {
         disableClose={isSubmitting}
         actions={renderActions()}
       >
-        {isLoading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-            <Typography variant="body2" color="text.secondary">
-              Loading tenant data...
-            </Typography>
-          </Box>
-        ) : hasError ? (
-          <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', minHeight: 200, gap: 2 }}>
-            <Typography variant="body1" color="error">
-              Failed to load tenant data
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {queryError?.data?.message || queryError?.message || 'Network Error'}
-            </Typography>
-          </Box>
-        ) : (
+        <QueryStateContent
+          isLoading={isLoading}
+          isError={hasError}
+          error={queryError}
+          onRetry={refetchTenant}
+          loadingMessage="Loading tenant data..."
+          errorTitle="Failed to load tenant data"
+          errorMessageOptions={{
+            defaultMessage: 'Failed to load tenant data',
+            notFoundMessage: 'Tenant not found',
+          }}
+        >
           <Form methods={methods} onSubmit={onSubmit}>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1 }}>
               {/* Tenant Information Section */}
@@ -298,7 +301,7 @@ export function TenantFormDialog({ open, mode, tenantId, onClose, onSuccess }) {
               </Box>
             </Box>
           </Form>
-        )}
+        </QueryStateContent>
       </CustomDialog>
 
       {/* Unsaved Changes Confirmation Dialog */}

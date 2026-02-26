@@ -22,7 +22,7 @@ const commonRules = () => ({
   'default-case-last': 2,
   'consistent-return': 2,
   'no-constant-condition': 1,
-  'no-unused-vars': [1, { args: 'none' }],
+  'no-unused-vars': [1, { args: 'none', varsIgnorePattern: '^_' }],
   'default-case': [2, { commentPattern: '^no default$' }],
   'lines-around-directive': [2, { before: 'always', after: 'always' }],
   'arrow-body-style': [2, 'as-needed', { requireReturnForObjectLiteral: false }],

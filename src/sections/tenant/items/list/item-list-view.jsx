@@ -1,27 +1,30 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useForm, FormProvider } from 'react-hook-form';
+import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
+import Stack from '@mui/material/Stack';
+import Switch from '@mui/material/Switch';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
-import Stack from '@mui/material/Stack';
-import Switch from '@mui/material/Switch';
 
-import { CustomTable } from 'src/components/custom-table';
+import { getApiErrorMessage } from 'src/utils/api-error-message';
+
+import { useGetTenantsDropdownQuery } from 'src/store/api/tenants-api';
+import { useGetCategoriesDropdownQuery } from 'src/store/api/categories-api';
+import { useGetItemsQuery, useDeleteItemMutation, useToggleItemActiveMutation } from 'src/store/api/items-api';
+
 import { Label } from 'src/components/label';
-import { EmptyContent } from 'src/components/empty-content';
 import { toast } from 'src/components/snackbar';
 import { Field } from 'src/components/hook-form';
-import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
 import { Iconify } from 'src/components/iconify';
+import { EmptyContent } from 'src/components/empty-content';
+import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
+import { CustomTable, DEFAULT_PAGINATION } from 'src/components/custom-table';
 
-import { useGetItemsQuery, useDeleteItemMutation, useToggleItemActiveMutation } from 'src/store/api/items-api';
-import { useGetTenantsQuery } from 'src/store/api/tenants-api';
-import { useGetCategoriesQuery } from 'src/store/api/categories-api';
 import { ItemFormDialog } from '../form/item-form-dialog';
 import { ItemDetailsDialog } from '../components/item-details-dialog';
 
@@ -89,7 +92,7 @@ export function ItemListView() {
 
   // Pagination state
   const [pageNumber, setPageNumber] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGINATION.pageSize);
 
   // Search state (debounced)
   const [searchTerm, setSearchTerm] = useState('');
@@ -197,39 +200,24 @@ export function ItemListView() {
     }
   }, [watchedTenantId, tenantId, getId]);
 
-  // P0-005: Limit dropdown fetches to avoid scale/performance issues
-  const { data: tenantsResponse } = useGetTenantsQuery({
-    pageSize: 200,
-  });
-
   const tenantIdForCategories = tenantId
     ? (typeof tenantId === 'object' && tenantId !== null ? tenantId.id : tenantId)
     : undefined;
 
-  const { data: categoriesResponse } = useGetCategoriesQuery({
-    pageSize: 200,
-    tenantId: tenantIdForCategories,
-  });
-
-  // Tenant options for dropdown
+  const { data: tenantsDropdown } = useGetTenantsDropdownQuery();
   const tenantOptions = useMemo(() => {
-    if (!tenantsResponse) return [];
-    const tenants = tenantsResponse.data || [];
-    return tenants.map((tenant) => ({
-      id: tenant.id,
-      label: tenant.name || tenant.id,
-    }));
-  }, [tenantsResponse]);
+    if (!tenantsDropdown || !Array.isArray(tenantsDropdown)) return [];
+    return tenantsDropdown.map((item) => ({ id: item.key, label: item.value || item.key }));
+  }, [tenantsDropdown]);
 
-  // Category options for dropdown
+  const { data: categoriesDropdown } = useGetCategoriesDropdownQuery(
+    { tenantId: tenantIdForCategories },
+    { skip: !tenantIdForCategories }
+  );
   const categoryOptions = useMemo(() => {
-    if (!categoriesResponse) return [];
-    const categories = categoriesResponse.data || [];
-    return categories.map((category) => ({
-      id: category.id,
-      label: category.name || category.id,
-    }));
-  }, [categoriesResponse]);
+    if (!categoriesDropdown || !Array.isArray(categoriesDropdown)) return [];
+    return categoriesDropdown.map((item) => ({ id: item.key, label: item.value || item.key }));
+  }, [categoriesDropdown]);
 
   // Debounce search term
   useEffect(() => {
@@ -296,7 +284,7 @@ export function ItemListView() {
 
   // Mutations
   const [deleteItem] = useDeleteItemMutation();
-  const [toggleItemActive, { isLoading: isTogglingActive }] = useToggleItemActiveMutation();
+  const [toggleItemActive, { isLoading: _isTogglingActive }] = useToggleItemActiveMutation();
 
   // Track which item is being toggled
   const [togglingItemId, setTogglingItemId] = useState(null);
@@ -341,7 +329,10 @@ export function ItemListView() {
       setDeleteItemId(null);
       setDeleteItemName(null);
     } catch (err) {
-      toast.error(err?.data?.message || 'Failed to delete item');
+      const { message } = getApiErrorMessage(err, {
+        defaultMessage: 'Failed to delete item',
+      });
+      toast.error(message);
       console.error('Failed to delete item:', err);
     }
   }, [deleteItemId, deleteItem]);
@@ -355,7 +346,10 @@ export function ItemListView() {
       await toggleItemActive(itemId).unwrap();
       toast.success('Item status updated successfully');
     } catch (err) {
-      toast.error(err?.data?.message || 'Failed to update item status');
+      const { message } = getApiErrorMessage(err, {
+        defaultMessage: 'Failed to update item status',
+      });
+      toast.error(message);
       console.error('Failed to toggle item active status:', err);
     } finally {
       setTogglingItemId(null);
@@ -394,32 +388,25 @@ export function ItemListView() {
     setSearchTerm('');
   }, [searchForm]);
 
-  // Find category name by ID
-  const getCategoryName = useCallback((categoryId, allCategories) => {
-    if (!categoryId || !allCategories) return null;
-    const category = allCategories.find((cat) => cat.id === categoryId);
-    return category?.name || null;
+  const getCategoryName = useCallback((categoryIdParam, options) => {
+    if (!categoryIdParam || !options?.length) return null;
+    const opt = options.find((cat) => cat.id === categoryIdParam);
+    return opt?.label ?? null;
   }, []);
 
-  // Find tenant name by ID
-  const getTenantName = useCallback((tenantId, tenants) => {
-    if (!tenantId || !tenants) return null;
-    const tenant = tenants.find((t) => t.id === tenantId);
-    return tenant?.name || null;
+  const getTenantName = useCallback((tenantIdParam, options) => {
+    if (!tenantIdParam || !options?.length) return null;
+    const opt = options.find((t) => t.id === tenantIdParam);
+    return opt?.label ?? null;
   }, []);
 
-  // Prepare table rows
-  const rows = useMemo(() => {
-    const allCategories = categoriesResponse?.data || [];
-    const tenants = tenantsResponse?.data || [];
-    
-    return items.map((item) => ({
+  const rows = useMemo(() => items.map((item) => ({
       id: item.id,
       name: item.name,
       categoryId: item.categoryId,
-      categoryName: getCategoryName(item.categoryId, allCategories),
+      categoryName: getCategoryName(item.categoryId, categoryOptions),
       tenantId: item.tenantId,
-      tenantName: getTenantName(item.tenantId, tenants),
+      tenantName: getTenantName(item.tenantId, tenantOptions),
       itemType: item.itemType,
       itemTypeLabel: getItemTypeLabel(item.itemType),
       price: item.price,
@@ -430,8 +417,7 @@ export function ItemListView() {
       imageUrl: item.imageUrl,
       isActive: item.isActive,
       isAvailable: item.isAvailable,
-    }));
-  }, [items, categoriesResponse, tenantsResponse, getCategoryName, getTenantName]);
+    })), [items, categoryOptions, tenantOptions, getCategoryName, getTenantName]);
 
   // Define columns
   const columns = useMemo(
@@ -566,24 +552,7 @@ export function ItemListView() {
   );
 
   // Check if categoryId is selected (for disabling tenantId filter)
-  const isCategorySelected = useMemo(() => {
-    return categoryId !== null && categoryId !== undefined;
-  }, [categoryId]);
-
-  // Error state
-  if (error) {
-    return (
-      <EmptyContent
-        title="Error loading items"
-        description={error?.data?.message || 'An error occurred while loading items'}
-        action={
-          <Field.Button variant="contained" onClick={() => refetch()} startIcon="solar:refresh-bold">
-            Retry
-          </Field.Button>
-        }
-      />
-    );
-  }
+  const isCategorySelected = useMemo(() => categoryId !== null && categoryId !== undefined, [categoryId]);
 
   return (
     <Box>
@@ -684,24 +653,16 @@ export function ItemListView() {
           columns={columns}
           loading={isLoading}
           actions={actions}
+          error={error}
+          onRetry={refetch}
+          errorEntityLabel="items"
           pagination={{
-            enabled: true,
+            ...DEFAULT_PAGINATION,
             mode: 'server',
             pageSize,
-            pageSizeOptions: [10, 25, 50, 100],
             rowCount: paginationMeta.totalCount,
             onPageChange: handlePageChange,
             onPageSizeChange: handlePageSizeChange,
-          }}
-          sorting={{
-            enabled: false, // P0-004: Disabled - client-side only sorts current page; backend sort applies to list
-          }}
-          filtering={{
-            enabled: false, // Disable client-side filtering (using server-side search)
-            quickFilter: false,
-          }}
-          toolbar={{
-            show: false, // Hide default toolbar, using custom search/filter bar above
           }}
           getRowId={(row) => row.id}
           emptyContent={
@@ -725,7 +686,6 @@ export function ItemListView() {
         onClose={handleFormClose}
         onSuccess={handleFormSuccess}
         tenantOptions={tenantOptions}
-        categoryOptions={categoriesResponse?.data || []}
       />
 
       {/* Details Dialog */}

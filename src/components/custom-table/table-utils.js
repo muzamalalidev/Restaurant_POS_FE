@@ -1,5 +1,7 @@
 import { isValidElement } from 'react';
 
+import { DEFAULT_TOOLBAR } from './table-defaults';
+
 // ----------------------------------------------------------------------
 // Utility Functions for CustomTable
 // ----------------------------------------------------------------------
@@ -253,13 +255,13 @@ export function normalizeToolbar(toolbar) {
   }
 
   if (toolbar === true || toolbar === undefined) {
-    return { show: true };
+    return { ...DEFAULT_TOOLBAR, show: true };
   }
 
   if (typeof toolbar === 'object' && !toolbar.$$typeof && !isValidElement(toolbar)) {
     return {
       show: toolbar.show !== false,
-      quickFilter: toolbar.quickFilter !== false,
+      quickFilter: toolbar.quickFilter === true,
       export: toolbar.export || false,
       columns: toolbar.columns !== false,
       filter: toolbar.filter !== false,

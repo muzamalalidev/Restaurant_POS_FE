@@ -1,28 +1,33 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMediaQuery, useTheme } from '@mui/material';
+import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
 import Divider from '@mui/material/Divider';
-import Typography from '@mui/material/Typography';
 import Collapse from '@mui/material/Collapse';
 import IconButton from '@mui/material/IconButton';
-import Stack from '@mui/material/Stack';
+import Typography from '@mui/material/Typography';
+import { useTheme, useMediaQuery } from '@mui/material';
 
+import { getApiErrorMessage } from 'src/utils/api-error-message';
+
+import { createOrderSchema } from 'src/schemas';
+import { useGetItemsQuery } from 'src/store/api/items-api';
+import { useCreateOrderMutation } from 'src/store/api/orders-api';
+import { useGetStaffDropdownQuery } from 'src/store/api/staff-api';
+import { useGetTablesDropdownQuery } from 'src/store/api/tables-api';
+import { useGetBranchesDropdownQuery } from 'src/store/api/branches-api';
+import { useGetKitchensDropdownQuery } from 'src/store/api/kitchens-api';
+import { useGetOrderTypesDropdownQuery } from 'src/store/api/order-types-api';
+
+import { toast } from 'src/components/snackbar';
+import { Iconify } from 'src/components/iconify';
 import { Form, Field } from 'src/components/hook-form';
 import { CustomDialog } from 'src/components/custom-dialog';
 import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
-import { toast } from 'src/components/snackbar';
-import { Iconify } from 'src/components/iconify';
 
-import { useCreateOrderMutation } from 'src/store/api/orders-api';
-import { useGetBranchesQuery } from 'src/store/api/branches-api';
-import { useGetStaffQuery } from 'src/store/api/staff-api';
-import { useGetItemsQuery } from 'src/store/api/items-api';
-import { createOrderSchema } from '../schemas/order-schema';
 import { OrderItemsField } from './components/order-items-field';
 
 // ----------------------------------------------------------------------
@@ -37,47 +42,42 @@ import { OrderItemsField } from './components/order-items-field';
  * @param {boolean} props.open - Whether the dialog is open
  * @param {Function} props.onClose - Callback when dialog closes
  * @param {Function} props.onSuccess - Callback when form is successfully submitted
+ * @param {Array} props.branchOptions - Branch options (from list view; fallback: fetch in form when empty)
+ * @param {Array} props.staffOptions - Staff options (from list view; fallback: fetch in form when empty)
  */
-export function OrderFormDialog({ open, onClose, onSuccess }) {
+export function OrderFormDialog({ open, onClose, onSuccess, branchOptions = [], staffOptions = [] }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
-  // State for unsaved changes confirmation
   const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] = useState(false);
-  
-  // State for delivery details collapse
   const [deliveryDetailsOpen, setDeliveryDetailsOpen] = useState(false);
 
-  // Mutations
   const [createOrder, { isLoading: isCreating }] = useCreateOrderMutation();
   const isSubmitting = isCreating;
-  // P0-002: Ref guard to prevent double-submit
   const isSubmittingRef = useRef(false);
 
-  // Fetch options for dropdowns (P0-003: limit to 200)
-  const { data: branchesResponse } = useGetBranchesQuery({ pageSize: 200 });
-  const { data: staffResponse } = useGetStaffQuery({ pageSize: 200 });
+  const { data: branchesDropdownFallback } = useGetBranchesDropdownQuery(undefined, { skip: branchOptions.length > 0 });
+  const { data: staffDropdownFallback } = useGetStaffDropdownQuery(undefined, { skip: staffOptions.length > 0 });
+  const { data: orderTypesDropdown } = useGetOrderTypesDropdownQuery(undefined, { skip: !open });
+
+  const effectiveBranchOptions = useMemo(() => {
+    if (branchOptions.length > 0) return branchOptions;
+    if (!branchesDropdownFallback || !Array.isArray(branchesDropdownFallback)) return [];
+    return branchesDropdownFallback.map((item) => ({ id: item.key, label: item.value || item.key }));
+  }, [branchOptions, branchesDropdownFallback]);
+  const effectiveStaffOptions = useMemo(() => {
+    if (staffOptions.length > 0) return staffOptions;
+    if (!staffDropdownFallback || !Array.isArray(staffDropdownFallback)) return [];
+    return staffDropdownFallback.map((item) => ({ id: item.key, label: item.value || item.key }));
+  }, [staffOptions, staffDropdownFallback]);
+
+  // Transform order types dropdown to options format
+  const orderTypeOptions = useMemo(() => {
+    if (!orderTypesDropdown || !Array.isArray(orderTypesDropdown)) return [];
+    return orderTypesDropdown.map((item) => ({ id: item.key, label: item.value || item.key }));
+  }, [orderTypesDropdown]);
+
   const { data: itemsResponse } = useGetItemsQuery({ pageSize: 200 });
-
-  // Branch options
-  const branchOptions = useMemo(() => {
-    if (!branchesResponse) return [];
-    const branches = branchesResponse.data || [];
-    return branches.map((branch) => ({
-      id: branch.id,
-      label: branch.name || branch.id,
-    }));
-  }, [branchesResponse]);
-
-  // Staff options
-  const staffOptions = useMemo(() => {
-    if (!staffResponse) return [];
-    const staff = staffResponse.data || [];
-    return staff.map((s) => ({
-      id: s.id,
-      label: s.name || s.id,
-    }));
-  }, [staffResponse]);
 
   // Item options (for order items)
   const itemOptions = useMemo(() => {
@@ -120,15 +120,50 @@ export function OrderFormDialog({ open, onClose, onSuccess }) {
     reset,
     handleSubmit,
     watch,
+    setValue,
     formState: { isDirty },
   } = methods;
 
-  // Watch form values for calculations
+  // Watch form values for calculations and dependent dropdowns
+  const watchedBranchId = watch('branchId');
   const watchedItems = watch('items');
   const watchedTaxAmount = watch('taxAmount');
   const watchedTaxPercentage = watch('taxPercentage');
   const watchedDiscountAmount = watch('discountAmount');
   const watchedDiscountPercentage = watch('discountPercentage');
+
+  // Extract branchId value (handle object or string)
+  const selectedBranchId = useMemo(() => {
+    if (!watchedBranchId) return null;
+    if (typeof watchedBranchId === 'object' && watchedBranchId !== null && 'id' in watchedBranchId) {
+      return watchedBranchId.id;
+    }
+    return watchedBranchId;
+  }, [watchedBranchId]);
+
+  // Fetch tables dropdown based on selected branch
+  const { data: tablesDropdown } = useGetTablesDropdownQuery(
+    { branchId: selectedBranchId || undefined },
+    { skip: !selectedBranchId || !open }
+  );
+
+  // Fetch kitchens dropdown based on selected branch
+  const { data: kitchensDropdown } = useGetKitchensDropdownQuery(
+    { branchId: selectedBranchId || undefined },
+    { skip: !selectedBranchId || !open }
+  );
+
+  // Transform tables dropdown to options format
+  const tableOptions = useMemo(() => {
+    if (!tablesDropdown || !Array.isArray(tablesDropdown)) return [];
+    return tablesDropdown.map((item) => ({ id: item.key, label: item.value || item.key }));
+  }, [tablesDropdown]);
+
+  // Transform kitchens dropdown to options format
+  const kitchenOptions = useMemo(() => {
+    if (!kitchensDropdown || !Array.isArray(kitchensDropdown)) return [];
+    return kitchensDropdown.map((item) => ({ id: item.key, label: item.value || item.key }));
+  }, [kitchensDropdown]);
 
   // Calculate subtotal from items
   const subtotal = useMemo(() => {
@@ -157,9 +192,10 @@ export function OrderFormDialog({ open, onClose, onSuccess }) {
   }, [watchedDiscountPercentage, watchedDiscountAmount, subtotal]);
 
   // Calculate total
-  const totalAmount = useMemo(() => {
-    return subtotal + calculatedTaxAmount - calculatedDiscountAmount;
-  }, [subtotal, calculatedTaxAmount, calculatedDiscountAmount]);
+  const totalAmount = useMemo(
+    () => subtotal + calculatedTaxAmount - calculatedDiscountAmount,
+    [subtotal, calculatedTaxAmount, calculatedDiscountAmount]
+  );
 
   // Reset form when dialog closes
   useEffect(() => {
@@ -182,6 +218,18 @@ export function OrderFormDialog({ open, onClose, onSuccess }) {
       setDeliveryDetailsOpen(false);
     }
   }, [open, reset]);
+
+  // Clear table and kitchen selections when branch changes
+  const previousBranchIdRef = useRef(null);
+  useEffect(() => {
+    if (open && selectedBranchId !== previousBranchIdRef.current && previousBranchIdRef.current !== null) {
+      // Branch changed, clear dependent fields
+      setValue('tableId', null, { shouldValidate: false, shouldDirty: false });
+      setValue('kitchenId', null, { shouldValidate: false, shouldDirty: false });
+    }
+    previousBranchIdRef.current = selectedBranchId;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, selectedBranchId]);
 
   // Handle form submit (P0-002: ref guard prevents double-submit)
   const onSubmit = handleSubmit(async (data) => {
@@ -255,8 +303,10 @@ export function OrderFormDialog({ open, onClose, onSuccess }) {
       // P0-004: Parent shows toast on onSuccess; no duplicate here
     } catch (error) {
       console.error('Failed to create order:', error);
-      const errorMessage = error?.data?.message || error?.data || error?.message || 'Failed to create order';
-      toast.error(errorMessage);
+      const { message } = getApiErrorMessage(error, {
+        defaultMessage: 'Failed to create order',
+      });
+      toast.error(message);
     } finally {
       isSubmittingRef.current = false;
     }
@@ -339,7 +389,7 @@ export function OrderFormDialog({ open, onClose, onSuccess }) {
                   <Field.Autocomplete
                     name="branchId"
                     label="Branch"
-                    options={branchOptions}
+                    options={effectiveBranchOptions}
                     getOptionLabel={(option) => {
                       if (!option) return '';
                       return option.label || option.name || option.id || '';
@@ -354,7 +404,7 @@ export function OrderFormDialog({ open, onClose, onSuccess }) {
                   <Field.Autocomplete
                     name="orderTypeId"
                     label="Order Type"
-                    options={[]}
+                    options={orderTypeOptions}
                     getOptionLabel={(option) => {
                       if (!option) return '';
                       return option.label || option.name || option.id || '';
@@ -364,11 +414,6 @@ export function OrderFormDialog({ open, onClose, onSuccess }) {
                       return option.id === value.id;
                     }}
                     required
-                    slotProps={{
-                      textField: {
-                        helperText: 'Order types API not yet implemented',
-                      },
-                    }}
                     sx={{ flex: 1, minWidth: 200 }}
                   />
                 </Box>
@@ -395,7 +440,7 @@ export function OrderFormDialog({ open, onClose, onSuccess }) {
                   <Field.Autocomplete
                     name="staffId"
                     label="Staff"
-                    options={staffOptions}
+                    options={effectiveStaffOptions}
                     getOptionLabel={(option) => {
                       if (!option) return '';
                       return option.label || option.name || option.id || '';
@@ -411,7 +456,7 @@ export function OrderFormDialog({ open, onClose, onSuccess }) {
                   <Field.Autocomplete
                     name="tableId"
                     label="Table"
-                    options={[]}
+                    options={tableOptions}
                     getOptionLabel={(option) => {
                       if (!option) return '';
                       return option.label || option.name || option.id || '';
@@ -420,9 +465,10 @@ export function OrderFormDialog({ open, onClose, onSuccess }) {
                       if (!option || !value) return option === value;
                       return option.id === value.id;
                     }}
+                    disabled={!selectedBranchId}
                     slotProps={{
                       textField: {
-                        helperText: 'Tables API not yet implemented',
+                        helperText: !selectedBranchId ? 'Please select a branch first' : undefined,
                       },
                     }}
                     sx={{ flex: 1, minWidth: 200 }}
@@ -430,7 +476,7 @@ export function OrderFormDialog({ open, onClose, onSuccess }) {
                   <Field.Autocomplete
                     name="kitchenId"
                     label="Kitchen"
-                    options={[]}
+                    options={kitchenOptions}
                     getOptionLabel={(option) => {
                       if (!option) return '';
                       return option.label || option.name || option.id || '';
@@ -439,9 +485,10 @@ export function OrderFormDialog({ open, onClose, onSuccess }) {
                       if (!option || !value) return option === value;
                       return option.id === value.id;
                     }}
+                    disabled={!selectedBranchId}
                     slotProps={{
                       textField: {
-                        helperText: 'Kitchens API not yet implemented',
+                        helperText: !selectedBranchId ? 'Please select a branch first' : undefined,
                       },
                     }}
                     sx={{ flex: 1, minWidth: 200 }}
@@ -454,9 +501,6 @@ export function OrderFormDialog({ open, onClose, onSuccess }) {
 
             {/* Items Section */}
             <Box>
-              <Typography variant="subtitle2" sx={{ mb: 2 }}>
-                Order Items
-              </Typography>
               <OrderItemsField name="items" itemOptions={itemOptions} />
             </Box>
 

@@ -1,21 +1,28 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMediaQuery, useTheme } from '@mui/material';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
-import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
+import { useTheme, useMediaQuery } from '@mui/material';
 
+import { getApiErrorMessage } from 'src/utils/api-error-message';
+
+import { createStaffTypeSchema, updateStaffTypeSchema } from 'src/schemas';
+import {
+  useGetStaffTypesQuery,
+  useCreateStaffTypeMutation,
+  useUpdateStaffTypeMutation,
+  useGetStaffTypesDropdownQuery,
+} from 'src/store/api/staff-types-api';
+
+import { toast } from 'src/components/snackbar';
 import { Form, Field } from 'src/components/hook-form';
 import { CustomDialog } from 'src/components/custom-dialog';
+import { QueryStateContent } from 'src/components/query-state-content';
 import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
-import { toast } from 'src/components/snackbar';
-
-import { useGetStaffTypesQuery, useCreateStaffTypeMutation, useUpdateStaffTypeMutation } from 'src/store/api/staff-types-api';
-import { createStaffTypeSchema, updateStaffTypeSchema } from '../schemas/staff-type-schema';
 
 // ----------------------------------------------------------------------
 
@@ -44,7 +51,7 @@ export function StaffTypeFormDialog({ open, mode, staffTypeId, staffTypeData: in
   // Use staffTypeData passed from list view (P0-001 FIX: Avoid fetching 1000 records)
   // Fallback: If not provided, fetch with large page size (for backward compatibility)
   const shouldFetch = mode === 'edit' && !initialStaffTypeData && staffTypeId;
-  const { data: staffTypesResponse, isLoading: isLoadingStaffType, error: queryError } = useGetStaffTypesQuery(
+  const { data: staffTypesResponse, isLoading: isLoadingStaffType, error: queryError, isError: _isError, refetch: refetchStaffTypes } = useGetStaffTypesQuery(
     { pageSize: 1000 },
     { skip: !shouldFetch }
   );
@@ -65,19 +72,14 @@ export function StaffTypeFormDialog({ open, mode, staffTypeId, staffTypeData: in
 
   const isSubmitting = isCreating || isUpdating;
 
-  // P2-REMAINING-001 FIX: Use allStaffTypes from list view if provided, otherwise fetch (fallback)
-  const { data: allStaffTypesResponse } = useGetStaffTypesQuery(
-    { pageSize: 1000 },
-    { skip: !!initialAllStaffTypes } // Skip fetch if allStaffTypes provided from list view
-  );
-  
+  const { data: staffTypesDropdownFallback } = useGetStaffTypesDropdownQuery(undefined, {
+    skip: !!(initialAllStaffTypes && initialAllStaffTypes.length > 0),
+  });
   const allStaffTypes = useMemo(() => {
-    // Use initialAllStaffTypes if provided (from list view), otherwise use fetched data
-    if (initialAllStaffTypes && initialAllStaffTypes.length > 0) {
-      return initialAllStaffTypes;
-    }
-    return allStaffTypesResponse?.data || [];
-  }, [initialAllStaffTypes, allStaffTypesResponse]);
+    if (initialAllStaffTypes && initialAllStaffTypes.length > 0) return initialAllStaffTypes;
+    if (!staffTypesDropdownFallback || !Array.isArray(staffTypesDropdownFallback)) return [];
+    return staffTypesDropdownFallback.map((item) => ({ id: item.key, name: item.value || item.key }));
+  }, [initialAllStaffTypes, staffTypesDropdownFallback]);
 
   // Determine schema based on mode
   const schema = mode === 'create' ? createStaffTypeSchema : updateStaffTypeSchema;
@@ -141,11 +143,11 @@ export function StaffTypeFormDialog({ open, mode, staffTypeId, staffTypeData: in
     if (isSubmitting) return;
     
     // P1-001 FIX: Final duplicate check before submission (in case user bypassed blur validation)
-    const nameValue = data.name?.trim();
-    if (nameValue) {
+    const trimmedName = data.name?.trim();
+    if (trimmedName) {
       if (mode === 'create') {
         const isDuplicate = allStaffTypes.some(
-          (st) => st.name.toLowerCase() === nameValue.toLowerCase()
+          (st) => st.name.toLowerCase() === trimmedName.toLowerCase()
         );
         if (isDuplicate) {
           setError('name', {
@@ -156,7 +158,7 @@ export function StaffTypeFormDialog({ open, mode, staffTypeId, staffTypeData: in
         }
       } else if (mode === 'edit' && staffTypeId) {
         const isDuplicate = allStaffTypes.some(
-          (st) => st.id !== staffTypeId && st.name.toLowerCase() === nameValue.toLowerCase()
+          (st) => st.id !== staffTypeId && st.name.toLowerCase() === trimmedName.toLowerCase()
         );
         if (isDuplicate) {
           setError('name', {
@@ -194,23 +196,12 @@ export function StaffTypeFormDialog({ open, mode, staffTypeId, staffTypeData: in
       onClose();
     } catch (error) {
       console.error('Failed to save staff type:', error);
-      // P1-004 FIX: Distinguish error types for better UX
-      const errorStatus = error?.status || error?.data?.status;
-      let errorMessage;
-      
-      if (errorStatus === 404) {
-        errorMessage = error?.data?.message || 'Staff type not found or has been deleted';
-      } else if (errorStatus === 400) {
-        errorMessage = error?.data?.message || 'Validation failed. Please check your input.';
-      } else if (errorStatus >= 500) {
-        errorMessage = 'Server error. Please try again later.';
-      } else if (typeof navigator !== 'undefined' && !navigator.onLine) {
-        errorMessage = 'Network error. Please check your connection.';
-      } else {
-        errorMessage = error?.data?.message || `Failed to ${mode === 'create' ? 'create' : 'update'} staff type`;
-      }
-      
-      toast.error(errorMessage);
+      const { message } = getApiErrorMessage(error, {
+        defaultMessage: `Failed to ${mode === 'create' ? 'create' : 'update'} staff type`,
+        notFoundMessage: 'Staff type not found or has been deleted',
+        validationMessage: 'Validation failed. Please check your input.',
+      });
+      toast.error(message);
     }
   });
 
@@ -287,24 +278,18 @@ export function StaffTypeFormDialog({ open, mode, staffTypeId, staffTypeData: in
         disableClose={isSubmitting}
         actions={renderActions()}
       >
-        {isLoading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-            <Typography variant="body2" color="text.secondary">
-              Loading staff type data...
-            </Typography>
-          </Box>
-        ) : hasError ? (
-          <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', minHeight: 200, gap: 2 }}>
-            <Typography variant="body1" color="error">
-              {errorType === 'not-found' ? 'Staff type not found' : 'Failed to load staff type data'}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {errorType === 'not-found' 
-                ? 'This staff type may have been deleted or does not exist.'
-                : queryError?.data?.message || 'Please check your connection and try again.'}
-            </Typography>
-          </Box>
-        ) : (
+        <QueryStateContent
+          isLoading={isLoading}
+          isError={hasError}
+          error={queryError}
+          onRetry={refetchStaffTypes}
+          loadingMessage="Loading staff type data..."
+          errorTitle={errorType === 'not-found' ? 'Staff type not found' : 'Failed to load staff type data'}
+          errorMessageOptions={{
+            defaultMessage: 'Please check your connection and try again.',
+            notFoundMessage: 'This staff type may have been deleted or does not exist.',
+          }}
+        >
           <Form methods={methods} onSubmit={onSubmit}>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1 }}>
               {/* Staff Type Information Section */}
@@ -354,10 +339,10 @@ export function StaffTypeFormDialog({ open, mode, staffTypeId, staffTypeData: in
                     }
                     onBlur={async (e) => {
                       // P1-001 FIX: Check for duplicate name on blur
-                      const nameValue = e.target.value?.trim();
-                      if (nameValue && mode === 'create') {
+                      const blurNameValue = e.target.value?.trim();
+                      if (blurNameValue && mode === 'create') {
                         const isDuplicate = allStaffTypes.some(
-                          (st) => st.name.toLowerCase() === nameValue.toLowerCase()
+                          (st) => st.name.toLowerCase() === blurNameValue.toLowerCase()
                         );
                         if (isDuplicate) {
                           setError('name', {
@@ -367,10 +352,10 @@ export function StaffTypeFormDialog({ open, mode, staffTypeId, staffTypeData: in
                         } else {
                           clearErrors('name');
                         }
-                      } else if (nameValue && mode === 'edit' && staffTypeId) {
+                      } else if (blurNameValue && mode === 'edit' && staffTypeId) {
                         // In edit mode, exclude current staff type from duplicate check
                         const isDuplicate = allStaffTypes.some(
-                          (st) => st.id !== staffTypeId && st.name.toLowerCase() === nameValue.toLowerCase()
+                          (st) => st.id !== staffTypeId && st.name.toLowerCase() === blurNameValue.toLowerCase()
                         );
                         if (isDuplicate) {
                           setError('name', {
@@ -413,7 +398,7 @@ export function StaffTypeFormDialog({ open, mode, staffTypeId, staffTypeData: in
               </Box>
             </Box>
           </Form>
-        )}
+        </QueryStateContent>
       </CustomDialog>
 
       {/* Unsaved Changes Confirmation Dialog */}

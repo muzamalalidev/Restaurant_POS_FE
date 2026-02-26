@@ -124,6 +124,18 @@ export const categoriesApi = baseApi.injectEndpoints({
         'Category',
       ],
     }),
+
+    getCategoriesDropdown: builder.query({
+      query: (params) => ({
+        url: '/api/categories/dropdown',
+        method: 'GET',
+        params: {
+          tenantId: params?.tenantId || undefined,
+          parentId: params?.parentId || undefined,
+        },
+      }),
+      providesTags: ['Category'],
+    }),
   }),
 });
 
@@ -138,5 +150,6 @@ export const {
   useUpdateCategoryMutation,
   useDeleteCategoryMutation,
   useToggleCategoryActiveMutation,
+  useGetCategoriesDropdownQuery,
 } = categoriesApi;
 

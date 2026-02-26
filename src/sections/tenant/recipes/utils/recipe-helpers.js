@@ -3,9 +3,7 @@
 /**
  * Get active status label
  */
-export const getActiveStatusLabel = (isActive) => {
-  return isActive ? 'Active' : 'Inactive';
-};
+export const getActiveStatusLabel = (isActive) => isActive ? 'Active' : 'Inactive';
 
 // ----------------------------------------------------------------------
 
@@ -13,9 +11,7 @@ export const getActiveStatusLabel = (isActive) => {
  * Get active status color for badge
  * Returns MUI color variant based on active status
  */
-export const getActiveStatusColor = (isActive) => {
-  return isActive ? 'success' : 'default';
-};
+export const getActiveStatusColor = (isActive) => isActive ? 'success' : 'default';
 
 // ----------------------------------------------------------------------
 
@@ -44,9 +40,7 @@ export const formatTimeMinutes = (minutes) => {
  * Check if recipe can be edited
  * Only active recipes can be edited
  */
-export const canEdit = (isActive) => {
-  return isActive === true;
-};
+export const canEdit = (isActive) => isActive === true;
 
 // ----------------------------------------------------------------------
 
@@ -54,9 +48,7 @@ export const canEdit = (isActive) => {
  * Check if recipe can be deleted
  * Only active recipes can be deleted
  */
-export const canDelete = (isActive) => {
-  return isActive === true;
-};
+export const canDelete = (isActive) => isActive === true;
 
 // ----------------------------------------------------------------------
 
@@ -64,7 +56,5 @@ export const canDelete = (isActive) => {
  * Check if recipe active status can be toggled
  * Always allowed
  */
-export const canToggleActive = (isActive) => {
-  return true;
-};
+export const canToggleActive = (isActive) => true;
 

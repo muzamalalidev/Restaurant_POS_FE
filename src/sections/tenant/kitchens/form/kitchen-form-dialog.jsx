@@ -1,26 +1,29 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useForm, FormProvider } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMediaQuery, useTheme } from '@mui/material';
+import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
 import Stack from '@mui/material/Stack';
-import Divider from '@mui/material/Divider';
 import Alert from '@mui/material/Alert';
+import Divider from '@mui/material/Divider';
+import Typography from '@mui/material/Typography';
 import AlertTitle from '@mui/material/AlertTitle';
+import { useTheme, useMediaQuery } from '@mui/material';
 
+import { getApiErrorMessage } from 'src/utils/api-error-message';
+
+import { useGetTenantsDropdownQuery } from 'src/store/api/tenants-api';
+import { createKitchenSchema, updateKitchenSchema } from 'src/schemas';
+import { useGetBranchesDropdownQuery } from 'src/store/api/branches-api';
+import { useGetKitchenByIdQuery, useCreateKitchenMutation, useUpdateKitchenMutation } from 'src/store/api/kitchens-api';
+
+import { toast } from 'src/components/snackbar';
 import { Form, Field } from 'src/components/hook-form';
 import { CustomDialog } from 'src/components/custom-dialog';
+import { QueryStateContent } from 'src/components/query-state-content';
 import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
-import { toast } from 'src/components/snackbar';
-
-import { useGetKitchenByIdQuery, useCreateKitchenMutation, useUpdateKitchenMutation } from 'src/store/api/kitchens-api';
-import { useGetTenantsQuery } from 'src/store/api/tenants-api';
-import { useGetBranchesQuery } from 'src/store/api/branches-api';
-import { createKitchenSchema, updateKitchenSchema } from '../schemas/kitchen-schema';
 
 // ----------------------------------------------------------------------
 
@@ -52,43 +55,34 @@ const getId = (value) => {
  * @param {string|null} props.kitchenId - Kitchen ID for edit mode
  * @param {Function} props.onClose - Callback when dialog closes
  * @param {Function} props.onSuccess - Callback when form is successfully submitted
+ * @param {Array} props.tenantOptions - Tenant options for dropdown (from list view; fallback: fetch in form when empty)
  */
-export function KitchenFormDialog({ open, mode, kitchenId, onClose, onSuccess }) {
+export function KitchenFormDialog({ open, mode, kitchenId, onClose, onSuccess, tenantOptions = [] }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
-  // State for unsaved changes confirmation
   const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] = useState(false);
+  const isSubmittingRef = useRef(false);
 
-  // Fetch kitchen data for edit mode using GetById (full implementation)
   const { data: kitchenData, isLoading: isLoadingKitchen, error: queryError, isError, refetch: refetchKitchen } = useGetKitchenByIdQuery(
     kitchenId,
     { skip: !kitchenId || mode !== 'edit' || !open }
   );
 
-  // Fetch tenants for selector (P0-003: limit 200)
-  const { data: tenantsResponse, isLoading: isLoadingTenants } = useGetTenantsQuery({ pageSize: 200 });
-  const tenantOptions = useMemo(() => {
-    if (!tenantsResponse) return [];
-    const tenants = tenantsResponse.data || [];
-    return tenants.map((tenant) => ({
-      id: tenant.id,
-      label: tenant.name || tenant.id,
-    }));
-  }, [tenantsResponse]);
+  const { data: tenantsDropdownFallback, isLoading: isLoadingTenantsFallback } = useGetTenantsDropdownQuery(undefined, { skip: tenantOptions.length > 0 });
+  const effectiveTenantOptions = useMemo(() => {
+    if (tenantOptions.length > 0) return tenantOptions;
+    if (!tenantsDropdownFallback || !Array.isArray(tenantsDropdownFallback)) return [];
+    return tenantsDropdownFallback.map((item) => ({ id: item.key, label: item.value || item.key }));
+  }, [tenantOptions, tenantsDropdownFallback]);
+  const isLoadingTenants = tenantOptions.length > 0 ? false : isLoadingTenantsFallback;
 
-  // Mutations
   const [createKitchen, { isLoading: isCreating }] = useCreateKitchenMutation();
   const [updateKitchen, { isLoading: isUpdating }] = useUpdateKitchenMutation();
 
   const isSubmitting = isCreating || isUpdating;
-  // P0-002: Ref guard to prevent double-submit (state updates async)
-  const isSubmittingRef = useRef(false);
-
-  // Determine schema based on mode
   const schema = mode === 'create' ? createKitchenSchema : updateKitchenSchema;
 
-  // Form setup
   const methods = useForm({
     resolver: zodResolver(schema),
     defaultValues: useMemo(
@@ -114,27 +108,17 @@ export function KitchenFormDialog({ open, mode, kitchenId, onClose, onSuccess })
     formState: { isDirty },
   } = methods;
 
-  // Watch tenantId to filter branches
   const watchedTenantIdFromForm = watch('tenantId');
   const selectedTenantIdValue = useMemo(() => getId(watchedTenantIdFromForm), [watchedTenantIdFromForm]);
 
-  // Fetch branches filtered by selected tenant (P0-003: limit 200)
-  const { data: branchesResponse, isLoading: isLoadingBranches } = useGetBranchesQuery(
-    {
-      tenantId: selectedTenantIdValue || undefined,
-      pageSize: 200,
-    },
-    { skip: false }
+  const { data: branchesDropdown, isLoading: isLoadingBranches } = useGetBranchesDropdownQuery(
+    { tenantId: selectedTenantIdValue || undefined },
+    { skip: !selectedTenantIdValue || !open }
   );
-
   const branchOptions = useMemo(() => {
-    if (!branchesResponse) return [];
-    const branches = branchesResponse.data || [];
-    return branches.map((branch) => ({
-      id: branch.id,
-      label: branch.name || branch.id,
-    }));
-  }, [branchesResponse]);
+    if (!branchesDropdown || !Array.isArray(branchesDropdown)) return [];
+    return branchesDropdown.map((item) => ({ id: item.key, label: item.value || item.key }));
+  }, [branchesDropdown]);
 
   // Track if form has been initialized
   const formInitializedRef = useRef(false);
@@ -162,8 +146,8 @@ export function KitchenFormDialog({ open, mode, kitchenId, onClose, onSuccess })
     if (shouldInitialize) {
       if (mode === 'edit' && kitchenData) {
         // Find matching tenant and branch objects from options
-        const matchingTenant = kitchenData.tenantId && tenantOptions.length > 0
-          ? tenantOptions.find((t) => t.id === kitchenData.tenantId)
+        const matchingTenant = kitchenData.tenantId && effectiveTenantOptions.length > 0
+          ? effectiveTenantOptions.find((t) => t.id === kitchenData.tenantId)
           : null;
 
         // For branch, we need to fetch branches for the tenant first
@@ -194,7 +178,7 @@ export function KitchenFormDialog({ open, mode, kitchenId, onClose, onSuccess })
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, mode, kitchenId, kitchenData?.id, reset, tenantOptions.length]);
+  }, [open, mode, kitchenId, kitchenData?.id, reset, effectiveTenantOptions.length]);
 
   // Separate effect to set branchId when branches are loaded in edit mode
   useEffect(() => {
@@ -247,22 +231,12 @@ export function KitchenFormDialog({ open, mode, kitchenId, onClose, onSuccess })
       onClose();
     } catch (error) {
       console.error('Failed to save kitchen:', error);
-      const errorStatus = error?.status || error?.data?.status;
-      let errorMessage;
-
-      if (errorStatus === 404) {
-        errorMessage = error?.data?.message || 'Kitchen, tenant, or branch not found';
-      } else if (errorStatus === 400) {
-        errorMessage = error?.data?.message || 'Validation failed. Please check your input.';
-      } else if (errorStatus >= 500) {
-        errorMessage = 'Server error. Please try again later.';
-      } else if (!navigator.onLine) {
-        errorMessage = 'Network error. Please check your connection.';
-      } else {
-        errorMessage = error?.data?.message || error?.message || `Failed to ${mode === 'create' ? 'create' : 'update'} kitchen`;
-      }
-
-      toast.error(errorMessage);
+      const { message } = getApiErrorMessage(error, {
+        defaultMessage: `Failed to ${mode === 'create' ? 'create' : 'update'} kitchen`,
+        notFoundMessage: 'Kitchen, tenant, or branch not found',
+        validationMessage: 'Validation failed. Please check your input.',
+      });
+      toast.error(message);
     } finally {
       isSubmittingRef.current = false;
     }
@@ -346,25 +320,18 @@ export function KitchenFormDialog({ open, mode, kitchenId, onClose, onSuccess })
           },
         }}
       >
-        {isLoading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-            <Typography variant="body2" color="text.secondary">
-              Loading kitchen data...
-            </Typography>
-          </Box>
-        ) : hasError ? (
-          <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', minHeight: 200, gap: 2 }}>
-            <Typography variant="body1" color="error">
-              Failed to load kitchen data
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {queryError?.data?.message || queryError?.message || 'Kitchen not found or an error occurred.'}
-            </Typography>
-            <Field.Button variant="contained" onClick={() => refetchKitchen()} startIcon="solar:refresh-bold">
-              Retry
-            </Field.Button>
-          </Box>
-        ) : (
+        <QueryStateContent
+          isLoading={isLoading}
+          isError={hasError}
+          error={queryError}
+          onRetry={refetchKitchen}
+          loadingMessage="Loading kitchen data..."
+          errorTitle="Failed to load kitchen data"
+          errorMessageOptions={{
+            defaultMessage: 'Failed to load kitchen data',
+            notFoundMessage: 'Kitchen not found or an error occurred.',
+          }}
+        >
           <Form methods={methods} onSubmit={onSubmit}>
             <Box
               sx={{
@@ -386,7 +353,7 @@ export function KitchenFormDialog({ open, mode, kitchenId, onClose, onSuccess })
                   <Field.Autocomplete
                     name="tenantId"
                     label="Tenant"
-                    options={tenantOptions}
+                    options={effectiveTenantOptions}
                     loading={isLoadingTenants}
                     required
                     disabled={mode === 'edit'} // TenantId cannot be changed on update
@@ -484,7 +451,7 @@ export function KitchenFormDialog({ open, mode, kitchenId, onClose, onSuccess })
               )}
             </Box>
           </Form>
-        )}
+        </QueryStateContent>
       </CustomDialog>
 
       {/* Unsaved Changes Confirmation Dialog */}

@@ -1,26 +1,34 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useForm, FormProvider } from 'react-hook-form';
+import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
+import Stack from '@mui/material/Stack';
+import Switch from '@mui/material/Switch';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
-import Stack from '@mui/material/Stack';
-import Switch from '@mui/material/Switch';
 
-import { CustomTable } from 'src/components/custom-table';
+import { getApiErrorMessage } from 'src/utils/api-error-message';
+
+import { useGetTenantsDropdownQuery } from 'src/store/api/tenants-api';
+import {
+  useGetCategoriesQuery,
+  useDeleteCategoryMutation,
+  useGetCategoriesDropdownQuery,
+  useToggleCategoryActiveMutation,
+} from 'src/store/api/categories-api';
+
 import { Label } from 'src/components/label';
-import { EmptyContent } from 'src/components/empty-content';
 import { toast } from 'src/components/snackbar';
 import { Field } from 'src/components/hook-form';
-import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
 import { Iconify } from 'src/components/iconify';
+import { EmptyContent } from 'src/components/empty-content';
+import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
+import { CustomTable, DEFAULT_PAGINATION } from 'src/components/custom-table';
 
-import { useGetCategoriesQuery, useDeleteCategoryMutation, useToggleCategoryActiveMutation } from 'src/store/api/categories-api';
-import { useGetTenantsQuery } from 'src/store/api/tenants-api';
 import { CategoryFormDialog } from '../form/category-form-dialog';
 import { CategoryDetailsDialog } from '../components/category-details-dialog';
 
@@ -47,7 +55,7 @@ export function CategoryListView() {
 
   // Pagination state
   const [pageNumber, setPageNumber] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGINATION.pageSize);
 
   // Search state (debounced)
   const [searchTerm, setSearchTerm] = useState('');
@@ -150,50 +158,29 @@ export function CategoryListView() {
     }
   }, [watchedParentId, parentId, getId]);
 
-  // Fetch tenants for dropdown
-  const { data: tenantsResponse } = useGetTenantsQuery({
-    pageSize: 1000, // Large page size to get all tenants
-  });
-
-  // Fetch categories for parent filter dropdown (P0-028: Limited to 200 to prevent performance issues)
-  // Note: This is used for both filter dropdown and form dialog parent options
-  // If tenantId filter is active, fetch only that tenant's categories
-  const { data: allCategoriesResponse } = useGetCategoriesQuery({
-    pageSize: 200, // Limited to prevent performance issues with large datasets
-    tenantId: tenantId ? (typeof tenantId === 'object' && tenantId !== null ? tenantId.id : tenantId) : undefined,
-  });
-
-  // Tenant options for dropdown
+  const selectedTenantIdRaw = tenantId ? (typeof tenantId === 'object' && tenantId !== null ? tenantId.id : tenantId) : undefined;
+  const { data: tenantsDropdown } = useGetTenantsDropdownQuery();
   const tenantOptions = useMemo(() => {
-    if (!tenantsResponse) return [];
-    const tenants = tenantsResponse.data || [];
-    return tenants.map((tenant) => ({
-      id: tenant.id,
-      label: tenant.name || tenant.id,
+    if (!tenantsDropdown || !Array.isArray(tenantsDropdown)) return [];
+    return tenantsDropdown.map((item) => ({
+      id: item.key,
+      label: item.value || item.key,
     }));
-  }, [tenantsResponse]);
+  }, [tenantsDropdown]);
 
-  // Category options for parent filter (includes "Root Categories" option)
+  const { data: categoriesDropdown } = useGetCategoriesDropdownQuery(
+    { tenantId: selectedTenantIdRaw },
+    { skip: !selectedTenantIdRaw }
+  );
   const parentCategoryOptions = useMemo(() => {
-    const options = [
-      {
-        id: null,
-        label: 'Root Categories',
-      },
-    ];
-    
-    if (allCategoriesResponse?.data) {
-      const categories = allCategoriesResponse.data;
-      categories.forEach((category) => {
-        options.push({
-          id: category.id,
-          label: category.name || category.id,
-        });
+    const options = [{ id: null, label: 'Root Categories' }];
+    if (categoriesDropdown && Array.isArray(categoriesDropdown)) {
+      categoriesDropdown.forEach((item) => {
+        options.push({ id: item.key, label: item.value || item.key });
       });
     }
-    
     return options;
-  }, [allCategoriesResponse]);
+  }, [categoriesDropdown]);
 
   // Debounce search term
   useEffect(() => {
@@ -263,7 +250,7 @@ export function CategoryListView() {
 
   // Mutations
   const [deleteCategory] = useDeleteCategoryMutation();
-  const [toggleCategoryActive, { isLoading: isTogglingActive }] = useToggleCategoryActiveMutation();
+  const [toggleCategoryActive, { isLoading: _isTogglingActive }] = useToggleCategoryActiveMutation();
 
   // Track which category is being toggled
   const [togglingCategoryId, setTogglingCategoryId] = useState(null);
@@ -309,7 +296,10 @@ export function CategoryListView() {
       setDeleteCategoryId(null);
       setDeleteCategoryName(null);
     } catch (err) {
-      toast.error(err?.data?.message || 'Failed to delete category');
+      const { message } = getApiErrorMessage(err, {
+        defaultMessage: 'Failed to delete category',
+      });
+      toast.error(message);
       console.error('Failed to delete category:', err);
     }
   }, [deleteCategoryId, deleteCategory]);
@@ -328,7 +318,10 @@ export function CategoryListView() {
       await toggleCategoryActive(categoryId).unwrap();
       toast.success('Category status updated successfully');
     } catch (err) {
-      toast.error(err?.data?.message || 'Failed to update category status');
+      const { message } = getApiErrorMessage(err, {
+        defaultMessage: 'Failed to update category status',
+      });
+      toast.error(message);
       console.error('Failed to toggle category active status:', err);
     } finally {
       setTogglingCategoryId(null);
@@ -368,35 +361,28 @@ export function CategoryListView() {
   }, [searchForm]);
 
   // Find parent category name by ID
-  const getParentName = useCallback((parentId, allCategories) => {
-    if (!parentId || !allCategories) return 'Root';
-    const parent = allCategories.find((cat) => cat.id === parentId);
+  const getParentName = useCallback((parentIdParam, allCategories) => {
+    if (!parentIdParam || !allCategories) return 'Root';
+    const parent = allCategories.find((cat) => cat.id === parentIdParam);
     return parent?.name || 'Root';
   }, []);
 
-  // Find tenant name by ID
-  const getTenantName = useCallback((tenantId, tenants) => {
-    if (!tenantId || !tenants) return null;
-    const tenant = tenants.find((t) => t.id === tenantId);
-    return tenant?.name || null;
+  const getTenantName = useCallback((tenantIdParam, options) => {
+    if (!tenantIdParam || !options?.length) return null;
+    const opt = options.find((t) => t.id === tenantIdParam);
+    return opt?.label ?? null;
   }, []);
 
-  // Prepare table rows
-  const rows = useMemo(() => {
-    const allCategories = allCategoriesResponse?.data || [];
-    const tenants = tenantsResponse?.data || [];
-    
-    return categories.map((category) => ({
+  const rows = useMemo(() => categories.map((category) => ({
       id: category.id,
       name: category.name,
       parentId: category.parentId,
-      parentName: getParentName(category.parentId, allCategories),
+      parentName: getParentName(category.parentId, categories),
       tenantId: category.tenantId,
-      tenantName: getTenantName(category.tenantId, tenants),
+      tenantName: getTenantName(category.tenantId, tenantOptions),
       description: category.description || '-',
       isActive: category.isActive,
-    }));
-  }, [categories, allCategoriesResponse, tenantsResponse, getParentName, getTenantName]);
+    })), [categories, tenantOptions, getParentName, getTenantName]);
 
   // Define columns
   const columns = useMemo(
@@ -521,21 +507,6 @@ export function CategoryListView() {
     [handleView, handleEdit, handleToggleActive, handleDeleteClick, togglingCategoryId]
   );
 
-  // Error state
-  if (error) {
-    return (
-      <EmptyContent
-        title="Error loading categories"
-        description={error?.data?.message || 'An error occurred while loading categories'}
-        action={
-          <Field.Button variant="contained" onClick={() => refetch()} startIcon="solar:refresh-bold">
-            Retry
-          </Field.Button>
-        }
-      />
-    );
-  }
-
   return (
     <Box>
       <Card variant="outlined" sx={{ p: 2 }}>
@@ -635,24 +606,16 @@ export function CategoryListView() {
           columns={columns}
           loading={isLoading}
           actions={actions}
+          error={error}
+          onRetry={refetch}
+          errorEntityLabel="categories"
           pagination={{
-            enabled: true,
+            ...DEFAULT_PAGINATION,
             mode: 'server',
             pageSize,
-            pageSizeOptions: [10, 25, 50, 100],
             rowCount: paginationMeta.totalCount,
             onPageChange: handlePageChange,
             onPageSizeChange: handlePageSizeChange,
-          }}
-          sorting={{
-            enabled: false, // P0-029: Disabled - backend doesn't support custom sorting, client-side only sorts current page
-          }}
-          filtering={{
-            enabled: false, // Disable client-side filtering (using server-side search)
-            quickFilter: false,
-          }}
-          toolbar={{
-            show: false, // Hide default toolbar, using custom search/filter bar above
           }}
           getRowId={(row) => row.id}
           emptyContent={
@@ -676,7 +639,6 @@ export function CategoryListView() {
         onClose={handleFormClose}
         onSuccess={handleFormSuccess}
         tenantOptions={tenantOptions}
-        categoryOptions={allCategoriesResponse?.data || []}
       />
 
       {/* Details Dialog */}

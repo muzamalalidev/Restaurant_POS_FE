@@ -1,27 +1,30 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useForm, FormProvider } from 'react-hook-form';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
+import { Card } from '@mui/material';
+import Stack from '@mui/material/Stack';
+import Switch from '@mui/material/Switch';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
-import Stack from '@mui/material/Stack';
-import Switch from '@mui/material/Switch';
 
-import { CustomTable } from 'src/components/custom-table';
-import { Label } from 'src/components/label';
-import { EmptyContent } from 'src/components/empty-content';
-import { toast } from 'src/components/snackbar';
-import { Field } from 'src/components/hook-form';
-import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
-import { Iconify } from 'src/components/iconify';
+import { getApiErrorMessage } from 'src/utils/api-error-message';
 
 import { useGetTenantsQuery, useDeleteTenantMutation, useToggleTenantActiveMutation } from 'src/store/api/tenants-api';
+
+import { Label } from 'src/components/label';
+import { toast } from 'src/components/snackbar';
+import { Field } from 'src/components/hook-form';
+import { Iconify } from 'src/components/iconify';
+import { EmptyContent } from 'src/components/empty-content';
+import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
+import { CustomTable, DEFAULT_PAGINATION } from 'src/components/custom-table';
+
 import { TenantFormDialog } from '../form/tenant-form-dialog';
 import { TenantDetailsDialog } from '../components/tenant-details-dialog';
-import { Card } from '@mui/material';
 
 // ----------------------------------------------------------------------
 
@@ -46,7 +49,7 @@ export function TenantListView() {
 
   // Pagination state
   const [pageNumber, setPageNumber] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGINATION.pageSize);
 
   // Search state (debounced)
   const [searchTerm, setSearchTerm] = useState('');
@@ -90,13 +93,13 @@ export function TenantListView() {
   }, [watchedOwnerId, ownerId]);
 
   // Owner options (empty for now, will be populated from API in future)
-  const ownerOptions = useMemo(() => {
+  const ownerOptions = useMemo(() => 
     // TODO: Fetch owners from API when available
     // Example:
     // const { data: owners } = useGetOwnersQuery();
     // return owners?.map(owner => ({ id: owner.id, label: owner.name || owner.email || owner.id })) || [];
-    return [];
-  }, []);
+     []
+  , []);
 
   // Debounce search term
   useEffect(() => {
@@ -148,7 +151,7 @@ export function TenantListView() {
 
   // Mutations
   const [deleteTenant] = useDeleteTenantMutation();
-  const [toggleTenantActive, { isLoading: isTogglingActive }] = useToggleTenantActiveMutation();
+  const [toggleTenantActive, { isLoading: _isTogglingActive }] = useToggleTenantActiveMutation();
 
   // Track which tenant is being toggled
   const [togglingTenantId, setTogglingTenantId] = useState(null);
@@ -191,7 +194,10 @@ export function TenantListView() {
       setDeleteTenantId(null);
       setDeleteTenantName(null);
     } catch (err) {
-      toast.error(err?.data?.message || 'Failed to delete tenant');
+      const { message } = getApiErrorMessage(err, {
+        defaultMessage: 'Failed to delete tenant',
+      });
+      toast.error(message);
       console.error('Failed to delete tenant:', err);
     }
   }, [deleteTenantId, deleteTenant]);
@@ -203,7 +209,10 @@ export function TenantListView() {
       await toggleTenantActive(tenantId).unwrap();
       toast.success('Tenant status updated successfully');
     } catch (err) {
-      toast.error(err?.data?.message || 'Failed to update tenant status');
+      const { message } = getApiErrorMessage(err, {
+        defaultMessage: 'Failed to update tenant status',
+      });
+      toast.error(message);
       console.error('Failed to toggle tenant active status:', err);
     } finally {
       setTogglingTenantId(null);
@@ -251,8 +260,7 @@ export function TenantListView() {
 
 
   // Prepare table rows
-  const rows = useMemo(() => {
-    return tenants.map((tenant) => ({
+  const rows = useMemo(() => tenants.map((tenant) => ({
       id: tenant.id,
       name: tenant.name,
       description: tenant.description || '-',
@@ -260,8 +268,7 @@ export function TenantListView() {
       ownerId: tenant.ownerId || '-',
       isActive: tenant.isActive,
       phoneNumbers: tenant.phoneNumbers || [],
-    }));
-  }, [tenants]);
+    })), [tenants]);
 
   // Define columns
   const columns = useMemo(
@@ -375,23 +382,8 @@ export function TenantListView() {
         order: 4,
       },
     ],
-    [handleView, handleEdit, handleToggleActive, handleDeleteClick]
+    [handleView, handleEdit, handleToggleActive, handleDeleteClick, togglingTenantId]
   );
-
-  // Error state
-  if (error) {
-    return (
-      <EmptyContent
-        title="Error loading tenants"
-        description={error?.data?.message || 'An error occurred while loading tenants'}
-        action={
-          <Field.Button variant="contained" onClick={() => refetch()} startIcon="solar:refresh-bold">
-            Retry
-          </Field.Button>
-        }
-      />
-    );
-  }
 
   return (
     <Box>
@@ -478,25 +470,16 @@ export function TenantListView() {
         columns={columns}
         loading={isLoading}
         actions={actions}
+        error={error}
+        onRetry={refetch}
+        errorEntityLabel="tenants"
         pagination={{
-          enabled: true,
+          ...DEFAULT_PAGINATION,
           mode: 'server',
           pageSize,
-          pageSizeOptions: [10, 25, 50, 100],
           rowCount: paginationMeta.totalCount,
           onPageChange: handlePageChange,
           onPageSizeChange: handlePageSizeChange,
-        }}
-        sorting={{
-          enabled: true,
-          mode: 'client', // Keep client-side sorting for now (backend doesn't support custom sorting)
-        }}
-        filtering={{
-          enabled: false, // Disable client-side filtering (using server-side search)
-          quickFilter: false,
-        }}
-        toolbar={{
-          show: false, // Hide default toolbar, using custom search/filter bar above
         }}
         getRowId={(row) => row.id}
         emptyContent={

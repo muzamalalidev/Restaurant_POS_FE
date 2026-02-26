@@ -1,21 +1,21 @@
 'use client';
 
 import { useMemo, useCallback } from 'react';
-import { useMediaQuery, useTheme } from '@mui/material';
 
 import Box from '@mui/material/Box';
+import Stack from '@mui/material/Stack';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
-import Stack from '@mui/material/Stack';
+import { useTheme, useMediaQuery } from '@mui/material';
 
-import { CustomDialog } from 'src/components/custom-dialog';
-import { Label } from 'src/components/label';
-import { EmptyContent } from 'src/components/empty-content';
-import { Field } from 'src/components/hook-form';
-
-import { useGetKitchenByIdQuery } from 'src/store/api/kitchens-api';
 import { useGetTenantsQuery } from 'src/store/api/tenants-api';
 import { useGetBranchesQuery } from 'src/store/api/branches-api';
+import { useGetKitchenByIdQuery } from 'src/store/api/kitchens-api';
+
+import { Label } from 'src/components/label';
+import { CustomDialog } from 'src/components/custom-dialog';
+import { QueryStateContent } from 'src/components/query-state-content';
+
 import { getActiveStatusLabel, getActiveStatusColor } from '../utils/kitchen-helpers';
 
 // ----------------------------------------------------------------------
@@ -81,25 +81,21 @@ export function KitchenDetailsDialog({ open, kitchenId, onClose }) {
       fullScreen={isMobile}
       loading={isLoading}
     >
-      {isLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-          <Typography variant="body2" color="text.secondary">
-            Loading kitchen details...
-          </Typography>
-        </Box>
-      ) : isError ? (
-        <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', minHeight: 200, gap: 2 }}>
-          <Typography variant="body1" color="error">
-            Failed to load kitchen details
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {queryError?.data?.message || queryError?.message || 'Kitchen not found or has been deleted'}
-          </Typography>
-          <Field.Button variant="contained" onClick={() => refetch()} startIcon="solar:refresh-bold">
-            Retry
-          </Field.Button>
-        </Box>
-      ) : kitchen ? (
+      <QueryStateContent
+        isLoading={isLoading}
+        isError={isError}
+        error={queryError}
+        onRetry={refetch}
+        loadingMessage="Loading kitchen details..."
+        errorTitle="Failed to load kitchen details"
+        errorMessageOptions={{
+          defaultMessage: 'Failed to load kitchen details',
+          notFoundMessage: 'Kitchen not found or has been deleted',
+        }}
+        isEmpty={!kitchen && !isLoading && !isError}
+        emptyMessage="Kitchen not found"
+      >
+        {kitchen ? (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1, pb: 3 }}>
           {/* Kitchen Information */}
           <Box>
@@ -165,13 +161,8 @@ export function KitchenDetailsDialog({ open, kitchenId, onClose }) {
             </Box>
           </Box>
         </Box>
-      ) : (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-          <Typography variant="body2" color="text.secondary">
-            Kitchen not found
-          </Typography>
-        </Box>
-      )}
+        ) : null}
+      </QueryStateContent>
     </CustomDialog>
   );
 }

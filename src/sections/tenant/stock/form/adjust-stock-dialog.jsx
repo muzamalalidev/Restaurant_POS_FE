@@ -1,23 +1,25 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMediaQuery, useTheme } from '@mui/material';
+import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
+import Chip from '@mui/material/Chip';
 import Alert from '@mui/material/Alert';
 import Stack from '@mui/material/Stack';
-import Chip from '@mui/material/Chip';
+import Typography from '@mui/material/Typography';
+import { useTheme, useMediaQuery } from '@mui/material';
 
+import { adjustStockSchema } from 'src/schemas';
+import { useGetStockQuery, useAdjustStockMutation } from 'src/store/api/stock-api';
+
+import { toast } from 'src/components/snackbar';
 import { Form, Field } from 'src/components/hook-form';
 import { CustomDialog } from 'src/components/custom-dialog';
+import { QueryStateContent } from 'src/components/query-state-content';
 import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
-import { toast } from 'src/components/snackbar';
 
-import { useGetStockQuery, useAdjustStockMutation } from 'src/store/api/stock-api';
-import { adjustStockSchema } from '../schemas/stock-schema';
 import { formatStockQuantity } from '../utils/stock-helpers';
 
 // ----------------------------------------------------------------------
@@ -59,7 +61,7 @@ export function AdjustStockDialog({ open, itemId, onClose, onSuccess }) {
   const isSubmittingRef = useRef(false);
 
   // Fetch current stock
-  const { data: stockData, isLoading: isLoadingStock } = useGetStockQuery(
+  const { data: stockData, isLoading: isLoadingStock, error: queryError, isError: _isError, refetch: refetchStock } = useGetStockQuery(
     itemId,
     { skip: !itemId || !open }
   );
@@ -101,9 +103,7 @@ export function AdjustStockDialog({ open, itemId, onClose, onSuccess }) {
   }, [watchedAdjustmentQuantity, currentStock]);
 
   // Check if adjustment would result in negative stock
-  const wouldBeNegative = useMemo(() => {
-    return newStock < 0;
-  }, [newStock]);
+  const wouldBeNegative = useMemo(() => newStock < 0, [newStock]);
 
   // Load stock data
   useEffect(() => {
@@ -234,22 +234,18 @@ export function AdjustStockDialog({ open, itemId, onClose, onSuccess }) {
         disableClose={isSubmitting}
         actions={renderActions()}
       >
-        {isLoading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 200 }}>
-            <Typography variant="body2" color="text.secondary">
-              Loading stock information...
-            </Typography>
-          </Box>
-        ) : hasError ? (
-          <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', minHeight: 200, gap: 2 }}>
-            <Typography variant="body1" color="error">
-              Failed to load stock information
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Item not found or an error occurred.
-            </Typography>
-          </Box>
-        ) : (
+        <QueryStateContent
+          isLoading={isLoading}
+          isError={hasError}
+          error={queryError}
+          onRetry={refetchStock}
+          loadingMessage="Loading stock information..."
+          errorTitle="Failed to load stock information"
+          errorMessageOptions={{
+            defaultMessage: 'Failed to load stock information',
+            notFoundMessage: 'Item not found or an error occurred.',
+          }}
+        >
           <Form methods={methods} onSubmit={onSubmit}>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1 }}>
               {/* Current Stock Display */}
@@ -333,7 +329,7 @@ export function AdjustStockDialog({ open, itemId, onClose, onSuccess }) {
               />
             </Box>
           </Form>
-        )}
+        </QueryStateContent>
       </CustomDialog>
 
       {/* Unsaved Changes Confirmation Dialog */}
