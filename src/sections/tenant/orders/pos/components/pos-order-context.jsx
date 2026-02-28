@@ -18,6 +18,7 @@ export function PosOrderContext({
   staffOptions = [],
   paymentModeOptions = [],
   branchSelected,
+  showTableField = true,
 }) {
   return (
     <Stack spacing={2}>
@@ -50,19 +51,21 @@ export function PosOrderContext({
           },
         }}
       />
-      <Field.Autocomplete
-        name="tableId"
-        label="Table"
-        options={tableOptions}
-        getOptionLabel={(opt) => (opt?.label ?? opt?.name ?? opt?.id ?? '')}
-        isOptionEqualToValue={(a, b) => (a?.id ?? a) === (b?.id ?? b)}
-        disabled={!branchSelected}
-        slotProps={{
-          textField: {
-            size: 'small',
-          },
-        }}
-      />
+      {showTableField && (
+        <Field.Autocomplete
+          name="tableId"
+          label="Table"
+          options={tableOptions}
+          getOptionLabel={(opt) => (opt?.label ?? opt?.name ?? opt?.id ?? '')}
+          isOptionEqualToValue={(a, b) => (a?.id ?? a) === (b?.id ?? b)}
+          disabled={!branchSelected}
+          slotProps={{
+            textField: {
+              size: 'small',
+            },
+          }}
+        />
+      )}
       <Field.Autocomplete
         name="staffId"
         label="Staff"

@@ -12,6 +12,7 @@ import InputAdornment from '@mui/material/InputAdornment';
 
 import { getApiErrorMessage } from 'src/utils/api-error-message';
 
+import { useGetUsersQuery } from 'src/store/api/users-api';
 import {
   useGetTenantMastersQuery,
   useDeleteTenantMasterMutation,
@@ -89,8 +90,16 @@ export function TenantMasterListView() {
     }
   }, [watchedOwnerId, ownerId]);
 
-  // P1-003: Empty until owner/user API is integrated; API supports ownerId filter
-  const ownerOptions = useMemo(() => [], []);
+  // Load users for owner filter dropdown
+  const { data: usersResponse } = useGetUsersQuery({ pageSize: 200 });
+
+  const ownerOptions = useMemo(() => {
+    if (!usersResponse?.data) return [];
+    return usersResponse.data.map((user) => ({
+      id: user.id,
+      label: `${user.firstName || ''} ${user.lastName || ''} (${user.email || ''})`.trim() || user.id,
+    }));
+  }, [usersResponse]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -235,15 +244,18 @@ export function TenantMasterListView() {
   }, [searchForm]);
 
   const rows = useMemo(
-    () =>
-      tenantMasters.map((tm) => ({
-        id: tm.id,
-        name: tm.name,
-        description: tm.description ?? '-',
-        ownerId: tm.ownerId ?? '-',
-        isActive: tm.isActive,
-      })),
-    [tenantMasters]
+    () => tenantMasters.map((tm) => {
+        const owner = ownerOptions.find((o) => o.id === tm.ownerId);
+        return {
+          id: tm.id,
+          name: tm.name,
+          description: tm.description ?? '-',
+          ownerId: tm.ownerId ?? '-',
+          ownerName: owner?.label ?? tm.ownerId ?? '-',
+          isActive: tm.isActive,
+        };
+      }),
+    [tenantMasters, ownerOptions]
   );
 
   // P0-001: sortable false with server pagination
@@ -265,7 +277,7 @@ export function TenantMasterListView() {
         ),
       },
       {
-        field: 'ownerId',
+        field: 'ownerName',
         headerName: 'Owner',
         flex: 1,
         renderCell: (params) => (

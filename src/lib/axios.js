@@ -40,6 +40,12 @@ axiosInstance.interceptors.request.use(
       config.baseURL = externalBaseURL;
     }
 
+    // Handle FormData: remove Content-Type so browser can set it with boundary
+    if (config.data instanceof FormData) {
+      delete config.headers['Content-Type'];
+      delete config.headers['content-type'];
+    }
+
     return config;
   },
   (error) => {

@@ -25,6 +25,12 @@ export { createCategorySchema, updateCategorySchema } from 'src/schemas/category
 // Staff type
 export { createStaffTypeSchema, updateStaffTypeSchema } from 'src/schemas/staff-type';
 
+// User
+export {
+  registerUserSchema,
+  assignTenantOwnershipSchema,
+} from 'src/schemas/user';
+
 // Payment mode
 export { createPaymentModeSchema, updatePaymentModeSchema } from 'src/schemas/payment-mode';
 

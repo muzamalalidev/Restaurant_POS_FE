@@ -476,15 +476,17 @@ export function ItemFormDialog({ open, mode, record, onClose, onSuccess, tenantO
                   Additional Information
                 </Typography>
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  <Field.Text
+                  <Field.Upload
                     name="imageUrl"
-                    label="Image URL"
-                    placeholder="Enter image URL (optional)"
-                    slotProps={{
-                      textField: {
-                        helperText: 'Enter a valid URL',
-                      },
+                    useS3
+                    s3Mode="auto"
+                    accept={{
+                      'image/png': ['.png'],
+                      'image/jpeg': ['.jpg', '.jpeg'],
+                      'image/webp': ['.webp'],
                     }}
+                    maxSize={5 * 1024 * 1024}
+                    helperText="Upload item image (max 5MB, PNG/JPG/WebP)"
                   />
                   {mode === 'edit' && (
                     <>

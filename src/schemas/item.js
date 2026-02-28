@@ -2,7 +2,6 @@ import { z as zod } from 'zod';
 
 import {
   requiredId,
-  optionalUrl,
   booleanField,
   requiredString,
   optionalString,
@@ -25,7 +24,7 @@ export const createItemSchema = zod.object({
     4
   ),
   price: numberFromInput({ nonnegative: true, emptyAs: 0 }),
-  imageUrl: optionalUrl('Invalid URL format'),
+  imageUrl: optionalString(500), // Accepts S3 objectKey or URL
   isActive: booleanField(undefined),
   stockQuantity: numberFromInput({ nonnegative: true, emptyAs: 0 }).optional(),
 });
@@ -42,7 +41,7 @@ export const updateItemSchema = zod.object({
     4
   ),
   price: numberFromInput({ nonnegative: true, emptyAs: 0 }),
-  imageUrl: optionalUrl('Invalid URL format'),
+  imageUrl: optionalString(500), // Accepts S3 objectKey or URL
   isActive: zod.boolean(),
   isAvailable: zod.boolean(),
   stockQuantity: optionalNumberFromInput({ nonnegative: true }),

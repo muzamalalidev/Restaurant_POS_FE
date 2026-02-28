@@ -9,6 +9,7 @@ import { fNumber, fCurrency } from 'src/utils/format-number';
 
 import { Label } from 'src/components/label';
 import { CustomDialog } from 'src/components/custom-dialog';
+import { ImagePreview } from 'src/components/image-preview';
 
 // ----------------------------------------------------------------------
 
@@ -139,17 +140,33 @@ export function ItemDetailsDialog({ open, record, onClose }) {
               )}
               {record.imageUrl && (
                 <Box>
-                  <Typography variant="caption" color="text.secondary">
-                    Image URL
+                  <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+                    Image
                   </Typography>
+                  <Box
+                    sx={{
+                      mb: 1,
+                      borderRadius: 1,
+                      overflow: 'hidden',
+                      border: (t) => `1px solid ${t.palette.divider}`,
+                    }}
+                  >
+                    <ImagePreview
+                      imageUrl={record.imageUrl}
+                      alt={record.name || 'Item image'}
+                      width="100%"
+                      ratio="16/9"
+                      sx={{ maxHeight: 300 }}
+                    />
+                  </Box>
                   <Link
                     href={record.imageUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    variant="body1"
-                    sx={{ display: 'block', wordBreak: 'break-all' }}
+                    variant="caption"
+                    sx={{ display: 'block', wordBreak: 'break-all', color: 'text.secondary' }}
                   >
-                    {record.imageUrl}
+                    View full URL
                   </Link>
                 </Box>
               )}

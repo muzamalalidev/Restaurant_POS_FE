@@ -20,16 +20,30 @@ const axiosBaseQuery = async ({ url, method = 'GET', body, data, params, headers
     // Use 'body' from RTK Query or 'data' if provided
     const requestData = body !== undefined ? body : data;
 
+    // Check if requestData is FormData - don't set Content-Type for FormData
+    // Browser will set it automatically with boundary
+    const isFormData = requestData instanceof FormData;
+
+    // Build headers - explicitly delete Content-Type for FormData
+    const requestHeaders = { ...headers };
+    if (isFormData) {
+      // Remove Content-Type so browser can set it with boundary
+      delete requestHeaders['Content-Type'];
+      delete requestHeaders['content-type'];
+    } else {
+      // Set Content-Type for non-FormData requests
+      requestHeaders['Content-Type'] = 'application/json';
+    }
+    if (token) {
+      requestHeaders.authorization = `Bearer ${token}`;
+    }
+
     const result = await axiosInstance({
       url,
       method,
       data: requestData,
       params,
-      headers: {
-        'Content-Type': 'application/json',
-        ...headers,
-        ...(token && { authorization: `Bearer ${token}` }),
-      },
+      headers: requestHeaders,
     });
 
     return { data: result.data };

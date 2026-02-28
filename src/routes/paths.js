@@ -42,6 +42,9 @@ export const paths = {
     tenantMasters: {
       root: `${ROOTS.PLATFORM}/tenant-masters`,
     },
+    users: {
+      root: `${ROOTS.PLATFORM}/users`,
+    },
   },
   // TENANT
   tenant: {

@@ -212,19 +212,39 @@ Apply to: list views, details dialogs, form dialogs, and any component that disp
 
 ### Image and asset URL resolution (MANDATORY)
 
-All product/item/image URLs used in `src` attributes (e.g. item images, avatars, thumbnails) MUST use the shared resolver so absolute vs relative URLs and edge cases are handled in one place.
+All product/item/image URLs used in `src` attributes (e.g. item images, avatars, thumbnails) MUST use the shared components and utilities so absolute vs relative URLs, S3 objectKeys, and edge cases are handled consistently.
+
+**For image previews (details dialogs, cards, grids):**
+
+import { ImagePreview } from 'src/components/image-preview';
+
+Rules:
+
+- **ALWAYS use ImagePreview component** for displaying images in details dialogs, cards, grids, and any preview context.
+- ImagePreview automatically handles:
+  - S3 objectKeys (starts with `items/`): Fetches presigned download URLs via RTK Query
+  - Full URLs (http/https): Uses directly
+  - Relative paths: Resolves via `getResolvedImageSrc` utility
+  - Loading states: Shows skeleton while fetching
+  - Error handling: Shows placeholder on load failure
+  - URL caching: Caches presigned URLs to avoid duplicate API calls
+- Do NOT build image `src` inline or use raw `<img>` tags for user/API-supplied image URLs.
+- ImagePreview props: `imageUrl` (required), `alt`, `width`, `height`, `ratio`, `showPlaceholder`, `sx`, `slotProps`.
+- Example: `<ImagePreview imageUrl={item.imageUrl} alt={item.name} ratio="16/9" />`
+
+**For low-level URL resolution (when ImagePreview is not suitable):**
 
 import { getResolvedImageSrc } from 'src/utils/resolve-image-url';
 
 Rules:
 
-- Do NOT build image `src` inline (e.g. `imageUrl.startsWith('http') ? imageUrl : \`${CONFIG.assetsDir}${imageUrl}\``) in section or component files.
-- Use **getResolvedImageSrc(imageUrl)** to get a display URL: it returns `null` for null/undefined/empty/non-string; returns the string as-is for absolute URLs (`http://`, `https://`, `//`); for relative paths, joins with `CONFIG.assetsDir` and normalizes slashes (no double slash).
-- Only render an `<img>` when the resolved URL is non-null; otherwise show a placeholder (e.g. Iconify or Skeleton).
-- For **broken or failing images** (404, CORS, invalid URL): use `onError` on the image and track failed URLs (e.g. in component state) so the UI falls back to the placeholder and does not retry the same bad URL on every render.
-- If new URL resolution behavior is needed (e.g. different base, query params), extend src/utils/resolve-image-url.js; do not duplicate resolution logic in features.
+- Use **getResolvedImageSrc(imageUrl)** only when ImagePreview component is not suitable (e.g. background images, CSS, or other non-component contexts).
+- Returns `null` for null/undefined/empty/non-string; returns the string as-is for absolute URLs (`http://`, `https://`, `//`); for relative paths, joins with `CONFIG.assetsDir` and normalizes slashes.
+- Only render an `<img>` when the resolved URL is non-null; otherwise show a placeholder.
+- For **broken or failing images**: use `onError` on the image and track failed URLs in component state so the UI falls back to the placeholder and does not retry the same bad URL on every render.
+- If new URL resolution behavior is needed, extend src/utils/resolve-image-url.js; do not duplicate resolution logic in features.
 
-Apply to: POS product grid, item list/detail thumbnails, any component that displays user- or API-supplied image URLs.
+Apply to: POS product grid, item list/detail thumbnails, details dialogs, cards, any component that displays user- or API-supplied image URLs.
 
 ---
 

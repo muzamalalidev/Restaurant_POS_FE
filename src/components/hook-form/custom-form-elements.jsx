@@ -1,7 +1,7 @@
 import dayjs from 'dayjs';
-import { lazy, Suspense } from 'react';
 import { MuiOtpInput } from 'mui-one-time-password-input';
 import { Controller, useFormContext } from 'react-hook-form';
+import { lazy, useRef, Suspense, useState, useEffect } from 'react';
 import { transformValue, transformValueOnBlur, transformValueOnChange } from 'minimal-shared/utils';
 
 import Box from '@mui/material/Box';
@@ -24,6 +24,17 @@ import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
+
+import { getApiErrorMessage } from 'src/utils/api-error-message';
+import { uploadFileViaPresigned } from 'src/utils/s3-upload-service';
+
+import {
+  useDirectUploadMutation,
+  useLazyGetPresignedUrlsQuery,
+  useLazyGetPresignedDownloadUrlQuery,
+} from 'src/store/api/s3-upload-api';
+
+import { toast } from 'src/components/snackbar';
 
 import { Iconify } from '../iconify';
 import { HelperText } from './help-text';
@@ -233,10 +244,10 @@ export function RHFTextField({ name, helperText, slotProps, type = 'text', ...ot
  * @param {string} name - Field name (required)
  * @param {ReactNode} helperText - Helper text to display
  * @param {string} country - Locked country code
- * @param {string} defaultCountry - Default country code
+ * @param {string} defaultCountry - Default country code (defaults to 'PK' for Pakistan)
  * @param {object} other - Additional props passed to PhoneInput
  */
-export function RHFPhoneInput({ name, helperText, country, defaultCountry, ...other }) {
+export function RHFPhoneInput({ name, helperText, country, defaultCountry = 'PK', ...other }) {
   const { control } = useFormContext();
 
   return (
@@ -1153,13 +1164,76 @@ export function RHFCountrySelect({ name, helperText, ...other }) {
 /**
  * React Hook Form Upload component
  * Handles file upload with preview
+ * Supports both local file storage and S3 upload
  * @param {string} name - Field name (required)
  * @param {boolean} multiple - Allow multiple file selection
+ * @param {boolean} useS3 - Enable S3 upload (default: false, stores File objects locally)
+ * @param {'presigned' | 'direct' | 'auto'} s3Mode - S3 upload mode (only used when useS3=true)
  * @param {ReactNode} helperText - Helper text to display
  * @param {object} other - Additional props passed to Upload
  */
-export function RHFUpload({ name, multiple, helperText, ...other }) {
-  const { control, setValue } = useFormContext();
+export function RHFUpload({
+  name,
+  multiple,
+  useS3 = false,
+  s3Mode = 'auto',
+  helperText,
+  ...other
+}) {
+  const { control, setValue, watch } = useFormContext();
+  const [uploading, setUploading] = useState(false);
+  const [previewUrls, setPreviewUrls] = useState({});
+  const [displayValue, setDisplayValue] = useState(null);
+  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+  const uploadRef = useRef(false);
+
+  const fieldValue = watch(name);
+
+  const [getPresignedUrls] = useLazyGetPresignedUrlsQuery();
+  const [getPresignedDownloadUrl] = useLazyGetPresignedDownloadUrlQuery();
+  const [directUpload, { isLoading: isDirectUploading }] = useDirectUploadMutation();
+
+  // Fetch presigned download URL when field value is an S3 objectKey
+  useEffect(() => {
+    if (!useS3 || !fieldValue || typeof fieldValue !== 'string') {
+      setDisplayValue(fieldValue);
+      return;
+    }
+
+    // Check if it's an S3 objectKey (starts with "items/")
+    const isObjectKey = fieldValue.startsWith('items/');
+    if (!isObjectKey) {
+      // It's already a URL, use as-is
+      setDisplayValue(fieldValue);
+      return;
+    }
+
+    // Check if we have cached downloadUrl
+    if (previewUrls[fieldValue]) {
+      setDisplayValue(previewUrls[fieldValue]);
+      return;
+    }
+
+    // Fetch presigned download URL
+    setIsLoadingPreview(true);
+    getPresignedDownloadUrl({ objectKey: fieldValue })
+      .unwrap()
+      .then((response) => {
+        if (response.downloadUrl) {
+          setPreviewUrls((prev) => ({ ...prev, [fieldValue]: response.downloadUrl }));
+          setDisplayValue(response.downloadUrl);
+        } else {
+          setDisplayValue(fieldValue);
+        }
+      })
+      .catch(() => {
+        // On error, just show objectKey (no preview)
+        setDisplayValue(fieldValue);
+      })
+      .finally(() => {
+        setIsLoadingPreview(false);
+      });
+  }, [fieldValue, useS3, previewUrls, getPresignedDownloadUrl]);
 
   return (
     <Controller
@@ -1171,25 +1245,150 @@ export function RHFUpload({ name, multiple, helperText, ...other }) {
           accept: { 'image/*': [] },
           error: !!error,
           helperText: error?.message ?? helperText,
+          disabled: other.disabled || uploading || isDirectUploading,
         };
 
-        const onDrop = (acceptedFiles) => {
-          const value = multiple
-            ? [...(Array.isArray(field.value) ? field.value : []), ...acceptedFiles]
-            : acceptedFiles[0];
+        const onDelete = () => {
+          if (other.disabled || uploading || isDirectUploading || isLoadingPreview) return;
 
-          setValue(name, value, { shouldValidate: true });
+          // Clear form value
+          setValue(name, multiple ? [] : null, { shouldValidate: true });
+
+          // Clear cached preview URL if it exists
+          if (useS3 && field.value && typeof field.value === 'string' && field.value.startsWith('items/')) {
+            setPreviewUrls((prev) => {
+              const newUrls = { ...prev };
+              delete newUrls[field.value];
+              return newUrls;
+            });
+          }
+
+          // Reset display value
+          setDisplayValue(null);
+        };
+
+        const onDrop = async (acceptedFiles, fileRejections) => {
+          if (other.disabled || uploading || uploadRef.current) return;
+
+          if (fileRejections.length > 0) return;
+
+          if (acceptedFiles.length === 0) return;
+
+          // S3 upload mode
+          if (useS3) {
+            setUploading(true);
+            uploadRef.current = true;
+
+            try {
+              const uploadPromises = acceptedFiles.map(async (file) => {
+                try {
+                  let result;
+
+                  if (s3Mode === 'presigned') {
+                    const presignedResponse = await getPresignedUrls({
+                      fileName: file.name,
+                      contentType: file.type || 'image/png',
+                      expirySeconds: 3600,
+                    }).unwrap();
+
+                    if (!presignedResponse.uploadUrl) {
+                      throw new Error('Failed to get presigned upload URL');
+                    }
+
+                    await uploadFileViaPresigned(
+                      file,
+                      presignedResponse.uploadUrl,
+                      file.type || 'image/png'
+                    );
+
+                    result = {
+                      objectKey: presignedResponse.objectKey,
+                      downloadUrl: presignedResponse.downloadUrl,
+                    };
+                  } else {
+                    const formData = new FormData();
+                    formData.append('file', file);
+
+                    const uploadResult = await directUpload(formData).unwrap();
+
+                    result = {
+                      objectKey: uploadResult.objectKey,
+                      downloadUrl: uploadResult.downloadUrl,
+                    };
+                  }
+
+                  // Cache downloadUrl for preview
+                  if (result.downloadUrl) {
+                    setPreviewUrls((prev) => ({ ...prev, [result.objectKey]: result.downloadUrl }));
+                  }
+
+                  return result.objectKey;
+                } catch (err) {
+                  const { message } = getApiErrorMessage(err, {
+                    defaultMessage: 'Upload failed',
+                    validationMessage: 'Invalid file. Please check file size and type.',
+                  });
+                  throw new Error(message);
+                }
+              });
+
+              const objectKeys = await Promise.all(uploadPromises);
+
+              // Update value with objectKeys
+              if (multiple) {
+                const newValue = [
+                  ...(Array.isArray(field.value) ? field.value : field.value ? [field.value] : []),
+                  ...objectKeys,
+                ];
+                setValue(name, newValue, { shouldValidate: true });
+              } else {
+                setValue(name, objectKeys[0], { shouldValidate: true });
+              }
+
+              toast.success(multiple ? 'Files uploaded successfully' : 'File uploaded successfully');
+            } catch (err) {
+              const { message, isRetryable } = getApiErrorMessage(err, {
+                defaultMessage: 'Upload failed',
+                validationMessage: 'Invalid file. Please check file size and type.',
+              });
+
+              toast.error(message, {
+                action: isRetryable
+                  ? {
+                      label: 'Retry',
+                      onClick: () => {
+                        // Retry by calling onDrop again
+                        onDrop(acceptedFiles, []);
+                      },
+                    }
+                  : undefined,
+              });
+            } finally {
+              setUploading(false);
+              uploadRef.current = false;
+            }
+          } else {
+            // Local file storage (backward compatible)
+            const value = multiple
+              ? [...(Array.isArray(field.value) ? field.value : []), ...acceptedFiles]
+              : acceptedFiles[0];
+
+            setValue(name, value, { shouldValidate: true });
+          }
         };
 
         return (
           <Upload
             {...uploadProps}
-            value={field.value}
+            value={useS3 ? displayValue ?? field.value : field.value}
             onDrop={onDrop}
+            onDelete={onDelete}
             {...other}
             sx={[
               ...(Array.isArray(other.sx) ? other.sx : [other.sx].filter(Boolean)),
-              ...(other.disabled ? [disabledFieldSx] : []),
+              ...(other.disabled || uploading || isDirectUploading || isLoadingPreview
+                ? [disabledFieldSx]
+                : []),
             ]}
           />
         );
@@ -1229,33 +1428,118 @@ export function RHFUploadBox({ name, ...other }) {
 /**
  * React Hook Form UploadAvatar component
  * Handles avatar image upload
+ * Supports both local file storage and S3 upload
  * @param {string} name - Field name (required)
+ * @param {boolean} useS3 - Enable S3 upload (default: false, stores File objects locally)
+ * @param {'presigned' | 'direct' | 'auto'} s3Mode - S3 upload mode (only used when useS3=true)
  * @param {object} slotProps - MUI slot props for customization
  * @param {object} other - Additional props passed to UploadAvatar
  */
-export function RHFUploadAvatar({ name, slotProps, ...other }) {
+export function RHFUploadAvatar({
+  name,
+  useS3 = false,
+  s3Mode = 'auto',
+  slotProps,
+  ...other
+}) {
   const { control, setValue } = useFormContext();
+  const [uploading, setUploading] = useState(false);
+  const uploadRef = useRef(false);
+
+  const [getPresignedUrls] = useLazyGetPresignedUrlsQuery();
+  const [directUpload, { isLoading: isDirectUploading }] = useDirectUploadMutation();
 
   return (
     <Controller
       name={name}
       control={control}
       render={({ field, fieldState: { error } }) => {
-        const onDrop = (acceptedFiles) => {
-          const value = acceptedFiles[0];
+        const onDrop = async (acceptedFiles, fileRejections) => {
+          if (other.disabled || uploading || uploadRef.current) return;
 
-          setValue(name, value, { shouldValidate: true });
+          if (fileRejections.length > 0) return;
+
+          if (acceptedFiles.length === 0) return;
+
+          const file = acceptedFiles[0];
+
+          // S3 upload mode
+          if (useS3) {
+            setUploading(true);
+            uploadRef.current = true;
+
+            try {
+              let result;
+
+              if (s3Mode === 'presigned') {
+                const presignedResponse = await getPresignedUrls({
+                  fileName: file.name,
+                  contentType: file.type || 'image/png',
+                  expirySeconds: 3600,
+                }).unwrap();
+
+                if (!presignedResponse.uploadUrl) {
+                  throw new Error('Failed to get presigned upload URL');
+                }
+
+                await uploadFileViaPresigned(
+                  file,
+                  presignedResponse.uploadUrl,
+                  file.type || 'image/png'
+                );
+
+                result = {
+                  objectKey: presignedResponse.objectKey,
+                  downloadUrl: presignedResponse.downloadUrl,
+                };
+              } else {
+                const formData = new FormData();
+                formData.append('file', file);
+
+                const uploadResult = await directUpload(formData).unwrap();
+
+                result = {
+                  objectKey: uploadResult.objectKey,
+                  downloadUrl: uploadResult.downloadUrl,
+                };
+              }
+
+              setValue(name, result.objectKey, { shouldValidate: true });
+              toast.success('Avatar uploaded successfully');
+            } catch (err) {
+              const { message } = getApiErrorMessage(err, {
+                defaultMessage: 'Upload failed',
+                validationMessage: 'Invalid file. Please check file size and type.',
+              });
+              toast.error(message);
+            } finally {
+              setUploading(false);
+              uploadRef.current = false;
+            }
+          } else {
+            // Local file storage (backward compatible)
+            const value = acceptedFiles[0];
+            setValue(name, value, { shouldValidate: true });
+          }
         };
 
         return (
           <Box
             {...slotProps?.wrapper}
             sx={[
-              ...(other.disabled ? [disabledFieldSx] : []),
-              ...(Array.isArray(slotProps?.wrapper?.sx) ? slotProps.wrapper.sx : [slotProps?.wrapper?.sx].filter(Boolean)),
+              ...(other.disabled || uploading || isDirectUploading ? [disabledFieldSx] : []),
+              ...(Array.isArray(slotProps?.wrapper?.sx)
+                ? slotProps.wrapper.sx
+                : [slotProps?.wrapper?.sx].filter(Boolean)),
             ]}
           >
-            <UploadAvatar value={field.value} error={!!error} onDrop={onDrop} {...other} />
+            <UploadAvatar
+              value={field.value}
+              error={!!error}
+              onDrop={onDrop}
+              disabled={other.disabled || uploading || isDirectUploading}
+              {...other}
+            />
 
             <HelperText errorMessage={error?.message} sx={{ textAlign: 'center' }} />
           </Box>

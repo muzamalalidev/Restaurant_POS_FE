@@ -35,6 +35,7 @@ import { PosCartList } from './components/pos-cart-list';
 import { PosProductGrid } from './components/pos-product-grid';
 import { PosOrderContext } from './components/pos-order-context';
 import { PosCategoryStrip } from './components/pos-category-strip';
+import { PosDeliveryDetails } from './components/pos-delivery-details';
 
 // ----------------------------------------------------------------------
 
@@ -47,12 +48,30 @@ const defaultValues = {
   tableId: null,
   kitchenId: null,
   items: [],
-  deliveryDetails: null,
+  deliveryDetails: {
+    contactName: null,
+    phone: null,
+    address: null,
+    city: null,
+    postalCode: null,
+    landmark: null,
+    instructions: null,
+  },
   taxAmount: null,
   taxPercentage: null,
   discountAmount: null,
   discountPercentage: null,
   notes: null,
+};
+
+const defaultDeliveryDetails = {
+  contactName: null,
+  phone: null,
+  address: null,
+  city: null,
+  postalCode: null,
+  landmark: null,
+  instructions: null,
 };
 
 // ----------------------------------------------------------------------
@@ -61,12 +80,16 @@ function PosOrderContent({
   branchOptions = [],
   orderTypeOptions = [],
   staffOptions = [],
+  hasCartItems = false,
+  isCreating = false,
+  onSaveAndPrintClick,
 }) {
   const { control, watch, setValue } = useFormContext();
   const [categoryId, setCategoryId] = useState(null);
   const [debouncedSearch, setDebouncedSearch] = useState('');
 
   const branchId = watch('branchId');
+  const orderTypeId = watch('orderTypeId');
   const searchTerm = useWatch({ control, name: 'searchTerm', defaultValue: '' }) ?? '';
   const watchedItems = useWatch({ control, name: 'items', defaultValue: [] });
   const items = useMemo(
@@ -82,6 +105,21 @@ function PosOrderContent({
     if (!branchId) return null;
     return typeof branchId === 'object' && branchId !== null ? branchId.id : branchId;
   }, [branchId]);
+
+  const selectedOrderTypeLabel = useMemo(() => {
+    if (!orderTypeId || !orderTypeOptions?.length) return '';
+    const id = typeof orderTypeId === 'object' && orderTypeId !== null ? orderTypeId.id : orderTypeId;
+    const opt = orderTypeOptions.find((o) => (o?.id ?? o) === id);
+    return (opt?.label ?? opt?.name ?? '').trim().toLowerCase();
+  }, [orderTypeId, orderTypeOptions]);
+
+  const isDeliveryOrderType = selectedOrderTypeLabel === 'delivery';
+  const isDineInOrderType = selectedOrderTypeLabel === 'dine in';
+
+  useEffect(() => {
+    if (!isDineInOrderType) setValue('tableId', null);
+    if (!isDeliveryOrderType) setValue('deliveryDetails', defaultDeliveryDetails);
+  }, [isDineInOrderType, isDeliveryOrderType, setValue]);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(searchTerm), 300);
@@ -146,12 +184,16 @@ function PosOrderContent({
   }, [items]);
 
   const calculatedTax = useMemo(() => {
-    if (taxPercentage != null && taxPercentage > 0) return subtotal * (taxPercentage / 100);
+    if (taxPercentage != null && taxPercentage > 0) {
+      return Math.round(subtotal * (taxPercentage / 100) * 100) / 100;
+    }
     return Number(taxAmount) || 0;
   }, [taxPercentage, taxAmount, subtotal]);
 
   const calculatedDiscount = useMemo(() => {
-    if (discountPercentage != null && discountPercentage > 0) return subtotal * (discountPercentage / 100);
+    if (discountPercentage != null && discountPercentage > 0) {
+      return Math.round(subtotal * (discountPercentage / 100) * 100) / 100;
+    }
     return Number(discountAmount) || 0;
   }, [discountPercentage, discountAmount, subtotal]);
 
@@ -225,7 +267,18 @@ function PosOrderContent({
               loading={categoriesLoading}
             />
           </Box>
-          <Box sx={{ flex: 1, overflow: 'auto', px: 2, pb: 2 }}>
+          <Box
+            sx={{
+              flex: 1,
+              minHeight: 200,
+              maxHeight: 'calc(100vh - 200px)',
+              overflow: 'auto',
+              px: 2,
+              pb: 2,
+              '&::-webkit-scrollbar': { width: 8 },
+              '&::-webkit-scrollbar-thumb': { borderRadius: 4, bgcolor: 'action.hover' },
+            }}
+          >
             <PosProductGrid
               items={products}
               loading={itemsLoading}
@@ -254,17 +307,28 @@ function PosOrderContent({
               staffOptions={staffOptions}
               paymentModeOptions={paymentModeOptions}
               branchSelected={!!selectedBranchId}
+              showTableField={isDineInOrderType}
             />
+            <PosDeliveryDetails open={isDeliveryOrderType} defaultExpanded={isDeliveryOrderType} />
             <Box sx={{ borderTop: 1, borderColor: 'divider', pt: 2, mt: 0 }}>
               <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
                 Cart ({itemCount})
               </Typography>
-              <PosCartList name="items" itemOptions={itemOptions} />
+              <Box
+                sx={{
+                  maxHeight: 280,
+                  overflow: 'auto',
+                  '&::-webkit-scrollbar': { width: 8 },
+                  '&::-webkit-scrollbar-thumb': { borderRadius: 4, bgcolor: 'action.hover' },
+                }}
+              >
+                <PosCartList name="items" itemOptions={itemOptions} />
+              </Box>
             </Box>
             <Stack direction="row" spacing={1}>
               <Field.Text
                 name="taxPercentage"
-                placeholder="Tax %"
+                label="Tax %"
                 type="number"
                 slotProps={{
                   input: { inputProps: { min: 0, max: 100, step: 0.5 } },
@@ -273,7 +337,7 @@ function PosOrderContent({
               />
               <Field.Text
                 name="discountPercentage"
-                placeholder="Disc %"
+                label="Disc %"
                 type="number"
                 slotProps={{
                   input: { inputProps: { min: 0, max: 100, step: 0.5 } },
@@ -329,6 +393,37 @@ function PosOrderContent({
               slotProps={{ textField: { fullWidth: true } }}
             />
           </Stack>
+            <Stack
+              direction="row"
+              spacing={1}
+              sx={{ p: 2, flexShrink: 0, borderTop: 1, borderColor: 'divider' }}
+            >
+              <Field.Button
+                type="submit"
+                variant="contained"
+                size="medium"
+                fullWidth
+                loading={isCreating}
+                disabled={isCreating || !hasCartItems}
+                startIcon="solar:check-circle-bold"
+                sx={{ flex: 1, minHeight: 44 }}
+              >
+                Save order
+              </Field.Button>
+              <Field.Button
+                type="submit"
+                variant="outlined"
+                size="medium"
+                fullWidth
+                loading={isCreating}
+                disabled={isCreating || !hasCartItems}
+                startIcon="solar:printer-minimalistic-bold"
+                onClick={onSaveAndPrintClick}
+                sx={{ flex: 1, minHeight: 44 }}
+              >
+                Save & print
+              </Field.Button>
+            </Stack>
         </Card>
       </Box>
   );
@@ -339,6 +434,7 @@ function PosOrderContent({
 export function PosOrderView() {
   const [createOrder, { isLoading: isCreating }] = useCreateOrderMutation();
   const isSubmittingRef = useRef(false);
+  const printAfterRef = useRef(false);
 
   const { data: branchesDropdown } = useGetBranchesDropdownQuery();
   const { data: staffDropdown } = useGetStaffDropdownQuery();
@@ -383,9 +479,12 @@ export function PosOrderView() {
       }, 0);
       const taxPct = data.taxPercentage != null ? Number(data.taxPercentage) : null;
       const discPct = data.discountPercentage != null ? Number(data.discountPercentage) : null;
-      const calculatedTax = taxPct != null && taxPct > 0 ? subtotal * (taxPct / 100) : Number(data.taxAmount) || 0;
-      const calculatedDiscount =
-        discPct != null && discPct > 0 ? subtotal * (discPct / 100) : Number(data.discountAmount) || 0;
+      const calculatedTax = taxPct != null && taxPct > 0 
+        ? Math.round(subtotal * (taxPct / 100) * 100) / 100 
+        : Number(data.taxAmount) || 0;
+      const calculatedDiscount = discPct != null && discPct > 0 
+        ? Math.round(subtotal * (discPct / 100) * 100) / 100 
+        : Number(data.discountAmount) || 0;
 
       const transformedItems = data.items.map((item) => ({
         itemId: typeof item.itemId === 'object' && item.itemId !== null ? item.itemId.id : item.itemId,
@@ -393,17 +492,53 @@ export function PosOrderView() {
         unitPrice: Number(item.unitPrice),
         notes: item.notes === '' ? null : item.notes,
       }));
+
+      const orderTypeIdResolved =
+        typeof data.orderTypeId === 'object' && data.orderTypeId !== null ? data.orderTypeId.id : data.orderTypeId;
+      const orderTypeOpt = orderTypeOptions.find((o) => (o?.id ?? o) === orderTypeIdResolved);
+      const orderTypeLabel = (orderTypeOpt?.label ?? orderTypeOpt?.name ?? '').trim().toLowerCase();
+      const isDeliveryOrder = orderTypeLabel === 'delivery';
+      const isDineInOrder = orderTypeLabel === 'dine in';
+
+      const rawDelivery = data.deliveryDetails && typeof data.deliveryDetails === 'object' ? data.deliveryDetails : null;
+      const toStr = (v) => (v != null && typeof v === 'string' ? v.trim() : '') || null;
+      const deliveryPayload = isDeliveryOrder && rawDelivery
+        ? (() => {
+            const contactName = toStr(rawDelivery.contactName);
+            const phone = toStr(rawDelivery.phone);
+            const address = toStr(rawDelivery.address);
+            const city = toStr(rawDelivery.city);
+            const postalCode = toStr(rawDelivery.postalCode);
+            const landmark = toStr(rawDelivery.landmark);
+            const instructions = toStr(rawDelivery.instructions);
+            const allEmpty =
+              !contactName && !phone && !address && !city && !postalCode && !landmark && !instructions;
+            return allEmpty
+              ? null
+              : {
+                  contactName,
+                  phone,
+                  address,
+                  city,
+                  postalCode,
+                  landmark,
+                  instructions,
+                };
+          })()
+        : null;
+
       const createData = {
         branchId: typeof data.branchId === 'object' && data.branchId !== null ? data.branchId.id : data.branchId,
-        orderTypeId:
-          typeof data.orderTypeId === 'object' && data.orderTypeId !== null ? data.orderTypeId.id : data.orderTypeId,
+        orderTypeId: orderTypeIdResolved,
         paymentModeId:
           typeof data.paymentModeId === 'object' && data.paymentModeId !== null ? data.paymentModeId.id : data.paymentModeId ?? null,
         staffId: typeof data.staffId === 'object' && data.staffId !== null ? data.staffId.id : data.staffId ?? null,
-        tableId: typeof data.tableId === 'object' && data.tableId !== null ? data.tableId.id : data.tableId ?? null,
+        tableId: isDineInOrder
+          ? (typeof data.tableId === 'object' && data.tableId !== null ? data.tableId.id : data.tableId ?? null)
+          : null,
         kitchenId: typeof data.kitchenId === 'object' && data.kitchenId !== null ? data.kitchenId.id : data.kitchenId ?? null,
         items: transformedItems,
-        deliveryDetails: null,
+        deliveryDetails: deliveryPayload,
         taxAmount: calculatedTax,
         taxPercentage: taxPct ?? null,
         discountAmount: calculatedDiscount,
@@ -413,6 +548,10 @@ export function PosOrderView() {
       await createOrder(createData).unwrap();
       toast.success('Order saved');
       methods.reset(defaultValues);
+      if (printAfterRef.current) {
+        printAfterRef.current = false;
+        window.print();
+      }
     } catch (err) {
       const { message, isRetryable } = getApiErrorMessage(err, { defaultMessage: 'Failed to save order' });
       if (isRetryable) {
@@ -430,6 +569,10 @@ export function PosOrderView() {
   const handleSearchClear = useCallback(() => {
     methods.setValue('searchTerm', '');
   }, [methods]);
+
+  const handleSaveAndPrintClick = useCallback(() => {
+    printAfterRef.current = true;
+  }, []);
 
   return (
     <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', bgcolor: 'background.default', p: 2 }}>
@@ -493,29 +636,10 @@ export function PosOrderView() {
             branchOptions={branchOptions}
             orderTypeOptions={orderTypeOptions}
             staffOptions={staffOptions}
+            hasCartItems={hasCartItems}
+            isCreating={isCreating}
+            onSaveAndPrintClick={handleSaveAndPrintClick}
           />
-          <Card
-            variant="outlined"
-            sx={{
-              borderRadius: 2,
-              p: 2,
-              flexShrink: 0,
-              mt: 2,
-            }}
-          >
-            <Field.Button
-              type="submit"
-              variant="contained"
-              size="large"
-              fullWidth
-              loading={isCreating}
-              disabled={isCreating || !hasCartItems}
-              startIcon="solar:check-circle-bold"
-              sx={{ minHeight: 48 }}
-            >
-              Save order
-            </Field.Button>
-          </Card>
         </Form>
       </FormProvider>
     </Box>
