@@ -6,9 +6,7 @@ import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
 import Stack from '@mui/material/Stack';
-import Alert from '@mui/material/Alert';
 import Switch from '@mui/material/Switch';
-import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
@@ -69,10 +67,10 @@ export function KitchenListView() {
   // Dialog state management
   const [formDialogOpen, setFormDialogOpen] = useState(false);
   const [formDialogMode, setFormDialogMode] = useState('create');
-  const [formDialogKitchenId, setFormDialogKitchenId] = useState(null);
+  const [formDialogRecord, setFormDialogRecord] = useState(null);
 
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
-  const [detailsDialogKitchenId, setDetailsDialogKitchenId] = useState(null);
+  const [detailsDialogRecord, setDetailsDialogRecord] = useState(null);
 
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteKitchenId, setDeleteKitchenId] = useState(null);
@@ -283,43 +281,29 @@ export function KitchenListView() {
   // P0-004: Ref guard to prevent rapid toggle clicks
   const inFlightIdsRef = useRef(new Set());
 
-  // Helper to get tenant name for display
-  const getTenantName = useCallback(
-    (tenantIdValue) => {
-      const tenant = tenantOptions.find((opt) => opt.id === tenantIdValue);
-      return tenant?.label || 'Unknown Tenant';
-    },
-    [tenantOptions]
-  );
-
-  // Helper to get branch name for display
-  const getBranchName = useCallback(
-    (branchIdValue) => {
-      const branch = branchOptions.find((opt) => opt.id === branchIdValue);
-      return branch?.label || 'Unknown Branch';
-    },
-    [branchOptions]
-  );
-
   // Handle create
   const handleCreate = useCallback(() => {
     setFormDialogMode('create');
-    setFormDialogKitchenId(null);
+    setFormDialogRecord(null);
     setFormDialogOpen(true);
   }, []);
 
-  // Handle edit
-  const handleEdit = useCallback((kitchenId) => {
+  // Handle edit (pass full row; resolve record from kitchens)
+  const handleEdit = useCallback((row) => {
+    const record = kitchens.find((k) => k.id === row.id) ?? null;
+    if (!record) return;
     setFormDialogMode('edit');
-    setFormDialogKitchenId(kitchenId);
+    setFormDialogRecord(record);
     setFormDialogOpen(true);
-  }, []);
+  }, [kitchens]);
 
-  // Handle view
-  const handleView = useCallback((kitchenId) => {
-    setDetailsDialogKitchenId(kitchenId);
+  // Handle view (pass full row from list; API includes tenantName, branchName)
+  const handleView = useCallback((row) => {
+    const record = kitchens.find((k) => k.id === row.id) ?? null;
+    if (!record) return;
+    setDetailsDialogRecord(record);
     setDetailsDialogOpen(true);
-  }, []);
+  }, [kitchens]);
 
   // Handle delete confirmation
   const handleDeleteClick = useCallback((kitchen) => {
@@ -338,15 +322,26 @@ export function KitchenListView() {
       setDeleteConfirmOpen(false);
       setDeleteKitchenId(null);
       setDeleteKitchenName(null);
+      if (kitchens.length === 1 && pageNumber > 1) {
+        setPageNumber((p) => p - 1);
+      }
     } catch (err) {
-      const { message } = getApiErrorMessage(err, {
+      const { message, isRetryable } = getApiErrorMessage(err, {
         defaultMessage: 'Failed to delete kitchen',
         notFoundMessage: 'Kitchen not found',
       });
-      toast.error(message);
-      console.error('Failed to delete kitchen:', err);
+      if (isRetryable) {
+        toast.error(message, {
+          action: {
+            label: 'Retry',
+            onClick: () => handleDeleteConfirm(),
+          },
+        });
+      } else {
+        toast.error(message);
+      }
     }
-  }, [deleteKitchenId, deleteKitchen]);
+  }, [deleteKitchenId, deleteKitchen, kitchens.length, pageNumber]);
 
   // Handle toggle active (P0-004: ref guard prevents rapid clicks)
   const handleToggleActive = useCallback(async (kitchenId) => {
@@ -357,12 +352,20 @@ export function KitchenListView() {
       await toggleKitchenActive(kitchenId).unwrap();
       toast.success('Kitchen status updated successfully');
     } catch (err) {
-      const { message } = getApiErrorMessage(err, {
+      const { message, isRetryable } = getApiErrorMessage(err, {
         defaultMessage: 'Failed to update kitchen status',
         notFoundMessage: 'Kitchen not found',
       });
-      toast.error(message);
-      console.error('Failed to toggle kitchen active status:', err);
+      if (isRetryable) {
+        toast.error(message, {
+          action: {
+            label: 'Retry',
+            onClick: () => handleToggleActive(kitchenId),
+          },
+        });
+      } else {
+        toast.error(message);
+      }
     } finally {
       inFlightIdsRef.current.delete(kitchenId);
       setTogglingKitchenId(null);
@@ -373,7 +376,7 @@ export function KitchenListView() {
   const handleFormSuccess = useCallback((id, action) => {
     setFormDialogOpen(false);
     setFormDialogMode('create');
-    setFormDialogKitchenId(null);
+    setFormDialogRecord(null);
     toast.success(`Kitchen ${action} successfully`);
     refetch();
   }, [refetch]);
@@ -382,7 +385,7 @@ export function KitchenListView() {
   const handleFormClose = useCallback(() => {
     setFormDialogOpen(false);
     setFormDialogMode('create');
-    setFormDialogKitchenId(null);
+    setFormDialogRecord(null);
   }, []);
 
   // Handle pagination change
@@ -399,21 +402,19 @@ export function KitchenListView() {
   const handleSearchClear = useCallback(() => {
     searchForm.setValue('searchTerm', '');
     setSearchTerm('');
+    setPageNumber(1); // Reset to first page when clearing search
   }, [searchForm]);
 
-  // Check if both tenant and branch are selected (show warning)
-  const showPrecedenceWarning = useMemo(() => !!getId(branchId) && !!getTenantId(tenantId), [branchId, tenantId, getTenantId]);
-
-  // Prepare table rows
+  // Prepare table rows (use API response keys tenantName, branchName)
   const rows = useMemo(() => kitchens.map((kitchen) => ({
       id: kitchen.id,
       name: kitchen.name,
-      tenantName: getTenantName(kitchen.tenantId),
-      branchName: getBranchName(kitchen.branchId),
+      tenantName: kitchen.tenantName ?? '-',
+      branchName: kitchen.branchName ?? '-',
       description: kitchen.description || '-',
       location: kitchen.location || '-',
       isActive: kitchen.isActive,
-    })), [kitchens, getTenantName, getBranchName]);
+    })), [kitchens]);
 
   // Define columns
   const columns = useMemo(
@@ -422,13 +423,11 @@ export function KitchenListView() {
         field: 'name',
         headerName: 'Name',
         flex: 2,
-        sortable: false,
       },
       {
         field: 'tenantName',
         headerName: 'Tenant',
         flex: 1.5,
-        sortable: false,
         renderCell: (params) => (
           <Typography variant="body2" color="text.secondary">
             {params.value}
@@ -439,7 +438,6 @@ export function KitchenListView() {
         field: 'branchName',
         headerName: 'Branch',
         flex: 1.5,
-        sortable: false,
         renderCell: (params) => (
           <Typography variant="body2" color="text.secondary">
             {params.value}
@@ -450,7 +448,6 @@ export function KitchenListView() {
         field: 'description',
         headerName: 'Description',
         flex: 2,
-        sortable: false,
         renderCell: (params) => (
           <Typography
             variant="body2"
@@ -470,7 +467,6 @@ export function KitchenListView() {
         field: 'location',
         headerName: 'Location',
         flex: 1.5,
-        sortable: false,
         renderCell: (params) => (
           <Typography variant="body2" color="text.secondary">
             {params.value}
@@ -481,7 +477,6 @@ export function KitchenListView() {
         field: 'isActive',
         headerName: 'Status',
         width: 100,
-        sortable: false,
         renderCell: (params) => (
           <Label color={getActiveStatusColor(params.value)} variant="soft">
             {getActiveStatusLabel(params.value)}
@@ -499,14 +494,14 @@ export function KitchenListView() {
         id: 'view',
         label: 'View Details',
         icon: 'solar:eye-bold',
-        onClick: (row) => handleView(row.id),
+        onClick: (row) => handleView(row),
         order: 1,
       },
       {
         id: 'edit',
         label: 'Edit',
         icon: 'solar:pen-bold',
-        onClick: (row) => handleEdit(row.id),
+        onClick: (row) => handleEdit(row),
         order: 2,
         visible: (row) => canEdit(row.isActive),
       },
@@ -514,7 +509,6 @@ export function KitchenListView() {
         id: 'toggle-active',
         label: (row) => (row.isActive ? 'Deactivate' : 'Activate'),
         icon: (row) => (
-          <Tooltip title={row.isActive ? 'Deactivate Kitchen' : 'Activate Kitchen'}>
             <Switch
               checked={!!row.isActive}
               size="small"
@@ -533,7 +527,6 @@ export function KitchenListView() {
                 },
               }}
             />
-          </Tooltip>
         ),
         order: 3,
         visible: (row) => canToggleActive(row.isActive),
@@ -553,116 +546,96 @@ export function KitchenListView() {
   return (
     <Box>
       <Card variant="outlined" sx={{ p: 2 }}>
-        {/* Header with Create Button */}
-        <Stack direction="row" spacing={2} sx={{ mb: 3 }} alignItems="center">
-          <Typography variant="h5" sx={{ flexGrow: 1 }}>
-            Kitchens
-          </Typography>
+        {/* Search and Filter Bar */}
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={2}
+          sx={{ mb: 3 }}
+        >
+          <FormProvider {...searchForm}>
+            <Field.Text
+              name="searchTerm"
+              size="small"
+              placeholder="Search by Name, Description, or Location..."
+              slotProps={{
+                input: {
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <Iconify icon="eva:search-fill" sx={{ color: 'text.disabled' }} />
+                    </InputAdornment>
+                  ),
+                  endAdornment: searchTerm && (
+                    <InputAdornment position="end">
+                      <IconButton
+                        size="small"
+                        onClick={handleSearchClear}
+                        sx={{ minWidth: 'auto', minHeight: 'auto', p: 0.5 }}
+                        aria-label="Clear search"
+                      >
+                        <Iconify icon="eva:close-fill" />
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                },
+              }}
+              sx={{ maxWidth: { sm: 400 } }}
+            />
+          </FormProvider>
+          <FormProvider {...tenantFilterForm}>
+            <Field.Autocomplete
+              name="tenantId"
+              label="Tenant"
+              options={tenantOptions}
+              disabled={!!getId(branchId)}
+              getOptionLabel={(option) => {
+                if (!option) return '';
+                return option.label || option.name || option.id || '';
+              }}
+              isOptionEqualToValue={(option, value) => {
+                if (!option || !value) return option === value;
+                return option.id === value.id;
+              }}
+              slotProps={{
+                textField: {
+                  size: 'small',
+                  placeholder: 'All Tenants',
+                  helperText: getId(branchId) ? 'Branch filter takes precedence over tenant filter' : undefined,
+                },
+              }}
+              sx={{ minWidth: { sm: 200 } }}
+            />
+          </FormProvider>
+          <FormProvider {...branchFilterForm}>
+            <Field.Autocomplete
+              name="branchId"
+              label="Branch"
+              options={branchOptions}
+              getOptionLabel={(option) => {
+                if (!option) return '';
+                return option.label || option.name || option.id || '';
+              }}
+              isOptionEqualToValue={(option, value) => {
+                if (!option || !value) return option === value;
+                return option.id === value.id;
+              }}
+              slotProps={{
+                textField: {
+                  size: 'small',
+                  placeholder: 'All Branches',
+                },
+              }}
+              sx={{ minWidth: { sm: 200 } }}
+            />
+          </FormProvider>
           <Field.Button
             variant="contained"
             startIcon="mingcute:add-line"
             onClick={handleCreate}
-            sx={{ minHeight: 44 }}
+            sx={{ ml: 'auto', minHeight: 44 }}
           >
             Create Kitchen
           </Field.Button>
         </Stack>
-
-        {/* Filters */}
-        <Card sx={{ p: 2, mb: 3 }}>
-          <Stack spacing={2}>
-            {/* Precedence Warning */}
-            {showPrecedenceWarning && (
-              <Alert severity="info">
-                Branch filter takes precedence over tenant filter. Only branch filter is applied.
-              </Alert>
-            )}
-
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-              {/* Tenant Filter */}
-              <FormProvider {...tenantFilterForm}>
-                <Field.Autocomplete
-                  name="tenantId"
-                  label="Tenant"
-                  options={tenantOptions}
-                  disabled={!!getId(branchId)} // Disable if branch is selected
-                  getOptionLabel={(option) => {
-                    if (!option) return '';
-                    return option.label || option.id || '';
-                  }}
-                  isOptionEqualToValue={(option, value) => {
-                    if (!option || !value) return option === value;
-                    return option.id === value.id;
-                  }}
-                  slotProps={{
-                    textField: {
-                      placeholder: 'Select tenant',
-                      size: 'small',
-                    },
-                  }}
-                  sx={{ flex: 1 }}
-                />
-              </FormProvider>
-
-              {/* Branch Filter */}
-              <FormProvider {...branchFilterForm}>
-                <Field.Autocomplete
-                  name="branchId"
-                  label="Branch"
-                  options={branchOptions}
-                  getOptionLabel={(option) => {
-                    if (!option) return '';
-                    return option.label || option.id || '';
-                  }}
-                  isOptionEqualToValue={(option, value) => {
-                    if (!option || !value) return option === value;
-                    return option.id === value.id;
-                  }}
-                  slotProps={{
-                    textField: {
-                      placeholder: 'Select branch',
-                      size: 'small',
-                    },
-                  }}
-                  sx={{ flex: 1 }}
-                />
-              </FormProvider>
-
-              {/* Search */}
-              <FormProvider {...searchForm}>
-                <Field.Text
-                  name="searchTerm"
-                  placeholder="Search by Name, Description, or Location..."
-                  slotProps={{
-                    textField: {
-                      InputProps: {
-                        startAdornment: (
-                          <InputAdornment position="start">
-                            <Iconify icon="eva:search-fill" sx={{ color: 'text.disabled' }} />
-                          </InputAdornment>
-                        ),
-                        endAdornment: searchTerm && (
-                          <InputAdornment position="end">
-                            <IconButton
-                              size="small"
-                              onClick={handleSearchClear}
-                              sx={{ minWidth: 'auto', minHeight: 'auto', p: 0.5 }}
-                              aria-label="Clear search"
-                            >
-                              <Iconify icon="eva:close-fill" />
-                            </IconButton>
-                          </InputAdornment>
-                        ),
-                      },
-                      size: 'small',
-                    },
-                  }}
-                  sx={{ flex: 1 }}
-                />
-              </FormProvider>
-            </Stack>
-          </Stack>
-        </Card>
 
         {/* Table - P0-005: show error in table area so filters/Create remain; P0-001: sorting disabled with server pagination */}
         <CustomTable
@@ -676,6 +649,7 @@ export function KitchenListView() {
           pagination={{
             ...DEFAULT_PAGINATION,
             mode: 'server',
+            page: pageNumber - 1,
             pageSize,
             rowCount: paginationMeta.totalCount,
             onPageChange: handlePageChange,
@@ -699,7 +673,7 @@ export function KitchenListView() {
       <KitchenFormDialog
         open={formDialogOpen}
         mode={formDialogMode}
-        kitchenId={formDialogKitchenId}
+        record={formDialogRecord}
         onClose={handleFormClose}
         onSuccess={handleFormSuccess}
         tenantOptions={tenantOptions}
@@ -708,10 +682,10 @@ export function KitchenListView() {
       {/* Details Dialog */}
       <KitchenDetailsDialog
         open={detailsDialogOpen}
-        kitchenId={detailsDialogKitchenId}
+        record={detailsDialogRecord}
         onClose={() => {
           setDetailsDialogOpen(false);
-          setDetailsDialogKitchenId(null);
+          setDetailsDialogRecord(null);
         }}
       />
 
@@ -721,7 +695,13 @@ export function KitchenListView() {
         title="Delete Kitchen?"
         content={`Are you sure you want to delete kitchen "${deleteKitchenName}"? This action cannot be undone.`}
         action={
-          <Field.Button variant="contained" color="error" onClick={handleDeleteConfirm} disabled={isDeleting} loading={isDeleting}>
+          <Field.Button
+            variant="contained"
+            color="error"
+            onClick={handleDeleteConfirm}
+            disabled={isDeleting}
+            loading={isDeleting}
+          >
             Delete
           </Field.Button>
         }
@@ -730,6 +710,8 @@ export function KitchenListView() {
           setDeleteKitchenId(null);
           setDeleteKitchenName(null);
         }}
+        loading={isDeleting}
+        disableClose={isDeleting}
       />
     </Box>
   );

@@ -11,13 +11,14 @@ import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import { useTheme, useMediaQuery } from '@mui/material';
 
+import { getApiErrorMessage } from 'src/utils/api-error-message';
+
 import { adjustStockSchema } from 'src/schemas';
-import { useGetStockQuery, useAdjustStockMutation } from 'src/store/api/stock-api';
+import { useAdjustStockMutation } from 'src/store/api/stock-api';
 
 import { toast } from 'src/components/snackbar';
 import { Form, Field } from 'src/components/hook-form';
 import { CustomDialog } from 'src/components/custom-dialog';
-import { QueryStateContent } from 'src/components/query-state-content';
 import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
 
 import { formatStockQuantity } from '../utils/stock-helpers';
@@ -31,27 +32,21 @@ const QUICK_ADJUSTMENTS = [
   { label: '+10', value: 10 },
   { label: '+50', value: 50 },
   { label: '+100', value: 100 },
-  { label: '-5', value: -5 },
-  { label: '-10', value: -10 },
-  { label: '-50', value: -50 },
 ];
 
 // ----------------------------------------------------------------------
 
 /**
  * Adjust Stock Dialog Component
- * 
- * Dialog component for adjusting stock quantity by a relative amount.
- * Handles form state, validation, and API calls.
- * Prevents negative stock.
- * 
- * @param {Object} props
- * @param {boolean} props.open - Whether the dialog is open
- * @param {string} props.itemId - Item ID for stock adjustment
- * @param {Function} props.onClose - Callback when dialog closes
- * @param {Function} props.onSuccess - Callback when form is successfully submitted
+ *
+ * Dialog for adjusting stock quantity by a relative amount. Uses the full row object
+ * passed from the list (no getStock API call). Prevents negative stock.
+ *
+ * Dropdown analysis: No dropdowns. Fields: adjustmentQuantity (number), reason (text).
+ * Form always starts with adjustmentQuantity: 0, reason: null when opening for a record.
+ * When open with no record, form resets to same defaults.
  */
-export function AdjustStockDialog({ open, itemId, onClose, onSuccess }) {
+export function AdjustStockDialog({ open, record, onClose, onSuccess }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
@@ -60,22 +55,18 @@ export function AdjustStockDialog({ open, itemId, onClose, onSuccess }) {
   // P0-003: Ref to prevent double-submit
   const isSubmittingRef = useRef(false);
 
-  // Fetch current stock
-  const { data: stockData, isLoading: isLoadingStock, error: queryError, isError: _isError, refetch: refetchStock } = useGetStockQuery(
-    itemId,
-    { skip: !itemId || !open }
-  );
-
   // Mutations
   const [adjustStock, { isLoading: isAdjusting }] = useAdjustStockMutation();
   const isSubmitting = isAdjusting;
+
+  const currentStock = record?.stockQuantity ?? 0;
 
   // Form setup
   const methods = useForm({
     resolver: zodResolver(adjustStockSchema),
     defaultValues: useMemo(
       () => ({
-        adjustmentQuantity: 0,
+        adjustmentQuantity: null,
         reason: null,
       }),
       []
@@ -93,7 +84,6 @@ export function AdjustStockDialog({ open, itemId, onClose, onSuccess }) {
 
   // Watch form values for calculations
   const watchedAdjustmentQuantity = watch('adjustmentQuantity');
-  const currentStock = stockData?.stockQuantity ?? 0;
 
   // Calculate new stock
   const newStock = useMemo(() => {
@@ -105,24 +95,20 @@ export function AdjustStockDialog({ open, itemId, onClose, onSuccess }) {
   // Check if adjustment would result in negative stock
   const wouldBeNegative = useMemo(() => newStock < 0, [newStock]);
 
-  // Load stock data
+  // Load form when record is set or reset when closed / no record
   useEffect(() => {
     if (!open) {
       reset({
-        adjustmentQuantity: 0,
+        adjustmentQuantity: null,
         reason: null,
       });
       return;
     }
-
-    if (stockData) {
-      reset({
-        adjustmentQuantity: 0,
-        reason: null,
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, stockData?.stockQuantity, reset]);
+    reset({
+      adjustmentQuantity: null,
+      reason: null,
+    });
+  }, [open, record?.id, reset]);
 
   // Handle quick adjustment
   const handleQuickAdjustment = useCallback(
@@ -143,24 +129,39 @@ export function AdjustStockDialog({ open, itemId, onClose, onSuccess }) {
 
       if (calculatedNewStock < 0) {
         toast.error(`Cannot adjust stock below zero. Current stock: ${formatStockQuantity(currentStock)}, Adjustment: ${formatStockQuantity(adjustment)}`);
+        isSubmittingRef.current = false;
         return;
       }
 
       await adjustStock({
-        itemId,
+        itemId: record.id,
         adjustmentQuantity: adjustment,
         reason: data.reason === '' ? null : data.reason,
       }).unwrap();
       if (onSuccess) {
-        onSuccess(itemId, 'adjusted');
+        onSuccess(record.id, 'adjusted');
       }
       reset();
       onClose();
       toast.success('Stock adjusted successfully');
     } catch (error) {
-      console.error('Failed to adjust stock:', error);
-      const errorMessage = error?.data?.message || error?.data || error?.message || 'Failed to adjust stock';
-      toast.error(errorMessage);
+      const { message, isRetryable } = getApiErrorMessage(error, {
+        defaultMessage: 'Failed to adjust stock',
+      });
+      if (isRetryable) {
+        toast.error(message, {
+          action: {
+            label: 'Retry',
+            onClick: () => {
+              setTimeout(() => {
+                onSubmit({ preventDefault: () => {}, target: { checkValidity: () => true } });
+              }, 100);
+            },
+          },
+        });
+      } else {
+        toast.error(message);
+      }
     } finally {
       isSubmittingRef.current = false;
     }
@@ -218,9 +219,6 @@ export function AdjustStockDialog({ open, itemId, onClose, onSuccess }) {
     </Box>
   );
 
-  const isLoading = isLoadingStock;
-  const hasError = !stockData && !isLoadingStock && itemId && open;
-
   return (
     <>
       <CustomDialog
@@ -230,23 +228,11 @@ export function AdjustStockDialog({ open, itemId, onClose, onSuccess }) {
         maxWidth="sm"
         fullWidth
         fullScreen={isMobile}
-        loading={isSubmitting || isLoading}
+        loading={isSubmitting}
         disableClose={isSubmitting}
         actions={renderActions()}
       >
-        <QueryStateContent
-          isLoading={isLoading}
-          isError={hasError}
-          error={queryError}
-          onRetry={refetchStock}
-          loadingMessage="Loading stock information..."
-          errorTitle="Failed to load stock information"
-          errorMessageOptions={{
-            defaultMessage: 'Failed to load stock information',
-            notFoundMessage: 'Item not found or an error occurred.',
-          }}
-        >
-          <Form methods={methods} onSubmit={onSubmit}>
+        <Form methods={methods} onSubmit={onSubmit}>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1 }}>
               {/* Current Stock Display */}
               <Box sx={{ p: 2, bgcolor: 'background.neutral', borderRadius: 1 }}>
@@ -329,7 +315,6 @@ export function AdjustStockDialog({ open, itemId, onClose, onSuccess }) {
               />
             </Box>
           </Form>
-        </QueryStateContent>
       </CustomDialog>
 
       {/* Unsaved Changes Confirmation Dialog */}

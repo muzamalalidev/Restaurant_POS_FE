@@ -13,6 +13,7 @@ import Typography from '@mui/material/Typography';
 
 import { paths } from 'src/routes/paths';
 
+import { fCurrency } from 'src/utils/format-number';
 import { getApiErrorMessage } from 'src/utils/api-error-message';
 
 import { createOrderSchema } from 'src/schemas';
@@ -43,9 +44,9 @@ const defaultValues = {
   kitchenId: null,
   items: [],
   deliveryDetails: null,
-  taxAmount: 0,
+  taxAmount: null,
   taxPercentage: null,
-  discountAmount: 0,
+  discountAmount: null,
   discountPercentage: null,
   notes: null,
 };
@@ -147,7 +148,7 @@ function PosOrderContent({
 
   const appendItem = useCallback(
     (item) => {
-      setValue('items', [...items, { itemId: item.id, quantity: 1, unitPrice: item.price ?? 0, notes: null }], {
+      setValue('items', [...items, { itemId: item.id, quantity: 1, unitPrice: item.price ?? null, notes: null }], {
         shouldValidate: true,
         shouldDirty: true,
       });
@@ -227,7 +228,7 @@ function PosOrderContent({
                     Subtotal
                   </Typography>
                   <Typography variant="body2">
-                    {new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(subtotal)}
+                    {fCurrency(subtotal, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </Typography>
                 </Stack>
                 {(calculatedTax > 0 || taxPercentage) && (
@@ -236,7 +237,7 @@ function PosOrderContent({
                       Tax {taxPercentage != null ? `${taxPercentage}%` : ''}
                     </Typography>
                     <Typography variant="body2">
-                      {new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(calculatedTax)}
+                      {fCurrency(calculatedTax, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </Typography>
                   </Stack>
                 )}
@@ -246,7 +247,7 @@ function PosOrderContent({
                       Discount {discountPercentage != null ? `${discountPercentage}%` : ''}
                     </Typography>
                     <Typography variant="body2">
-                      -{new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(calculatedDiscount)}
+                      -{fCurrency(calculatedDiscount, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </Typography>
                   </Stack>
                 )}
@@ -255,7 +256,7 @@ function PosOrderContent({
                     Grand total
                   </Typography>
                   <Typography variant="subtitle1" fontWeight={700} color="primary">
-                    {new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(grandTotal)}
+                    {fCurrency(grandTotal, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </Typography>
                 </Stack>
               </Stack>
@@ -370,8 +371,14 @@ export function PosOrderView() {
       toast.success('Order saved');
       methods.reset(defaultValues);
     } catch (err) {
-      const { message } = getApiErrorMessage(err, { defaultMessage: 'Failed to save order' });
-      toast.error(message);
+      const { message, isRetryable } = getApiErrorMessage(err, { defaultMessage: 'Failed to save order' });
+      if (isRetryable) {
+        toast.error(message, {
+          action: { label: 'Retry', onClick: () => onSubmit() },
+        });
+      } else {
+        toast.error(message);
+      }
     } finally {
       isSubmittingRef.current = false;
     }

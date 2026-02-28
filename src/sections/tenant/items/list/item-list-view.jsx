@@ -11,6 +11,7 @@ import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
 
+import { fNumber, fCurrency } from 'src/utils/format-number';
 import { getApiErrorMessage } from 'src/utils/api-error-message';
 
 import { useGetTenantsDropdownQuery } from 'src/store/api/tenants-api';
@@ -43,29 +44,11 @@ const getItemTypeLabel = (itemType) => {
   return labels[itemType] || `Unknown (${itemType})`;
 };
 
-/**
- * Format price as currency
- */
-const formatPrice = (price) => {
-  if (price === null || price === undefined) return '-';
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(price);
-};
+const formatPrice = (price) =>
+  price == null ? '-' : fCurrency(price, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-/**
- * Format stock quantity
- */
-const formatStockQuantity = (quantity) => {
-  if (quantity === null || quantity === undefined) return '-';
-  return new Intl.NumberFormat('en-US', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(quantity);
-};
+const formatStockQuantity = (quantity) =>
+  quantity == null ? '-' : fNumber(quantity, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
 // ----------------------------------------------------------------------
 
@@ -81,11 +64,11 @@ export function ItemListView() {
   // Dialog state management
   const [formDialogOpen, setFormDialogOpen] = useState(false);
   const [formDialogMode, setFormDialogMode] = useState('create');
-  const [formDialogItemId, setFormDialogItemId] = useState(null);
-  
+  const [formDialogRecord, setFormDialogRecord] = useState(null);
+
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
-  const [detailsDialogItemId, setDetailsDialogItemId] = useState(null);
-  
+  const [detailsDialogRecord, setDetailsDialogRecord] = useState(null);
+
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteItemId, setDeleteItemId] = useState(null);
   const [deleteItemName, setDeleteItemName] = useState(null);
@@ -283,7 +266,7 @@ export function ItemListView() {
   }, [itemsResponse]);
 
   // Mutations
-  const [deleteItem] = useDeleteItemMutation();
+  const [deleteItem, { isLoading: isDeleting }] = useDeleteItemMutation();
   const [toggleItemActive, { isLoading: _isTogglingActive }] = useToggleItemActiveMutation();
 
   // Track which item is being toggled
@@ -294,22 +277,24 @@ export function ItemListView() {
   // Handle create
   const handleCreate = useCallback(() => {
     setFormDialogMode('create');
-    setFormDialogItemId(null);
+    setFormDialogRecord(null);
     setFormDialogOpen(true);
   }, []);
 
-  // Handle edit
-  const handleEdit = useCallback((itemId) => {
+  // Handle edit (pass full row from list; no getById)
+  const handleEdit = useCallback((row) => {
+    const record = items.find((i) => i.id === row.id) ?? null;
     setFormDialogMode('edit');
-    setFormDialogItemId(itemId);
+    setFormDialogRecord(record);
     setFormDialogOpen(true);
-  }, []);
+  }, [items]);
 
-  // Handle view
-  const handleView = useCallback((itemId) => {
-    setDetailsDialogItemId(itemId);
+  // Handle view (pass full row from list; API includes categoryName, tenantName)
+  const handleView = useCallback((row) => {
+    const record = items.find((i) => i.id === row.id) ?? null;
+    setDetailsDialogRecord(record);
     setDetailsDialogOpen(true);
-  }, []);
+  }, [items]);
 
   // Handle delete confirmation
   const handleDeleteClick = useCallback((row) => {
@@ -321,21 +306,30 @@ export function ItemListView() {
   // Handle delete confirm
   const handleDeleteConfirm = useCallback(async () => {
     if (!deleteItemId) return;
-    
+
     try {
       await deleteItem(deleteItemId).unwrap();
       toast.success('Item deleted successfully');
       setDeleteConfirmOpen(false);
       setDeleteItemId(null);
       setDeleteItemName(null);
+      if (items.length === 1 && pageNumber > 1) {
+        setPageNumber((p) => p - 1);
+      }
     } catch (err) {
-      const { message } = getApiErrorMessage(err, {
+      const { message, isRetryable } = getApiErrorMessage(err, {
         defaultMessage: 'Failed to delete item',
+        notFoundMessage: 'Item not found',
       });
-      toast.error(message);
-      console.error('Failed to delete item:', err);
+      if (isRetryable) {
+        toast.error(message, {
+          action: { label: 'Retry', onClick: () => handleDeleteConfirm() },
+        });
+      } else {
+        toast.error(message);
+      }
     }
-  }, [deleteItemId, deleteItem]);
+  }, [deleteItemId, deleteItem, items.length, pageNumber]);
 
   // Handle toggle active
   const handleToggleActive = useCallback(async (itemId) => {
@@ -346,11 +340,16 @@ export function ItemListView() {
       await toggleItemActive(itemId).unwrap();
       toast.success('Item status updated successfully');
     } catch (err) {
-      const { message } = getApiErrorMessage(err, {
+      const { message, isRetryable } = getApiErrorMessage(err, {
         defaultMessage: 'Failed to update item status',
       });
-      toast.error(message);
-      console.error('Failed to toggle item active status:', err);
+      if (isRetryable) {
+        toast.error(message, {
+          action: { label: 'Retry', onClick: () => handleToggleActive(itemId) },
+        });
+      } else {
+        toast.error(message);
+      }
     } finally {
       setTogglingItemId(null);
       togglingItemIdsRef.current.delete(itemId);
@@ -358,18 +357,24 @@ export function ItemListView() {
   }, [toggleItemActive]);
 
   // Handle form dialog success
-  const handleFormSuccess = useCallback((id, action) => {
+  // Contract: onSuccess(id, action, payload?). For create, payload is API result (optional display name).
+  const handleFormSuccess = useCallback((id, action, payload) => {
     setFormDialogOpen(false);
     setFormDialogMode('create');
-    setFormDialogItemId(null);
-    toast.success(`Item ${action} successfully`);
-  }, []);
+    setFormDialogRecord(null);
+    refetch();
+    const displayName = action === 'created' && payload?.name != null ? payload.name : null;
+    const message = displayName
+      ? `Item "${displayName}" ${action} successfully`
+      : `Item ${action} successfully`;
+    toast.success(message);
+  }, [refetch]);
 
   // Handle form dialog close
   const handleFormClose = useCallback(() => {
     setFormDialogOpen(false);
     setFormDialogMode('create');
-    setFormDialogItemId(null);
+    setFormDialogRecord(null);
   }, []);
 
   // Handle pagination change
@@ -386,27 +391,18 @@ export function ItemListView() {
   const handleSearchClear = useCallback(() => {
     searchForm.setValue('searchTerm', '');
     setSearchTerm('');
+    setPageNumber(1); // Reset to first page when clearing search
   }, [searchForm]);
 
-  const getCategoryName = useCallback((categoryIdParam, options) => {
-    if (!categoryIdParam || !options?.length) return null;
-    const opt = options.find((cat) => cat.id === categoryIdParam);
-    return opt?.label ?? null;
-  }, []);
 
-  const getTenantName = useCallback((tenantIdParam, options) => {
-    if (!tenantIdParam || !options?.length) return null;
-    const opt = options.find((t) => t.id === tenantIdParam);
-    return opt?.label ?? null;
-  }, []);
-
+  // Rows use API response keys (categoryName, tenantName); no lookup from options
   const rows = useMemo(() => items.map((item) => ({
       id: item.id,
       name: item.name,
       categoryId: item.categoryId,
-      categoryName: getCategoryName(item.categoryId, categoryOptions),
+      categoryName: item.categoryName ?? '-',
       tenantId: item.tenantId,
-      tenantName: getTenantName(item.tenantId, tenantOptions),
+      tenantName: item.tenantName ?? '-',
       itemType: item.itemType,
       itemTypeLabel: getItemTypeLabel(item.itemType),
       price: item.price,
@@ -417,7 +413,7 @@ export function ItemListView() {
       imageUrl: item.imageUrl,
       isActive: item.isActive,
       isAvailable: item.isAvailable,
-    })), [items, categoryOptions, tenantOptions, getCategoryName, getTenantName]);
+    })), [items]);
 
   // Define columns
   const columns = useMemo(
@@ -426,15 +422,11 @@ export function ItemListView() {
         field: 'name',
         headerName: 'Name',
         flex: 1,
-        sortable: true,
-        filterable: true,
       },
       {
         field: 'categoryName',
         headerName: 'Category',
         flex: 1,
-        sortable: true,
-        filterable: true,
         renderCell: (params) => (
           <Typography variant="body2" color="text.secondary">
             {params.value || params.row.categoryId || '-'}
@@ -445,8 +437,6 @@ export function ItemListView() {
         field: 'itemTypeLabel',
         headerName: 'Item Type',
         flex: 1,
-        sortable: true,
-        filterable: true,
         renderCell: (params) => (
           <Typography variant="body2" color="text.secondary">
             {params.value}
@@ -457,8 +447,6 @@ export function ItemListView() {
         field: 'priceFormatted',
         headerName: 'Price',
         flex: 1,
-        sortable: true,
-        filterable: true,
         renderCell: (params) => (
           <Typography variant="body2" color="text.secondary">
             {params.value}
@@ -469,8 +457,6 @@ export function ItemListView() {
         field: 'stockQuantityFormatted',
         headerName: 'Stock Quantity',
         flex: 1,
-        sortable: true,
-        filterable: true,
         renderCell: (params) => (
           <Typography variant="body2" color="text.secondary">
             {params.value}
@@ -478,20 +464,23 @@ export function ItemListView() {
         ),
       },
       {
-        field: 'status',
+        field: 'isAvailable',
+        headerName: 'Available',
+        flex: 1,
+        renderCell: (params) => (
+          <Label color={params.value ? 'success' : 'error'} variant="soft">
+            {params.value ? 'Available' : 'Unavailable'}
+          </Label>
+        ),
+      },
+      {
+        field: 'isActive',
         headerName: 'Status',
         flex: 1,
-        sortable: false,
-        filterable: false,
         renderCell: (params) => (
-          <Stack direction="row" spacing={1}>
-            <Label color={params.row.isActive ? 'success' : 'default'} variant="soft" sx={{ fontSize: '0.75rem' }}>
-              {params.row.isActive ? 'Active' : 'Inactive'}
-            </Label>
-            <Label color={params.row.isAvailable ? 'success' : 'default'} variant="soft" sx={{ fontSize: '0.75rem' }}>
-              {params.row.isAvailable ? 'Available' : 'Unavailable'}
-            </Label>
-          </Stack>
+          <Label color={params.value ? 'success' : 'default'} variant="soft">
+            {params.value ? 'Active' : 'Inactive'}
+          </Label>
         ),
       },
     ],
@@ -505,14 +494,14 @@ export function ItemListView() {
         id: 'view',
         label: 'View',
         icon: 'solar:eye-bold',
-        onClick: (row) => handleView(row.id),
+        onClick: (row) => handleView(row),
         order: 1,
       },
       {
         id: 'edit',
         label: 'Edit',
         icon: 'solar:pen-bold',
-        onClick: (row) => handleEdit(row.id),
+        onClick: (row) => handleEdit(row),
         order: 2,
       },
       {
@@ -592,28 +581,6 @@ export function ItemListView() {
               sx={{ maxWidth: { sm: 400 } }}
             />
           </FormProvider>
-          <FormProvider {...categoryFilterForm}>
-            <Field.Autocomplete
-              name="categoryId"
-              label="Category"
-              options={categoryOptions}
-              getOptionLabel={(option) => {
-                if (!option) return '';
-                return option.label || option.name || option.id || '';
-              }}
-              isOptionEqualToValue={(option, value) => {
-                if (!option || !value) return option === value;
-                return option.id === value.id;
-              }}
-              slotProps={{
-                textField: {
-                  size: 'small',
-                  placeholder: 'All Categories',
-                },
-              }}
-              sx={{ minWidth: { sm: 200 } }}
-            />
-          </FormProvider>
           <FormProvider {...tenantFilterForm}>
             <Field.Autocomplete
               name="tenantId"
@@ -638,11 +605,33 @@ export function ItemListView() {
               sx={{ minWidth: { sm: 200 } }}
             />
           </FormProvider>
+          <FormProvider {...categoryFilterForm}>
+            <Field.Autocomplete
+              name="categoryId"
+              label="Category"
+              options={categoryOptions}
+              getOptionLabel={(option) => {
+                if (!option) return '';
+                return option.label || option.name || option.id || '';
+              }}
+              isOptionEqualToValue={(option, value) => {
+                if (!option || !value) return option === value;
+                return option.id === value.id;
+              }}
+              slotProps={{
+                textField: {
+                  size: 'small',
+                  placeholder: 'All Categories',
+                },
+              }}
+              sx={{ minWidth: { sm: 200 } }}
+            />
+          </FormProvider>
           <Field.Button
             variant="contained"
             startIcon="mingcute:add-line"
             onClick={handleCreate}
-            sx={{ ml: 'auto' }}
+            sx={{ ml: 'auto', minHeight: 44 }}
           >
             Create Item
           </Field.Button>
@@ -659,6 +648,7 @@ export function ItemListView() {
           pagination={{
             ...DEFAULT_PAGINATION,
             mode: 'server',
+            page: pageNumber - 1,
             pageSize,
             rowCount: paginationMeta.totalCount,
             onPageChange: handlePageChange,
@@ -682,7 +672,7 @@ export function ItemListView() {
       <ItemFormDialog
         open={formDialogOpen}
         mode={formDialogMode}
-        itemId={formDialogItemId}
+        record={formDialogRecord}
         onClose={handleFormClose}
         onSuccess={handleFormSuccess}
         tenantOptions={tenantOptions}
@@ -691,10 +681,10 @@ export function ItemListView() {
       {/* Details Dialog */}
       <ItemDetailsDialog
         open={detailsDialogOpen}
-        itemId={detailsDialogItemId}
+        record={detailsDialogRecord}
         onClose={() => {
           setDetailsDialogOpen(false);
-          setDetailsDialogItemId(null);
+          setDetailsDialogRecord(null);
         }}
       />
 
@@ -708,7 +698,13 @@ export function ItemListView() {
             : 'Are you sure you want to delete this item? This action cannot be undone.'
         }
         action={
-          <Field.Button variant="contained" color="error" onClick={handleDeleteConfirm}>
+          <Field.Button
+            variant="contained"
+            color="error"
+            onClick={handleDeleteConfirm}
+            disabled={isDeleting}
+            loading={isDeleting}
+          >
             Delete
           </Field.Button>
         }
@@ -717,6 +713,8 @@ export function ItemListView() {
           setDeleteItemId(null);
           setDeleteItemName(null);
         }}
+        loading={isDeleting}
+        disableClose={isDeleting}
       />
     </Box>
   );

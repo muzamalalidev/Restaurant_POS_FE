@@ -5,6 +5,8 @@ import Card from '@mui/material/Card';
 import Skeleton from '@mui/material/Skeleton';
 import Typography from '@mui/material/Typography';
 
+import { fCurrency } from 'src/utils/format-number';
+
 import { CONFIG } from 'src/global-config';
 
 import { Iconify } from 'src/components/iconify';
@@ -113,10 +115,7 @@ export function PosProductGrid({ items = [], loading, onSelectItem, searchTerm }
               {name}
             </Typography>
             <Typography variant="body2" color="primary" sx={{ fontWeight: 600 }}>
-              {new Intl.NumberFormat('en-US', {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              }).format(price)}
+              {fCurrency(price, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </Typography>
           </Card>
         );

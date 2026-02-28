@@ -10,13 +10,14 @@ import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import { useTheme, useMediaQuery } from '@mui/material';
 
+import { getApiErrorMessage } from 'src/utils/api-error-message';
+
 import { updateStockSchema } from 'src/schemas';
-import { useGetStockQuery, useUpdateStockMutation } from 'src/store/api/stock-api';
+import { useUpdateStockMutation } from 'src/store/api/stock-api';
 
 import { toast } from 'src/components/snackbar';
 import { Form, Field } from 'src/components/hook-form';
 import { CustomDialog } from 'src/components/custom-dialog';
-import { QueryStateContent } from 'src/components/query-state-content';
 import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
 
 import { formatStockQuantity } from '../utils/stock-helpers';
@@ -25,17 +26,14 @@ import { formatStockQuantity } from '../utils/stock-helpers';
 
 /**
  * Update Stock Dialog Component
- * 
- * Dialog component for updating stock quantity to an absolute value.
- * Handles form state, validation, and API calls.
- * 
- * @param {Object} props
- * @param {boolean} props.open - Whether the dialog is open
- * @param {string} props.itemId - Item ID for stock update
- * @param {Function} props.onClose - Callback when dialog closes
- * @param {Function} props.onSuccess - Callback when form is successfully submitted
+ *
+ * Dialog for updating stock quantity to an absolute value. Uses the full row object
+ * passed from the list (no getStock API call).
+ *
+ * Dropdown analysis: No dropdowns. Single field stockQuantity (number). Record from list.
+ * When open with no record (e.g. row no longer in list), form resets to stockQuantity: 0.
  */
-export function UpdateStockDialog({ open, itemId, onClose, onSuccess }) {
+export function UpdateStockDialog({ open, record, onClose, onSuccess }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
@@ -44,22 +42,18 @@ export function UpdateStockDialog({ open, itemId, onClose, onSuccess }) {
   // P0-003: Ref to prevent double-submit
   const isSubmittingRef = useRef(false);
 
-  // Fetch current stock
-  const { data: stockData, isLoading: isLoadingStock, error: queryError, isError: _isError, refetch: refetchStock } = useGetStockQuery(
-    itemId,
-    { skip: !itemId || !open }
-  );
-
   // Mutations
   const [updateStock, { isLoading: isUpdating }] = useUpdateStockMutation();
   const isSubmitting = isUpdating;
+
+  const currentStock = record?.stockQuantity ?? 0;
 
   // Form setup
   const methods = useForm({
     resolver: zodResolver(updateStockSchema),
     defaultValues: useMemo(
       () => ({
-        stockQuantity: 0,
+        stockQuantity: null,
       }),
       []
     ),
@@ -75,7 +69,6 @@ export function UpdateStockDialog({ open, itemId, onClose, onSuccess }) {
 
   // Watch form values for calculations
   const watchedStockQuantity = watch('stockQuantity');
-  const currentStock = stockData?.stockQuantity ?? 0;
 
   // Calculate difference
   const difference = useMemo(() => {
@@ -91,22 +84,21 @@ export function UpdateStockDialog({ open, itemId, onClose, onSuccess }) {
     return newStock < 0;
   }, [watchedStockQuantity]);
 
-  // Load stock data
+  // Load stock data from record or reset when closed / no record
   useEffect(() => {
     if (!open) {
-      reset({
-        stockQuantity: 0,
-      });
+      reset({ stockQuantity: null });
       return;
     }
-
-    if (stockData) {
+    if (record) {
       reset({
-        stockQuantity: stockData.stockQuantity ?? 0,
+        stockQuantity: record.stockQuantity ?? null,
       });
+    } else {
+      reset({ stockQuantity: null });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, stockData?.stockQuantity, reset]);
+  }, [open, record?.id, record?.stockQuantity, reset]);
 
   // Handle form submit
   const onSubmit = handleSubmit(async (data) => {
@@ -114,19 +106,33 @@ export function UpdateStockDialog({ open, itemId, onClose, onSuccess }) {
     isSubmittingRef.current = true;
     try {
       await updateStock({
-        itemId,
+        itemId: record.id,
         stockQuantity: Number(data.stockQuantity),
       }).unwrap();
       if (onSuccess) {
-        onSuccess(itemId, 'updated');
+        onSuccess(record.id, 'updated');
       }
       reset();
       onClose();
       toast.success('Stock updated successfully');
     } catch (error) {
-      console.error('Failed to update stock:', error);
-      const errorMessage = error?.data?.message || error?.data || error?.message || 'Failed to update stock';
-      toast.error(errorMessage);
+      const { message, isRetryable } = getApiErrorMessage(error, {
+        defaultMessage: 'Failed to update stock',
+      });
+      if (isRetryable) {
+        toast.error(message, {
+          action: {
+            label: 'Retry',
+            onClick: () => {
+              setTimeout(() => {
+                onSubmit({ preventDefault: () => {}, target: { checkValidity: () => true } });
+              }, 100);
+            },
+          },
+        });
+      } else {
+        toast.error(message);
+      }
     } finally {
       isSubmittingRef.current = false;
     }
@@ -184,9 +190,6 @@ export function UpdateStockDialog({ open, itemId, onClose, onSuccess }) {
     </Box>
   );
 
-  const isLoading = isLoadingStock;
-  const hasError = !stockData && !isLoadingStock && itemId && open;
-
   return (
     <>
       <CustomDialog
@@ -196,23 +199,11 @@ export function UpdateStockDialog({ open, itemId, onClose, onSuccess }) {
         maxWidth="sm"
         fullWidth
         fullScreen={isMobile}
-        loading={isSubmitting || isLoading}
+        loading={isSubmitting}
         disableClose={isSubmitting}
         actions={renderActions()}
       >
-        <QueryStateContent
-          isLoading={isLoading}
-          isError={hasError}
-          error={queryError}
-          onRetry={refetchStock}
-          loadingMessage="Loading stock information..."
-          errorTitle="Failed to load stock information"
-          errorMessageOptions={{
-            defaultMessage: 'Failed to load stock information',
-            notFoundMessage: 'Item not found or an error occurred.',
-          }}
-        >
-          <Form methods={methods} onSubmit={onSubmit}>
+        <Form methods={methods} onSubmit={onSubmit}>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1 }}>
               {/* Current Stock Display */}
               <Box sx={{ p: 2, bgcolor: 'background.neutral', borderRadius: 1 }}>
@@ -270,7 +261,6 @@ export function UpdateStockDialog({ open, itemId, onClose, onSuccess }) {
               )}
             </Box>
           </Form>
-        </QueryStateContent>
       </CustomDialog>
 
       {/* Unsaved Changes Confirmation Dialog */}

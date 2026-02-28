@@ -2,7 +2,7 @@
 
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
 import { useTheme, useMediaQuery } from '@mui/material';
@@ -11,7 +11,6 @@ import { getApiErrorMessage } from 'src/utils/api-error-message';
 
 import { createPaymentModeSchema, updatePaymentModeSchema } from 'src/schemas';
 import {
-  useGetPaymentModeByIdQuery,
   useCreatePaymentModeMutation,
   useUpdatePaymentModeMutation,
 } from 'src/store/api/payment-modes-api';
@@ -19,7 +18,6 @@ import {
 import { toast } from 'src/components/snackbar';
 import { Form, Field } from 'src/components/hook-form';
 import { CustomDialog } from 'src/components/custom-dialog';
-import { QueryStateContent } from 'src/components/query-state-content';
 import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
 
 // ----------------------------------------------------------------------
@@ -27,14 +25,16 @@ import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
 /**
  * Payment Mode Form Dialog
  *
- * Single dialog for create and edit. tenantId is required (from list);
- * id required only for edit. API path uses tenantId; body does not include tenantId.
+ * Single dialog for create and edit. Edit mode uses record from list (no getById).
+ * tenantId is required for API and is passed from the list (selected tenant filter).
+ *
+ * Dropdown analysis: No dropdowns in form. Fields: name, description, isActive. tenantId comes from list as prop.
  */
 export function PaymentModeFormDialog({
   open,
   mode,
   tenantId,
-  paymentModeId,
+  record,
   onClose,
   onSuccess,
 }) {
@@ -42,11 +42,7 @@ export function PaymentModeFormDialog({
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] = useState(false);
-
-  const { data: paymentModeData, isLoading: isLoadingPaymentMode, error: queryError, isError, refetch: refetchPaymentMode } = useGetPaymentModeByIdQuery(
-    { tenantId, id: paymentModeId },
-    { skip: !tenantId || !paymentModeId || mode !== 'edit' || !open }
-  );
+  const isSubmittingRef = useRef(false);
 
   const [createPaymentMode, { isLoading: isCreating }] = useCreatePaymentModeMutation();
   const [updatePaymentMode, { isLoading: isUpdating }] = useUpdatePaymentModeMutation();
@@ -59,7 +55,7 @@ export function PaymentModeFormDialog({
     defaultValues: useMemo(
       () => ({
         name: '',
-        description: '',
+        description: null,
         isActive: true,
       }),
       []
@@ -67,31 +63,28 @@ export function PaymentModeFormDialog({
     mode: 'onChange',
   });
 
-  const { reset, handleSubmit, formState: { isDirty }, watch } = methods;
-
-  const nameValue = watch('name') ?? '';
-  const descriptionValue = watch('description') ?? '';
-  const nameLength = nameValue.length;
-  const descriptionLength = descriptionValue.length;
+  const { reset, handleSubmit, formState: { isDirty } } = methods;
 
   useEffect(() => {
     if (!open) {
-      reset({ name: '', description: '', isActive: true });
+      reset({ name: '', description: null, isActive: true });
       return;
     }
-    if (mode === 'edit' && paymentModeData) {
+    if (mode === 'edit' && record) {
       reset({
-        name: paymentModeData.name ?? '',
-        description: paymentModeData.description ?? '',
-        isActive: paymentModeData.isActive ?? true,
+        name: record.name ?? '',
+        description: record.description ?? null,
+        isActive: record.isActive ?? true,
       });
-    } else if (mode === 'create') {
-      reset({ name: '', description: '', isActive: true });
+    } else {
+      reset({ name: '', description: null, isActive: true });
     }
-  }, [open, mode, paymentModeData, reset]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, mode, record?.id, record?.name, record?.description, record?.isActive, reset]);
 
   const onSubmit = handleSubmit(async (data) => {
-    if (isSubmitting || !tenantId) return;
+    if (isSubmittingRef.current || isSubmitting || !tenantId) return;
+    isSubmittingRef.current = true;
 
     const body = {
       name: data.name.trim(),
@@ -104,17 +97,30 @@ export function PaymentModeFormDialog({
         const result = await createPaymentMode({ tenantId, body }).unwrap();
         onSuccess?.(result, 'created');
       } else {
-        await updatePaymentMode({ tenantId, id: paymentModeId, body }).unwrap();
-        onSuccess?.(paymentModeId, 'updated');
+        await updatePaymentMode({ tenantId, id: record.id, body }).unwrap();
+        onSuccess?.(record.id, 'updated');
       }
       reset();
       onClose();
     } catch (err) {
-      const { message } = getApiErrorMessage(err, {
+      const { message, isRetryable } = getApiErrorMessage(err, {
         defaultMessage: `Failed to ${mode === 'create' ? 'create' : 'update'} payment mode`,
         validationMessage: 'Validation failed or duplicate name for this tenant.',
       });
-      toast.error(message);
+      if (isRetryable) {
+        toast.error(message, {
+          action: {
+            label: 'Retry',
+            onClick: () => {
+              setTimeout(() => onSubmit({ preventDefault: () => {}, target: { checkValidity: () => true } }), 100);
+            },
+          },
+        });
+      } else {
+        toast.error(message);
+      }
+    } finally {
+      isSubmittingRef.current = false;
     }
   });
 
@@ -122,18 +128,45 @@ export function PaymentModeFormDialog({
     if (isSubmitting) return;
     if (isDirty) {
       setUnsavedChangesDialogOpen(true);
-    } else {
-      onClose();
+      return;
     }
-  }, [isSubmitting, isDirty, onClose]);
+    reset();
+    onClose();
+  }, [isSubmitting, isDirty, reset, onClose]);
 
-  const handleDiscard = useCallback(() => {
+  const handleConfirmDiscard = useCallback(() => {
     setUnsavedChangesDialogOpen(false);
     reset();
     onClose();
   }, [reset, onClose]);
 
-  const isLoading = mode === 'edit' && (isLoadingPaymentMode || (paymentModeId && !paymentModeData && !isError));
+  const handleCancelDiscard = useCallback(() => {
+    setUnsavedChangesDialogOpen(false);
+  }, []);
+
+  const renderActions = () => (
+    <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+      <Field.Button
+        variant="outlined"
+        color="inherit"
+        onClick={handleClose}
+        disabled={isSubmitting}
+      >
+        Cancel
+      </Field.Button>
+      <Field.Button
+        variant="contained"
+        type="submit"
+        onClick={onSubmit}
+        loading={isSubmitting}
+        disabled={isSubmitting}
+        startIcon="solar:check-circle-bold"
+        sx={{ minHeight: 44 }}
+      >
+        {mode === 'create' ? 'Save' : 'Update'}
+      </Field.Button>
+    </Box>
+  );
 
   return (
     <>
@@ -144,47 +177,42 @@ export function PaymentModeFormDialog({
         maxWidth="sm"
         fullWidth
         fullScreen={isMobile}
-        loading={isLoading}
+        loading={isSubmitting}
+        disableClose={isSubmitting}
+        actions={renderActions()}
       >
-        <QueryStateContent
-          isLoading={isLoading}
-          isError={mode === 'edit' && isError && !paymentModeData}
-          error={queryError}
-          onRetry={refetchPaymentMode}
-          loadingMessage="Loading payment mode..."
-          errorTitle="Failed to load payment mode"
-          errorMessageOptions={{
-            defaultMessage: 'Failed to load payment mode',
-            notFoundMessage: 'Payment mode not found. It may have been deleted.',
-          }}
-        >
-          <Form methods={methods} onSubmit={onSubmit}>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1 }}>
-              <Field.Text
-                name="name"
-                label="Name"
-                required
-                slotProps={{ textField: { size: 'small' } }}
-                helperText={nameLength > 0 ? `${nameLength}/200` : undefined}
-              />
-              <Field.Text
-                name="description"
-                label="Description"
-                slotProps={{ textField: { size: 'small', multiline: true, rows: 3 } }}
-                helperText={descriptionLength > 0 ? `${descriptionLength}/1000` : undefined}
-              />
-              <Field.Switch name="isActive" label="Active" />
-              <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1.5, pt: 1 }}>
-                <Field.Button type="button" variant="outlined" onClick={handleClose} disabled={isSubmitting}>
-                  Cancel
-                </Field.Button>
-                <Field.Button type="submit" variant="contained" disabled={isSubmitting}>
-                  {mode === 'create' ? 'Create' : 'Save'}
-                </Field.Button>
+        <Form methods={methods} onSubmit={onSubmit}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1 }}>
+            <Box>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <Field.Text
+                  name="name"
+                  label="Name"
+                  placeholder="Enter payment mode name"
+                  required
+                  slotProps={{
+                    input: {
+                      maxLength: 200,
+                    },
+                  }}
+                />
+                <Field.Text
+                  name="description"
+                  label="Description"
+                  placeholder="Enter description (optional)"
+                  multiline
+                  rows={3}
+                  slotProps={{
+                    input: {
+                      maxLength: 1000,
+                    },
+                  }}
+                />
+                <Field.Switch name="isActive" label="Active" />
               </Box>
             </Box>
-          </Form>
-        </QueryStateContent>
+          </Box>
+        </Form>
       </CustomDialog>
 
       <ConfirmDialog
@@ -192,11 +220,11 @@ export function PaymentModeFormDialog({
         title="Discard Changes?"
         content="You have unsaved changes. Are you sure you want to close without saving?"
         action={
-          <Field.Button variant="contained" color="error" onClick={handleDiscard}>
+          <Field.Button variant="contained" color="error" onClick={handleConfirmDiscard}>
             Discard
           </Field.Button>
         }
-        onClose={() => setUnsavedChangesDialogOpen(false)}
+        onClose={handleCancelDiscard}
       />
     </>
   );

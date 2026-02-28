@@ -11,6 +11,7 @@ import IconButton from '@mui/material/IconButton';
 import Typography from '@mui/material/Typography';
 import { useTheme, useMediaQuery } from '@mui/material';
 
+import { fCurrency } from 'src/utils/format-number';
 import { getApiErrorMessage } from 'src/utils/api-error-message';
 
 import { createOrderSchema } from 'src/schemas';
@@ -103,11 +104,11 @@ export function OrderFormDialog({ open, onClose, onSuccess, branchOptions = [], 
         staffId: null,
         tableId: null,
         kitchenId: null,
-        items: [{ itemId: null, quantity: 1, unitPrice: 0, notes: null }],
+        items: [{ itemId: null, quantity: 1, unitPrice: null, notes: null }],
         deliveryDetails: null,
-        taxAmount: 0,
+        taxAmount: null,
         taxPercentage: null,
-        discountAmount: 0,
+        discountAmount: null,
         discountPercentage: null,
         notes: null,
       }),
@@ -207,11 +208,11 @@ export function OrderFormDialog({ open, onClose, onSuccess, branchOptions = [], 
         staffId: null,
         tableId: null,
         kitchenId: null,
-        items: [{ itemId: null, quantity: 1, unitPrice: 0, notes: null }],
+        items: [{ itemId: null, quantity: 1, unitPrice: null, notes: null }],
         deliveryDetails: null,
-        taxAmount: 0,
+        taxAmount: null,
         taxPercentage: null,
-        discountAmount: 0,
+        discountAmount: null,
         discountPercentage: null,
         notes: null,
       });
@@ -303,10 +304,16 @@ export function OrderFormDialog({ open, onClose, onSuccess, branchOptions = [], 
       // P0-004: Parent shows toast on onSuccess; no duplicate here
     } catch (error) {
       console.error('Failed to create order:', error);
-      const { message } = getApiErrorMessage(error, {
+      const { message, isRetryable } = getApiErrorMessage(error, {
         defaultMessage: 'Failed to create order',
       });
-      toast.error(message);
+      if (isRetryable) {
+        toast.error(message, {
+          action: { label: 'Retry', onClick: () => handleSubmit(onSubmit)() },
+        });
+      } else {
+        toast.error(message);
+      }
     } finally {
       isSubmittingRef.current = false;
     }
@@ -583,12 +590,7 @@ export function OrderFormDialog({ open, onClose, onSuccess, branchOptions = [], 
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', p: 2, bgcolor: 'background.neutral', borderRadius: 1 }}>
                   <Typography variant="body2">Subtotal:</Typography>
                   <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                    {new Intl.NumberFormat('en-US', {
-                      style: 'currency',
-                      currency: 'USD',
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    }).format(subtotal)}
+                    {fCurrency(subtotal, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </Typography>
                 </Box>
                 <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
@@ -619,12 +621,7 @@ export function OrderFormDialog({ open, onClose, onSuccess, branchOptions = [], 
                       textField: {
                         size: 'small',
                         helperText: watchedTaxPercentage && subtotal > 0
-                          ? `Calculated: ${new Intl.NumberFormat('en-US', {
-                              style: 'currency',
-                              currency: 'USD',
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            }).format(calculatedTaxAmount)}`
+                          ? `Calculated: ${fCurrency(calculatedTaxAmount, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                           : undefined,
                       },
                     }}
@@ -659,12 +656,7 @@ export function OrderFormDialog({ open, onClose, onSuccess, branchOptions = [], 
                       textField: {
                         size: 'small',
                         helperText: watchedDiscountPercentage && subtotal > 0
-                          ? `Calculated: ${new Intl.NumberFormat('en-US', {
-                              style: 'currency',
-                              currency: 'USD',
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            }).format(calculatedDiscountAmount)}`
+                          ? `Calculated: ${fCurrency(calculatedDiscountAmount, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                           : undefined,
                       },
                     }}
@@ -676,12 +668,7 @@ export function OrderFormDialog({ open, onClose, onSuccess, branchOptions = [], 
                     Total Amount:
                   </Typography>
                   <Typography variant="h6" sx={{ fontWeight: 700 }}>
-                    {new Intl.NumberFormat('en-US', {
-                      style: 'currency',
-                      currency: 'USD',
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    }).format(totalAmount)}
+                    {fCurrency(totalAmount, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </Typography>
                 </Box>
               </Box>

@@ -17,12 +17,11 @@ import { getApiErrorMessage } from 'src/utils/api-error-message';
 import { useGetTenantsDropdownQuery } from 'src/store/api/tenants-api';
 import { createKitchenSchema, updateKitchenSchema } from 'src/schemas';
 import { useGetBranchesDropdownQuery } from 'src/store/api/branches-api';
-import { useGetKitchenByIdQuery, useCreateKitchenMutation, useUpdateKitchenMutation } from 'src/store/api/kitchens-api';
+import { useCreateKitchenMutation, useUpdateKitchenMutation } from 'src/store/api/kitchens-api';
 
 import { toast } from 'src/components/snackbar';
 import { Form, Field } from 'src/components/hook-form';
 import { CustomDialog } from 'src/components/custom-dialog';
-import { QueryStateContent } from 'src/components/query-state-content';
 import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
 
 // ----------------------------------------------------------------------
@@ -42,39 +41,44 @@ const getId = (value) => {
 
 /**
  * Kitchen Form Dialog Component
- * 
- * Single dialog component for both create and edit operations.
- * Handles form state, validation, and API calls.
- * 
- * Note: GetById endpoint is FULLY IMPLEMENTED (not a placeholder).
- * Can be used directly for fetching kitchen details.
- * 
+ *
+ * Single dialog for create and edit. Edit mode uses record from list (no getById).
+ *
+ * Dropdown analysis:
+ * - tenantId: API (tenantOptions from list or useGetTenantsDropdownQuery when open). Parent of branchId.
+ * - branchId: API (useGetBranchesDropdownQuery({ tenantId })). Dependent on tenantId; loaded only when tenant selected; disabled when no tenant. When tenant cleared, branchId resets via effect.
+ *
  * @param {Object} props
  * @param {boolean} props.open - Whether the dialog is open
  * @param {string} props.mode - 'create' or 'edit'
- * @param {string|null} props.kitchenId - Kitchen ID for edit mode
+ * @param {Object|null} props.record - Full kitchen object for edit mode (from list)
  * @param {Function} props.onClose - Callback when dialog closes
  * @param {Function} props.onSuccess - Callback when form is successfully submitted
- * @param {Array} props.tenantOptions - Tenant options for dropdown (from list view; fallback: fetch in form when empty)
+ * @param {Array} props.tenantOptions - Tenant options (from list view; fallback: fetch in form when empty)
  */
-export function KitchenFormDialog({ open, mode, kitchenId, onClose, onSuccess, tenantOptions = [] }) {
+export function KitchenFormDialog({ open, mode, record, onClose, onSuccess, tenantOptions = [] }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] = useState(false);
   const isSubmittingRef = useRef(false);
 
-  const { data: kitchenData, isLoading: isLoadingKitchen, error: queryError, isError, refetch: refetchKitchen } = useGetKitchenByIdQuery(
-    kitchenId,
-    { skip: !kitchenId || mode !== 'edit' || !open }
-  );
-
-  const { data: tenantsDropdownFallback, isLoading: isLoadingTenantsFallback } = useGetTenantsDropdownQuery(undefined, { skip: tenantOptions.length > 0 });
-  const effectiveTenantOptions = useMemo(() => {
+  const { data: tenantsDropdownFallback, isLoading: isLoadingTenantsFallback } = useGetTenantsDropdownQuery(undefined, {
+    skip: tenantOptions.length > 0 || !open,
+  });
+  const tenantOptionsBase = useMemo(() => {
     if (tenantOptions.length > 0) return tenantOptions;
     if (!tenantsDropdownFallback || !Array.isArray(tenantsDropdownFallback)) return [];
     return tenantsDropdownFallback.map((item) => ({ id: item.key, label: item.value || item.key }));
   }, [tenantOptions, tenantsDropdownFallback]);
+
+  const effectiveTenantOptions = useMemo(() => {
+    if (mode === 'edit' && record?.tenantId && !tenantOptionsBase.some((t) => t.id === record.tenantId)) {
+      return [...tenantOptionsBase, { id: record.tenantId, label: record.tenantName || record.tenantId }];
+    }
+    return tenantOptionsBase;
+  }, [mode, record?.tenantId, record?.tenantName, tenantOptionsBase]);
+
   const isLoadingTenants = tenantOptions.length > 0 ? false : isLoadingTenantsFallback;
 
   const [createKitchen, { isLoading: isCreating }] = useCreateKitchenMutation();
@@ -110,25 +114,51 @@ export function KitchenFormDialog({ open, mode, kitchenId, onClose, onSuccess, t
 
   const watchedTenantIdFromForm = watch('tenantId');
   const selectedTenantIdValue = useMemo(() => getId(watchedTenantIdFromForm), [watchedTenantIdFromForm]);
+  const prevTenantIdRef = useRef(undefined);
 
   const { data: branchesDropdown, isLoading: isLoadingBranches } = useGetBranchesDropdownQuery(
     { tenantId: selectedTenantIdValue || undefined },
     { skip: !selectedTenantIdValue || !open }
   );
-  const branchOptions = useMemo(() => {
+  const branchOptionsBase = useMemo(() => {
     if (!branchesDropdown || !Array.isArray(branchesDropdown)) return [];
     return branchesDropdown.map((item) => ({ id: item.key, label: item.value || item.key }));
   }, [branchesDropdown]);
 
-  // Track if form has been initialized
-  const formInitializedRef = useRef(false);
-  const previousKitchenIdRef = useRef(null);
+  const effectiveBranchOptions = useMemo(() => {
+    if (
+      mode === 'edit' &&
+      record?.branchId &&
+      selectedTenantIdValue &&
+      !branchOptionsBase.some((b) => b.id === record.branchId)
+    ) {
+      return [...branchOptionsBase, { id: record.branchId, label: record.branchName || record.branchId }];
+    }
+    return branchOptionsBase;
+  }, [mode, record?.branchId, record?.branchName, branchOptionsBase, selectedTenantIdValue]);
 
-  // Load kitchen data for edit mode or reset for create mode
+  const watchedBranchId = watch('branchId');
+
+  // When tenant is cleared, reset branch (dependent dropdown)
+  useEffect(() => {
+    if (open && !selectedTenantIdValue && watchedBranchId) {
+      setValue('branchId', null, { shouldValidate: true });
+    }
+  }, [open, selectedTenantIdValue, watchedBranchId, setValue]);
+
+  // When tenant changes in create mode, clear branch so user picks branch for new tenant
+  useEffect(() => {
+    if (!open || mode !== 'create') return;
+    if (prevTenantIdRef.current !== selectedTenantIdValue) {
+      if (prevTenantIdRef.current !== undefined) setValue('branchId', null, { shouldValidate: true });
+      prevTenantIdRef.current = selectedTenantIdValue;
+    }
+  }, [open, mode, selectedTenantIdValue, setValue]);
+
+  // Load kitchen data for edit mode from record or reset for create/close
   useEffect(() => {
     if (!open) {
-      formInitializedRef.current = false;
-      previousKitchenIdRef.current = null;
+      prevTenantIdRef.current = undefined;
       reset({
         tenantId: null,
         branchId: null,
@@ -140,50 +170,55 @@ export function KitchenFormDialog({ open, mode, kitchenId, onClose, onSuccess, t
       return;
     }
 
-    const currentKitchenId = mode === 'edit' ? kitchenId : 'create';
-    const shouldInitialize = !formInitializedRef.current || previousKitchenIdRef.current !== currentKitchenId;
-
-    if (shouldInitialize) {
-      if (mode === 'edit' && kitchenData) {
-        // Find matching tenant and branch objects from options
-        const matchingTenant = kitchenData.tenantId && effectiveTenantOptions.length > 0
-          ? effectiveTenantOptions.find((t) => t.id === kitchenData.tenantId)
+    if (mode === 'edit' && record) {
+      const matchingTenant =
+        record.tenantId && effectiveTenantOptions.length > 0
+          ? effectiveTenantOptions.find((t) => t.id === record.tenantId)
           : null;
+      const tenantValue =
+        matchingTenant || (record.tenantId ? { id: record.tenantId, label: record.tenantName || record.tenantId } : null);
 
-        // For branch, we need to fetch branches for the tenant first
-        // We'll set it in a separate effect after branches are loaded
-        reset({
-          tenantId: matchingTenant || null,
-          branchId: null, // Will be set in separate effect
-          name: kitchenData.name || '',
-          description: kitchenData.description || null,
-          location: kitchenData.location || null,
-          isActive: kitchenData.isActive ?? true,
-        });
+      const matchingBranch =
+        record.branchId && effectiveBranchOptions.length > 0
+          ? effectiveBranchOptions.find((b) => b.id === record.branchId)
+          : null;
+      const branchValue =
+        matchingBranch || (record.branchId ? { id: record.branchId, label: record.branchName || record.branchId } : null);
 
-        formInitializedRef.current = true;
-        previousKitchenIdRef.current = currentKitchenId;
-      } else if (mode === 'create') {
-        reset({
-          tenantId: null,
-          branchId: null,
-          name: '',
-          description: null,
-          location: null,
-          isActive: true,
-        });
-
-        formInitializedRef.current = true;
-        previousKitchenIdRef.current = currentKitchenId;
-      }
+      reset({
+        tenantId: tenantValue,
+        branchId: branchValue,
+        name: record.name || '',
+        description: record.description ?? null,
+        location: record.location ?? null,
+        isActive: record.isActive ?? true,
+      });
+    } else if (mode === 'edit' && !record) {
+      reset({
+        tenantId: null,
+        branchId: null,
+        name: '',
+        description: null,
+        location: null,
+        isActive: true,
+      });
+    } else if (mode === 'create') {
+      reset({
+        tenantId: null,
+        branchId: null,
+        name: '',
+        description: null,
+        location: null,
+        isActive: true,
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, mode, kitchenId, kitchenData?.id, reset, effectiveTenantOptions.length]);
+  }, [open, mode, record?.id, record?.tenantId, record?.branchId, record?.name, record?.description, record?.location, record?.isActive, record?.tenantName, record?.branchName, effectiveTenantOptions, effectiveBranchOptions, reset]);
 
-  // Separate effect to set branchId when branches are loaded in edit mode
+  // When branch options load in edit mode, set branchId to matching option (replaces synthetic)
   useEffect(() => {
-    if (open && mode === 'edit' && kitchenData?.branchId && branchOptions.length > 0) {
-      const matchingBranch = branchOptions.find((b) => b.id === kitchenData.branchId);
+    if (open && mode === 'edit' && record?.branchId && effectiveBranchOptions.length > 0) {
+      const matchingBranch = effectiveBranchOptions.find((b) => b.id === record.branchId);
       if (matchingBranch) {
         const currentValue = getValues('branchId');
         const currentId = getId(currentValue);
@@ -193,7 +228,7 @@ export function KitchenFormDialog({ open, mode, kitchenId, onClose, onSuccess, t
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, mode, kitchenData?.branchId, branchOptions.length]);
+  }, [open, mode, record?.branchId, effectiveBranchOptions.length]);
 
   // Handle form submit (P0-002: ref guard blocks rapid double-submit)
   const onSubmit = handleSubmit(async (data) => {
@@ -217,26 +252,35 @@ export function KitchenFormDialog({ open, mode, kitchenId, onClose, onSuccess, t
           onSuccess(result, 'created');
         }
       } else {
-        // Include isActive for update
         await updateKitchen({
-          id: kitchenId,
+          id: record.id,
           ...kitchenPayload,
           isActive: data.isActive ?? true,
         }).unwrap();
         if (onSuccess) {
-          onSuccess(kitchenId, 'updated');
+          onSuccess(record.id, 'updated');
         }
       }
       reset();
       onClose();
     } catch (error) {
-      console.error('Failed to save kitchen:', error);
-      const { message } = getApiErrorMessage(error, {
+      const { message, isRetryable } = getApiErrorMessage(error, {
         defaultMessage: `Failed to ${mode === 'create' ? 'create' : 'update'} kitchen`,
         notFoundMessage: 'Kitchen, tenant, or branch not found',
         validationMessage: 'Validation failed. Please check your input.',
       });
-      toast.error(message);
+      if (isRetryable) {
+        toast.error(message, {
+          action: {
+            label: 'Retry',
+            onClick: () => {
+              setTimeout(() => onSubmit({ preventDefault: () => {}, target: { checkValidity: () => true } }), 100);
+            },
+          },
+        });
+      } else {
+        toast.error(message);
+      }
     } finally {
       isSubmittingRef.current = false;
     }
@@ -289,14 +333,13 @@ export function KitchenFormDialog({ open, mode, kitchenId, onClose, onSuccess, t
         startIcon="solar:check-circle-bold"
         sx={{ minHeight: 44 }}
       >
-        {mode === 'create' ? 'Create' : 'Update'}
+        {mode === 'create' ? 'Save' : 'Update'}
       </Field.Button>
     </Box>
   );
 
-  // Loading state for edit mode
-  const isLoading = (mode === 'edit' && isLoadingKitchen) || isLoadingTenants || isLoadingBranches;
-  const hasError = mode === 'edit' && (isError || (!kitchenData && !isLoadingKitchen && kitchenId && open));
+  // Loading: only tenant/branch options (edit uses record; no kitchen fetch)
+  const isLoading = isLoadingTenants || isLoadingBranches;
 
   return (
     <>
@@ -320,19 +363,7 @@ export function KitchenFormDialog({ open, mode, kitchenId, onClose, onSuccess, t
           },
         }}
       >
-        <QueryStateContent
-          isLoading={isLoading}
-          isError={hasError}
-          error={queryError}
-          onRetry={refetchKitchen}
-          loadingMessage="Loading kitchen data..."
-          errorTitle="Failed to load kitchen data"
-          errorMessageOptions={{
-            defaultMessage: 'Failed to load kitchen data',
-            notFoundMessage: 'Kitchen not found or an error occurred.',
-          }}
-        >
-          <Form methods={methods} onSubmit={onSubmit}>
+        <Form methods={methods} onSubmit={onSubmit}>
             <Box
               sx={{
                 display: 'flex',
@@ -356,7 +387,7 @@ export function KitchenFormDialog({ open, mode, kitchenId, onClose, onSuccess, t
                     options={effectiveTenantOptions}
                     loading={isLoadingTenants}
                     required
-                    disabled={mode === 'edit'} // TenantId cannot be changed on update
+                    disabled={mode === 'edit'}
                     getOptionLabel={(option) => {
                       if (!option) return '';
                       return option.label || option.id || '';
@@ -376,10 +407,10 @@ export function KitchenFormDialog({ open, mode, kitchenId, onClose, onSuccess, t
                   <Field.Autocomplete
                     name="branchId"
                     label="Branch"
-                    options={branchOptions}
+                    options={effectiveBranchOptions}
                     loading={isLoadingBranches}
                     required
-                    disabled={mode === 'edit'} // BranchId cannot be changed on update
+                    disabled={mode === 'edit' || !selectedTenantIdValue}
                     getOptionLabel={(option) => {
                       if (!option) return '';
                       return option.label || option.id || '';
@@ -391,16 +422,16 @@ export function KitchenFormDialog({ open, mode, kitchenId, onClose, onSuccess, t
                     slotProps={{
                       textField: {
                         placeholder: 'Select branch',
+                        helperText: !selectedTenantIdValue ? 'Select a tenant first' : undefined,
                       },
                     }}
                   />
-                  {mode === 'create' && selectedTenantIdValue && branchOptions.length === 0 && (
+                  {mode === 'create' && selectedTenantIdValue && effectiveBranchOptions.length === 0 && !isLoadingBranches && (
                     <Alert severity="warning">
                       <AlertTitle>No Branches Available</AlertTitle>
                       No branches found for the selected tenant. Please select a different tenant or create a branch first.
                     </Alert>
                   )}
-
                   {/* Name */}
                   <Field.Text
                     name="name"
@@ -451,7 +482,6 @@ export function KitchenFormDialog({ open, mode, kitchenId, onClose, onSuccess, t
               )}
             </Box>
           </Form>
-        </QueryStateContent>
       </CustomDialog>
 
       {/* Unsaved Changes Confirmation Dialog */}

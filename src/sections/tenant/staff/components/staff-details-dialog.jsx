@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useCallback } from 'react';
 
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
@@ -8,43 +8,30 @@ import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
 import { useTheme, useMediaQuery } from '@mui/material';
 
-import { useGetStaffByIdQuery } from 'src/store/api/staff-api';
+import { fDate } from 'src/utils/format-time';
 
 import { Label } from 'src/components/label';
 import { CustomDialog } from 'src/components/custom-dialog';
-import { QueryStateContent } from 'src/components/query-state-content';
 
 // ----------------------------------------------------------------------
 
 /**
  * Staff Details Dialog Component
  *
- * Read-only view of staff member details.
- * No action buttons - purely informational.
- * Branch name is expected from getStaffById response (e.g. staff.branchName).
+ * Read-only view using record from list (no getById).
+ * Branch name: use record.branchName if present, otherwise record.branchId.
  */
-export function StaffDetailsDialog({ open, staffId, onClose }) {
+export function StaffDetailsDialog({ open, record, onClose }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
-  const { data: staff, isLoading, error: queryError, isError, refetch } = useGetStaffByIdQuery(staffId, {
-    skip: !staffId || !open,
-  });
+  const formatDate = useCallback((dateString) => {
+    if (!dateString) return '-';
+    const formatted = fDate(dateString, 'DD MMMM YYYY');
+    return formatted === 'Invalid date' ? '-' : formatted;
+  }, []);
 
-  // Format date for display
-  const formatDate = useMemo(() => (dateString) => {
-      if (!dateString) return null;
-      try {
-        const date = new Date(dateString);
-        return date.toLocaleDateString('en-US', {
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric',
-        });
-      } catch {
-        return dateString;
-      }
-    }, []);
+  const branchDisplay = record?.branchName ?? record?.branchId ?? '-';
 
   return (
     <CustomDialog
@@ -54,23 +41,8 @@ export function StaffDetailsDialog({ open, staffId, onClose }) {
       maxWidth="sm"
       fullWidth
       fullScreen={isMobile}
-      loading={isLoading}
     >
-      <QueryStateContent
-        isLoading={isLoading}
-        isError={isError}
-        error={queryError}
-        onRetry={refetch}
-        loadingMessage="Loading staff member details..."
-        errorTitle="Failed to load staff member details"
-        errorMessageOptions={{
-          defaultMessage: 'Failed to load staff details',
-          notFoundMessage: 'Staff not found',
-        }}
-        isEmpty={!staff && !isLoading && !isError}
-        emptyMessage="Staff member not found"
-      >
-        {staff ? (
+      {record ? (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1, pb: 3 }}>
           {/* Basic Information */}
           <Box>
@@ -83,28 +55,28 @@ export function StaffDetailsDialog({ open, staffId, onClose }) {
                   Full Name
                 </Typography>
                 <Typography variant="body1">
-                  {`${staff.firstName || ''} ${staff.lastName || ''}`.trim() || '-'}
+                  {`${record.firstName || ''} ${record.lastName || ''}`.trim() || '-'}
                 </Typography>
               </Box>
               <Box>
                 <Typography variant="caption" color="text.secondary">
                   Staff Type
                 </Typography>
-                <Typography variant="body1">{staff.staffTypeName || '-'}</Typography>
+                <Typography variant="body1">{record.staffTypeName || '-'}</Typography>
               </Box>
               <Box>
                 <Typography variant="caption" color="text.secondary">
                   Branch
                 </Typography>
-                <Typography variant="body1">{staff.branchName || '-'}</Typography>
+                <Typography variant="body1">{branchDisplay}</Typography>
               </Box>
               <Box>
                 <Typography variant="caption" color="text.secondary">
                   Status
                 </Typography>
                 <Box sx={{ mt: 0.5 }}>
-                  <Label color={staff.isActive ? 'success' : 'default'} variant="soft">
-                    {staff.isActive ? 'Active' : 'Inactive'}
+                  <Label color={record.isActive ? 'success' : 'default'} variant="soft">
+                    {record.isActive ? 'Active' : 'Inactive'}
                   </Label>
                 </Box>
               </Box>
@@ -119,31 +91,31 @@ export function StaffDetailsDialog({ open, staffId, onClose }) {
               Contact Information
             </Typography>
             <Stack spacing={2}>
-              {staff.email && (
+              {record.email && (
                 <Box>
                   <Typography variant="caption" color="text.secondary">
                     Email
                   </Typography>
-                  <Typography variant="body1">{staff.email}</Typography>
+                  <Typography variant="body1">{record.email}</Typography>
                 </Box>
               )}
-              {staff.phone && (
+              {record.phone && (
                 <Box>
                   <Typography variant="caption" color="text.secondary">
                     Phone
                   </Typography>
-                  <Typography variant="body1">{staff.phone}</Typography>
+                  <Typography variant="body1">{record.phone}</Typography>
                 </Box>
               )}
-              {staff.address && (
+              {record.address && (
                 <Box>
                   <Typography variant="caption" color="text.secondary">
                     Address
                   </Typography>
-                  <Typography variant="body1">{staff.address}</Typography>
+                  <Typography variant="body1">{record.address}</Typography>
                 </Box>
               )}
-              {!staff.email && !staff.phone && !staff.address && (
+              {!record.email && !record.phone && !record.address && (
                 <Typography variant="body2" color="text.secondary">
                   No contact information available
                 </Typography>
@@ -159,23 +131,23 @@ export function StaffDetailsDialog({ open, staffId, onClose }) {
               Additional Information
             </Typography>
             <Stack spacing={2}>
-              {staff.hireDate && (
+              {record.hireDate && (
                 <Box>
                   <Typography variant="caption" color="text.secondary">
                     Hire Date
                   </Typography>
-                  <Typography variant="body1">{formatDate(staff.hireDate)}</Typography>
+                  <Typography variant="body1">{formatDate(record.hireDate)}</Typography>
                 </Box>
               )}
-              {staff.userId && (
+              {record.userId && (
                 <Box>
                   <Typography variant="caption" color="text.secondary">
                     User ID
                   </Typography>
-                  <Typography variant="body1">{staff.userId}</Typography>
+                  <Typography variant="body1">{record.userId}</Typography>
                 </Box>
               )}
-              {!staff.hireDate && !staff.userId && (
+              {!record.hireDate && !record.userId && (
                 <Typography variant="body2" color="text.secondary">
                   No additional information available
                 </Typography>
@@ -183,9 +155,7 @@ export function StaffDetailsDialog({ open, staffId, onClose }) {
             </Stack>
           </Box>
         </Box>
-        ) : null}
-      </QueryStateContent>
+      ) : null}
     </CustomDialog>
   );
 }
-

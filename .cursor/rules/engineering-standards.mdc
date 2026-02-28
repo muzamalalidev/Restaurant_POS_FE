@@ -165,6 +165,50 @@ Rules:
 - If extension needed → extend inside same file.
 - Never duplicate form logic elsewhere.
 
+### Number input default value (MANDATORY)
+
+When a form field is `type="number"`, the **default value must NOT be zero** unless zero is a meaningful initial value (e.g. quantity 1 for "add row"). Empty/unset should display as an empty input, not "0".
+
+- **Form defaults and reset:** Use `null` (or `undefined`) for number fields in `defaultValues` and in all `reset(...)` calls so the input renders empty. Use `record.field ?? null` when populating edit mode so missing/zero from API can show empty when appropriate.
+- **Schema:** For fields that should display empty but submit as a number when left blank, use `numberFromInput({ ... , emptyAs: 0 })` in the Zod schema so empty coerces to 0 (or the required value) on submit. Do not use `emptyAs: 0` for fields that must be explicitly filled (e.g. adjustment quantity that must be non-zero).
+- **Display:** The shared RHF number field (custom-form-elements) already shows empty when value is `null` or `undefined`; only change form defaults/reset and schema, not the shared component.
+- **Row/array fields:** When adding new rows (order items, stock document lines, recipe ingredients), use `unitPrice: null`, `price: null`, `taxAmount: null`, `discountAmount: null`, `stockQuantity: null`, `adjustmentQuantity: null` etc. as appropriate. Use `?? null` when mapping existing rows so missing values display empty; preserve explicit 0 where valid (e.g. free item).
+
+### Number and currency display (MANDATORY)
+
+All currency and numeric display MUST use the shared formatters from:
+
+import { fCurrency, fNumber, fPercent, fShortenNumber } from 'src/utils/format-number';
+
+Rules:
+
+- Do NOT use inline `new Intl.NumberFormat('en-US', { style: 'currency', currency: 'PKR', ... })` or hard-coded locale/currency in section or component files.
+- Use **fCurrency(value, options?)** for money (subtotals, prices, tax, discount, totals). Locale and currency come from `formatNumberLocale()` (src/locales); override via options only when needed (e.g. `minimumFractionDigits: 2, maximumFractionDigits: 2`).
+- Use **fNumber(value, options?)** for plain numbers (quantities, counts) when locale-aware formatting is desired.
+- For null/undefined display where the UI must show a placeholder (e.g. "-"), use: `value == null ? '-' : fCurrency(value, { ... })` or the same with fNumber. Do not duplicate Intl logic in feature code.
+- When replacing existing helpers (e.g. formatPrice, formatAmount), keep the same public behavior (null → "-" if required) and implement by delegating to fCurrency/fNumber.
+- If new formatting needs arise (e.g. compact notation, percent), extend src/utils/format-number; do not add new Intl.NumberFormat usages in features.
+
+Apply to: list views, details dialogs, form dialogs, POS views, and any component that displays currency or formatted numbers.
+
+### Date and time display (MANDATORY)
+
+All date and date-time display MUST use the shared formatters from:
+
+import { fDate, fDateTime, fTime } from 'src/utils/format-time';
+
+Rules:
+
+- Do NOT use inline `toLocaleDateString('en-US', ...)`, `toLocaleString('en-US', ...)`, or `toLocaleTimeString(...)` with hard-coded locale in section or component files.
+- Use **fDate(date, template?)** for date-only display (default pattern e.g. "17 Apr 2022"). Pass a dayjs format template when a different style is needed (e.g. `'DD MMMM YYYY'` for long month).
+- Use **fDateTime(date, template?)** for date and time (default e.g. "17 Apr 2022 12:00 am").
+- Use **fTime(date, template?)** for time-only display.
+- For null/undefined or invalid dates where the UI must show a placeholder, use: `!dateString ? '-' : (fDate(dateString) === 'Invalid date' ? '-' : fDate(dateString))` or equivalent. Do not duplicate date parsing/formatting logic in feature code.
+- When replacing existing formatDate/formatDateTime helpers, keep the same public behavior (null/empty → "-" if required) and implement by delegating to fDate/fDateTime/fTime.
+- If new date/time formatting needs arise, extend src/utils/format-time; do not add new Intl or toLocale* usages in features.
+
+Apply to: list views, details dialogs, form dialogs, and any component that displays dates or date-times (e.g. hire date, create date, order date).
+
 ---
 
 ## TABLE / GRID RULE (MANDATORY)
@@ -213,6 +257,56 @@ Rules:
 - Do NOT render a separate list error UI in list views (no early return with EmptyContent, no `error ? (Card + EmptyContent) : (CustomTable)`). CustomTable shows error in the table area when `error` is set and keeps search/filters/Create visible (inline error UX).
 - Do NOT inline error message logic (e.g. `error?.data?.message || 'An error occurred...'`) in list views; CustomTable uses getApiErrorMessage(error, { defaultMessage }) and shows Retry only when isRetryable.
 - If the list view has a prerequisite state (e.g. "Select a branch"), keep that as a separate branch (e.g. Card with EmptyContent); pass error/onRetry/errorEntityLabel to CustomTable for the data-fetch error only.
+
+### Server-side pagination (MANDATORY for list views with server pagination)
+
+When using `mode: 'server'` pagination:
+
+- Pass **page** (0-based) in the pagination config so the table stays in sync when the list resets page (e.g. on search/filter change). Example: `page: pageNumber - 1` where `pageNumber` is 1-based list state.
+- When the list resets `pageNumber` to 1 on filter/search change, the table must show "Page 1"; this requires passing the current page into CustomTable (handled by useCustomTable when `pagination.page` is provided).
+- After a successful delete: if the current page has only one item and `pageNumber > 1`, set `pageNumber` to `pageNumber - 1` so the user is not left on an empty page. Rely on cache invalidation/refetch to load the previous page.
+
+### Destructive action confirm dialogs (MANDATORY)
+
+For ConfirmDialog used for delete (or other destructive/state-changing actions):
+
+- The confirm action button MUST be **disabled** and **loading** while the mutation is in progress (e.g. `disabled={isDeleting} loading={isDeleting}` from the mutation hook). This prevents double submissions and gives clear feedback.
+- Pass **loading** and **disableClose** to ConfirmDialog from the same mutation loading state (e.g. `loading={isDeleting} disableClose={isDeleting}`) so the dialog cannot be closed until the request completes.
+- Destructure `isLoading: isDeleting` (or equivalent) from the delete mutation hook; do not rely on manual loading state when the mutation provides it.
+
+### List refresh after create/edit (MANDATORY)
+
+- In the list view, the form success callback (e.g. `handleFormSuccess`) MUST call **refetch()** so the list updates immediately after create/edit. This gives consistent UX with the golden CRUD pattern; cache invalidation alone may not refetch the same query args immediately.
+
+### Form dialog edit-mode query skip (MANDATORY)
+
+- When a form or details dialog uses **useGetXByIdQuery** for edit/view, the **skip** option MUST include **!open** so the query does not run when the dialog is closed. Example: `skip: !id || mode !== 'edit' || !open`. This avoids unnecessary requests when the user closes the dialog or navigates away.
+
+### Form submit double-submit guard (MANDATORY)
+
+- In form dialogs, in addition to **disabled** and **loading** on the submit button, use a **ref guard** (e.g. `isSubmittingRef.current`) at the start of the submit handler: if already set, return immediately; set to true before the mutation, and set to false in a **finally** block. This prevents a second request when the user double-clicks before React state updates.
+
+### Form dialog submit button and error retry (MANDATORY)
+
+- **Submit button label:** Use "Save" for create mode and "Update" for edit mode (e.g. `{mode === 'create' ? 'Save' : 'Update'}`). Do not use "Save" for both.
+- **Form submit error:** When the form submit mutation fails, use `getApiErrorMessage` and, when `isRetryable` is true, show a Retry action in the toast that re-invokes the submit handler (after a short delay if needed). This gives users a way to recover from transient failures.
+- **List mutation errors (delete, toggle, etc.):** When handling mutation errors in the list view, pass `notFoundMessage` where appropriate (e.g. delete) and use `isRetryable` to show a Retry action in the toast (e.g. call the same confirm or toggle handler again).
+
+For search or filter text fields with start/end adornments (e.g. search icon, clear button), use the MUI slot convention so all CRUD list screens behave the same:
+
+- Use `slotProps={{ input: { startAdornment, endAdornment } }}` for Field.Text (MUI TextField input slot). Do not mix with `slotProps.textField.InputProps` on list views; standardize on `slotProps.input`.
+
+### CRUD list golden pattern checklist (MANDATORY for new list views)
+
+When adding or modifying a CRUD list view with server pagination and delete, ensure:
+
+1. **Pagination:** Pass `page: pageNumber - 1` (0-based) in CustomTable pagination so the table resets when filters/search change.
+2. **Search clear:** When the list has a search clear button (or equivalent), call `setPageNumber(1)` in the clear handler so the user is not left on a high page after clearing search.
+3. **Delete mutation:** Use `const [deleteX, { isLoading: isDeleting }] = useDeleteXMutation()` and pass `isDeleting` to the ConfirmDialog action button (`disabled={isDeleting} loading={isDeleting}`) and to ConfirmDialog (`loading={isDeleting} disableClose={isDeleting}`).
+4. **Last page after delete:** After a successful delete, if the current page had one item and `pageNumber > 1`, call `setPageNumber((p) => p - 1)`.
+5. **Form success contract:** When the list handles form success, use a consistent callback signature (e.g. `(id, action, payload?)`) so create can pass the new entity id and optional payload for display name; edit passes existing id.
+
+Reference implementation: staff list view, branch list view, category list view, item list view.
 
 ---
 

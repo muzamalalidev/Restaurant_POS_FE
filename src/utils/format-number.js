@@ -1,6 +1,6 @@
 import { formatNumberLocale } from 'src/locales';
 
-const DEFAULT_LOCALE = { code: 'en-US', currency: 'USD' };
+const DEFAULT_LOCALE = { code: 'en-PK', currency: 'PKR' };
 
 function processInput(inputValue) {
   if (inputValue == null || Number.isNaN(inputValue)) return null;

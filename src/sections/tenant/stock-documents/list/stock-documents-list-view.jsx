@@ -12,6 +12,7 @@ import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
 
+import { fDateTime } from 'src/utils/format-time';
 import { getApiErrorMessage } from 'src/utils/api-error-message';
 
 import { useGetTenantsDropdownQuery } from 'src/store/api/tenants-api';
@@ -47,22 +48,10 @@ import {
 
 // ----------------------------------------------------------------------
 
-/**
- * Format date
- */
 const formatDate = (dateString) => {
   if (!dateString) return '-';
-  try {
-    return new Date(dateString).toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return dateString;
-  }
+  const formatted = fDateTime(dateString);
+  return formatted === 'Invalid date' ? '-' : formatted;
 };
 
 /**
@@ -90,14 +79,14 @@ export function StockDocumentsListView() {
   // Dialog state management
   const [formDialogOpen, setFormDialogOpen] = useState(false);
   const [formDialogMode, setFormDialogMode] = useState('create');
-  const [formDialogDocumentId, setFormDialogDocumentId] = useState(null);
-  
+  const [formDialogRecord, setFormDialogRecord] = useState(null);
+
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
-  const [detailsDialogDocumentId, setDetailsDialogDocumentId] = useState(null);
-  
+  const [detailsDialogRecord, setDetailsDialogRecord] = useState(null);
+
   const [postDialogOpen, setPostDialogOpen] = useState(false);
-  const [postDialogDocumentId, setPostDialogDocumentId] = useState(null);
-  
+  const [postDialogRecord, setPostDialogRecord] = useState(null);
+
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteDocumentId, setDeleteDocumentId] = useState(null);
   const [deleteDocumentIdDisplay, setDeleteDocumentIdDisplay] = useState(null);
@@ -363,7 +352,7 @@ export function StockDocumentsListView() {
   }, [documentsResponse]);
 
   // Mutations
-  const [deleteStockDocument] = useDeleteStockDocumentMutation();
+  const [deleteStockDocument, { isLoading: isDeleting }] = useDeleteStockDocumentMutation();
   const [toggleStockDocumentActive, { isLoading: isTogglingActive }] = useToggleStockDocumentActiveMutation();
 
   // Track which document is being toggled
@@ -374,33 +363,40 @@ export function StockDocumentsListView() {
   // Handle create
   const handleCreate = useCallback(() => {
     setFormDialogMode('create');
-    setFormDialogDocumentId(null);
+    setFormDialogRecord(null);
     setFormDialogOpen(true);
   }, []);
 
-  // Handle edit
-  const handleEdit = useCallback((documentId) => {
+  // Handle edit (pass full row; resolve record from documents)
+  const handleEdit = useCallback((row) => {
+    const record = documents.find((d) => d.id === row.id) ?? null;
+    if (!record) return;
     setFormDialogMode('edit');
-    setFormDialogDocumentId(documentId);
+    setFormDialogRecord(record);
     setFormDialogOpen(true);
-  }, []);
+  }, [documents]);
 
   // Handle view details
-  const handleViewDetails = useCallback((documentId) => {
-    setDetailsDialogDocumentId(documentId);
+  const handleViewDetails = useCallback((row) => {
+    const record = documents.find((d) => d.id === row.id) ?? null;
+    if (!record) return;
+    setDetailsDialogRecord(record);
     setDetailsDialogOpen(true);
-  }, []);
+  }, [documents]);
 
   // Handle post
-  const handlePost = useCallback((documentId) => {
-    setPostDialogDocumentId(documentId);
+  const handlePost = useCallback((row) => {
+    const record = documents.find((d) => d.id === row.id) ?? null;
+    if (!record) return;
+    setPostDialogRecord(record);
     setPostDialogOpen(true);
-  }, []);
+  }, [documents]);
 
   // Handle delete
-  const handleDelete = useCallback((documentId) => {
-    setDeleteDocumentId(documentId);
-    setDeleteDocumentIdDisplay(truncateId(documentId));
+  const handleDelete = useCallback((row) => {
+    const id = typeof row === 'object' && row !== null && 'id' in row ? row.id : row;
+    setDeleteDocumentId(id);
+    setDeleteDocumentIdDisplay(truncateId(id));
     setDeleteConfirmOpen(true);
   }, []);
 
@@ -413,57 +409,57 @@ export function StockDocumentsListView() {
       try {
         await toggleStockDocumentActive(documentId).unwrap();
         toast.success(`Document ${currentIsActive ? 'deactivated' : 'activated'} successfully`);
+        refetch();
       } catch (err) {
-        console.error('Failed to toggle document active status:', err);
-        const { message } = getApiErrorMessage(err, {
+        const { message, isRetryable } = getApiErrorMessage(err, {
           defaultMessage: 'Failed to toggle document active status',
         });
-        toast.error(message);
+        if (isRetryable) {
+          toast.error(message, {
+            action: {
+              label: 'Retry',
+              onClick: () => handleToggleActive(documentId, currentIsActive),
+            },
+          });
+        } else {
+          toast.error(message);
+        }
       } finally {
         togglingIdsRef.current.delete(documentId);
         setTogglingDocumentId(null);
       }
     },
-    [toggleStockDocumentActive]
+    [toggleStockDocumentActive, refetch]
   );
 
   // Handle form dialog success
   const handleFormDialogSuccess = useCallback(
     (result, action) => {
-      if (action === 'created') {
-        toast.success('Stock document created successfully');
-      } else if (action === 'updated') {
-        toast.success('Stock document updated successfully');
-      }
       refetch();
     },
     [refetch]
   );
 
-  // Handle details dialog actions
-  const handleDetailsDialogEdit = useCallback(
-    (documentId) => {
-      setDetailsDialogOpen(false);
-      handleEdit(documentId);
-    },
-    [handleEdit]
-  );
+  // Handle details dialog actions (pass record so list can open form/post/delete with same data)
+  const handleDetailsDialogEdit = useCallback((record) => {
+    setDetailsDialogOpen(false);
+    setFormDialogMode('edit');
+    setFormDialogRecord(record);
+    setFormDialogOpen(true);
+  }, []);
 
-  const handleDetailsDialogPost = useCallback(
-    (documentId) => {
-      setDetailsDialogOpen(false);
-      handlePost(documentId);
-    },
-    [handlePost]
-  );
+  const handleDetailsDialogPost = useCallback((record) => {
+    setDetailsDialogOpen(false);
+    setPostDialogRecord(record);
+    setPostDialogOpen(true);
+  }, []);
 
-  const handleDetailsDialogDelete = useCallback(
-    (documentId) => {
-      setDetailsDialogOpen(false);
-      handleDelete(documentId);
-    },
-    [handleDelete]
-  );
+  const handleDetailsDialogDelete = useCallback((record) => {
+    setDetailsDialogOpen(false);
+    setDeleteDocumentId(record.id);
+    setDeleteDocumentIdDisplay(truncateId(record.id));
+    setDeleteConfirmOpen(true);
+  }, []);
 
   // Handle post dialog success
   const handlePostDialogSuccess = useCallback(
@@ -485,14 +481,26 @@ export function StockDocumentsListView() {
       setDeleteDocumentId(null);
       setDeleteDocumentIdDisplay(null);
       refetch();
+      if (documents.length === 1 && pageNumber > 1) {
+        setPageNumber((p) => p - 1);
+      }
     } catch (err) {
-      console.error('Failed to delete stock document:', err);
-      const { message } = getApiErrorMessage(err, {
+      const { message, isRetryable } = getApiErrorMessage(err, {
         defaultMessage: 'Failed to delete stock document',
+        notFoundMessage: 'Stock document not found or already deleted',
       });
-      toast.error(message);
+      if (isRetryable) {
+        toast.error(message, {
+          action: {
+            label: 'Retry',
+            onClick: () => handleConfirmDelete(),
+          },
+        });
+      } else {
+        toast.error(message);
+      }
     }
-  }, [deleteDocumentId, deleteStockDocument, refetch]);
+  }, [deleteDocumentId, deleteStockDocument, refetch, documents.length, pageNumber]);
 
   // Handle cancel delete
   const handleCancelDelete = useCallback(() => {
@@ -501,25 +509,20 @@ export function StockDocumentsListView() {
     setDeleteDocumentIdDisplay(null);
   }, []);
 
+  // Handle search clear
+  const handleSearchClear = useCallback(() => {
+    searchForm.setValue('searchTerm', '');
+    setSearchTerm('');
+    setPageNumber(1);
+  }, [searchForm]);
+
   // Table columns
   const columns = useMemo(
     () => [
       {
-        field: 'id',
-        headerName: 'Document ID',
-        width: 120,
-        sortable: false,
-        renderCell: (params) => (
-          <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>
-            {truncateId(params.value)}
-          </Typography>
-        ),
-      },
-      {
         field: 'tenantName',
         headerName: 'Tenant Name',
         flex: 1,
-        sortable: false,
         renderCell: (params) => (
           <Typography variant="body2">{params.value || '-'}</Typography>
         ),
@@ -528,7 +531,6 @@ export function StockDocumentsListView() {
         field: 'branchName',
         headerName: 'Branch Name',
         flex: 1,
-        sortable: false,
         renderCell: (params) => (
           <Typography variant="body2">{params.value || '-'}</Typography>
         ),
@@ -537,7 +539,6 @@ export function StockDocumentsListView() {
         field: 'documentType',
         headerName: 'Document Type',
         width: 130,
-        sortable: false,
         renderCell: (params) => (
           <Label color={getDocumentTypeColor(params.value)} variant="soft">
             {getDocumentTypeLabel(params.value)}
@@ -548,7 +549,6 @@ export function StockDocumentsListView() {
         field: 'status',
         headerName: 'Status',
         width: 100,
-        sortable: false,
         renderCell: (params) => (
           <Label color={getStatusColor(params.value)} variant="soft">
             {getStatusLabel(params.value)}
@@ -559,7 +559,6 @@ export function StockDocumentsListView() {
         field: 'supplierName',
         headerName: 'Supplier Name',
         flex: 1,
-        sortable: false,
         renderCell: (params) => (
           <Typography variant="body2" color="text.secondary">
             {params.value || '-'}
@@ -570,7 +569,6 @@ export function StockDocumentsListView() {
         field: 'itemsCount',
         headerName: 'Items Count',
         width: 100,
-        sortable: false,
         renderCell: (params) => (
           <Typography variant="body2" align="right" sx={{ width: '100%', textAlign: 'right' }}>
             {params.value || 0}
@@ -578,10 +576,9 @@ export function StockDocumentsListView() {
         ),
       },
       {
-        field: 'createdAt',
+        field: 'createDate',
         headerName: 'Created Date',
         width: 160,
-        sortable: false,
         renderCell: (params) => (
           <Typography variant="body2" color="text.secondary">
             {formatDate(params.value)}
@@ -592,8 +589,8 @@ export function StockDocumentsListView() {
         field: 'isActive',
         headerName: 'Active',
         width: 80,
-        sortable: false,
         renderCell: (params) => (
+          <Tooltip title={params.value ? 'Active' : 'Inactive'}>
           <Switch
             checked={params.value}
             onChange={(e) => {
@@ -603,13 +600,13 @@ export function StockDocumentsListView() {
             disabled={isTogglingActive && togglingDocumentId === params.row.id}
             size="small"
           />
+          </Tooltip>
         ),
       },
       {
         field: 'actions',
         headerName: 'Actions',
         width: 180,
-        sortable: false,
         renderCell: (params) => {
           const document = params.row;
           const canEditDocument = canEdit(document.status);
@@ -624,7 +621,7 @@ export function StockDocumentsListView() {
                   color="primary"
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleViewDetails(document.id);
+                    handleViewDetails(document);
                   }}
                   sx={{ minHeight: 36, minWidth: 36 }}
                 >
@@ -638,7 +635,7 @@ export function StockDocumentsListView() {
                     color="info"
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleEdit(document.id);
+                      handleEdit(document);
                     }}
                     sx={{ minHeight: 36, minWidth: 36 }}
                   >
@@ -653,7 +650,7 @@ export function StockDocumentsListView() {
                     color="success"
                     onClick={(e) => {
                       e.stopPropagation();
-                      handlePost(document.id);
+                      handlePost(document);
                     }}
                     sx={{ minHeight: 36, minWidth: 36 }}
                   >
@@ -668,7 +665,7 @@ export function StockDocumentsListView() {
                     color="error"
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleDelete(document.id);
+                      handleDelete(document);
                     }}
                     sx={{ minHeight: 36, minWidth: 36 }}
                   >
@@ -695,7 +692,7 @@ export function StockDocumentsListView() {
         status: document.status,
         supplierName: document.supplierName || '-',
         itemsCount: document.items?.length || 0,
-        createdAt: document.createdAt,
+        createDate: document.createDate,
         isActive: document.isActive ?? true,
       })),
     [documents]
@@ -731,6 +728,14 @@ export function StockDocumentsListView() {
                     name="tenantId"
                     label="Tenant"
                     options={tenantOptions}
+                    getOptionLabel={(option) => {
+                      if (!option) return '';
+                      return option.label || option.name || option.id || '';
+                    }}
+                    isOptionEqualToValue={(option, value) => {
+                      if (!option || !value) return option === value;
+                      return option.id === value.id;
+                    }}
                     required
                     sx={{ flex: 1 }}
                   />
@@ -742,6 +747,14 @@ export function StockDocumentsListView() {
                     name="branchId"
                     label="Branch"
                     options={branchOptions}
+                    getOptionLabel={(option) => {
+                      if (!option) return '';
+                      return option.label || option.name || option.id || '';
+                    }}
+                    isOptionEqualToValue={(option, value) => {
+                      if (!option || !value) return option === value;
+                      return option.id === value.id;
+                    }}
                     required
                     disabled={!getId(tenantId)}
                     slotProps={{
@@ -759,6 +772,14 @@ export function StockDocumentsListView() {
                     name="status"
                     label="Status"
                     options={STATUS_OPTIONS}
+                    getOptionLabel={(option) => {
+                      if (!option) return '';
+                      return option.label || option.name || option.id || '';
+                    }}
+                    isOptionEqualToValue={(option, value) => {
+                      if (!option || !value) return option === value;
+                      return option.id === value.id;
+                    }}
                     sx={{ flex: 1 }}
                   />
                 </FormProvider>
@@ -769,6 +790,14 @@ export function StockDocumentsListView() {
                     name="documentType"
                     label="Document Type"
                     options={DOCUMENT_TYPE_OPTIONS}
+                    getOptionLabel={(option) => {
+                      if (!option) return '';
+                      return option.label || option.name || option.id || '';
+                    }}
+                    isOptionEqualToValue={(option, value) => {
+                      if (!option || !value) return option === value;
+                      return option.id === value.id;
+                    }}
                     sx={{ flex: 1 }}
                   />
                 </FormProvider>
@@ -780,14 +809,24 @@ export function StockDocumentsListView() {
                   name="searchTerm"
                   placeholder="Search by Supplier Name, Remarks, or Document ID..."
                   slotProps={{
-                    textField: {
-                      InputProps: {
-                        startAdornment: (
-                          <InputAdornment position="start">
-                            <Iconify icon="eva:search-fill" sx={{ color: 'text.disabled' }} />
-                          </InputAdornment>
-                        ),
-                      },
+                    input: {
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <Iconify icon="eva:search-fill" sx={{ color: 'text.disabled' }} />
+                        </InputAdornment>
+                      ),
+                      endAdornment: searchTerm ? (
+                        <InputAdornment position="end">
+                          <IconButton
+                            size="small"
+                            onClick={handleSearchClear}
+                            sx={{ minWidth: 'auto', minHeight: 'auto', p: 0.5 }}
+                            aria-label="Clear search"
+                          >
+                            <Iconify icon="eva:close-fill" />
+                          </IconButton>
+                        </InputAdornment>
+                      ) : null,
                     },
                   }}
                 />
@@ -821,6 +860,7 @@ export function StockDocumentsListView() {
               pagination={{
                 ...DEFAULT_PAGINATION,
                 mode: 'server',
+                page: pageNumber - 1,
                 pageSize,
                 rowCount: paginationMeta.totalCount,
                 onPageChange: (newPage) => setPageNumber(newPage + 1),
@@ -849,8 +889,11 @@ export function StockDocumentsListView() {
       <StockDocumentFormDialog
         open={formDialogOpen}
         mode={formDialogMode}
-        documentId={formDialogDocumentId}
-        onClose={() => setFormDialogOpen(false)}
+        record={formDialogRecord}
+        onClose={() => {
+          setFormDialogOpen(false);
+          setFormDialogRecord(null);
+        }}
         onSuccess={handleFormDialogSuccess}
         tenantOptions={tenantOptions}
       />
@@ -858,8 +901,11 @@ export function StockDocumentsListView() {
       {/* Details Dialog */}
       <StockDocumentDetailsDialog
         open={detailsDialogOpen}
-        documentId={detailsDialogDocumentId}
-        onClose={() => setDetailsDialogOpen(false)}
+        record={detailsDialogRecord}
+        onClose={() => {
+          setDetailsDialogOpen(false);
+          setDetailsDialogRecord(null);
+        }}
         onEdit={handleDetailsDialogEdit}
         onPost={handleDetailsDialogPost}
         onDelete={handleDetailsDialogDelete}
@@ -868,8 +914,11 @@ export function StockDocumentsListView() {
       {/* Post Dialog */}
       <PostStockDocumentDialog
         open={postDialogOpen}
-        documentId={postDialogDocumentId}
-        onClose={() => setPostDialogOpen(false)}
+        record={postDialogRecord}
+        onClose={() => {
+          setPostDialogOpen(false);
+          setPostDialogRecord(null);
+        }}
         onSuccess={handlePostDialogSuccess}
       />
 
@@ -879,11 +928,19 @@ export function StockDocumentsListView() {
         title="Delete Stock Document?"
         content={`Are you sure you want to delete stock document "${deleteDocumentIdDisplay}"? This action cannot be undone.`}
         action={
-          <Field.Button variant="contained" color="error" onClick={handleConfirmDelete}>
+          <Field.Button
+            variant="contained"
+            color="error"
+            onClick={handleConfirmDelete}
+            disabled={isDeleting}
+            loading={isDeleting}
+          >
             Delete
           </Field.Button>
         }
         onClose={handleCancelDelete}
+        loading={isDeleting}
+        disableClose={isDeleting}
       />
     </>
   );

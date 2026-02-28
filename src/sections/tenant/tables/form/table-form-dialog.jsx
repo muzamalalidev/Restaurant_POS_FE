@@ -14,12 +14,11 @@ import { getApiErrorMessage } from 'src/utils/api-error-message';
 
 import { createTableSchema, updateTableSchema } from 'src/schemas';
 import { useGetBranchesDropdownQuery } from 'src/store/api/branches-api';
-import { useGetAllTablesQuery, useCreateTableMutation, useUpdateTableMutation } from 'src/store/api/tables-api';
+import { useCreateTableMutation, useUpdateTableMutation } from 'src/store/api/tables-api';
 
 import { toast } from 'src/components/snackbar';
 import { Form, Field } from 'src/components/hook-form';
 import { CustomDialog } from 'src/components/custom-dialog';
-import { QueryStateContent } from 'src/components/query-state-content';
 import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
 
 // ----------------------------------------------------------------------
@@ -39,54 +38,47 @@ const getId = (value) => {
 
 /**
  * Table Form Dialog Component
- * 
- * Single dialog component for both create and edit operations.
- * Handles form state, validation, and API calls.
- * 
- * Note: GetById endpoint is a placeholder, so we use getAllTables with branchId filter
- * and client-side filtering by ID to get table data for edit mode.
- * 
+ *
+ * Single dialog for create and edit. Edit mode uses record from list (no getById).
+ *
+ * Dropdown analysis:
+ * - branchId: API (branchOptions from list or useGetBranchesDropdownQuery when open). No dependent dropdown in form.
+ *
  * @param {Object} props
  * @param {boolean} props.open - Whether the dialog is open
  * @param {string} props.mode - 'create' or 'edit'
- * @param {string|null} props.tableId - Table ID for edit mode
- * @param {string|null} props.branchId - Branch ID (required for fetching table data in edit mode)
+ * @param {Object|null} props.record - Full table object for edit mode (from list)
+ * @param {string|null} props.branchId - Branch ID for create mode (pre-select branch)
  * @param {Function} props.onClose - Callback when dialog closes
  * @param {Function} props.onSuccess - Callback when form is successfully submitted
- * @param {Array} props.branchOptions - Branch options for dropdown (from list view)
+ * @param {Array} props.branchOptions - Branch options (from list view)
  */
-export function TableFormDialog({ open, mode, tableId, branchId, onClose, onSuccess, branchOptions = [] }) {
+export function TableFormDialog({ open, mode, record, branchId, onClose, onSuccess, branchOptions = [] }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] = useState(false);
 
-  const { data: branchesDropdownFallback } = useGetBranchesDropdownQuery(undefined, { skip: branchOptions.length > 0 });
-  const effectiveBranchOptions = useMemo(() => {
+  const { data: branchesDropdownFallback } = useGetBranchesDropdownQuery(undefined, {
+    skip: branchOptions.length > 0 || !open,
+  });
+  const branchOptionsBase = useMemo(() => {
     if (branchOptions.length > 0) return branchOptions;
     if (!branchesDropdownFallback || !Array.isArray(branchesDropdownFallback)) return [];
     return branchesDropdownFallback.map((item) => ({ id: item.key, label: item.value || item.key }));
   }, [branchOptions, branchesDropdownFallback]);
 
-  // Fetch table data for edit mode (P0-003/P1-003: pageSize 200; getTableById is placeholder - find by ID in response)
-  const { data: tablesResponse, isLoading: isLoadingTable, error: queryError, isError: _isError, refetch: refetchTable } = useGetAllTablesQuery(
-    {
-      branchId: getId(branchId),
-      pageSize: 200,
-    },
-    {
-      skip: !tableId || mode !== 'edit' || !branchId || !open,
+  const effectiveBranchOptions = useMemo(() => {
+    if (
+      mode === 'edit' &&
+      record?.branchId &&
+      !branchOptionsBase.some((b) => b.id === record.branchId)
+    ) {
+      return [...branchOptionsBase, { id: record.branchId, label: record.branchName || record.branchId }];
     }
-  );
+    return branchOptionsBase;
+  }, [mode, record?.branchId, record?.branchName, branchOptionsBase]);
 
-  // Find the table by ID from the response
-  const tableData = useMemo(() => {
-    if (!tablesResponse || !tableId) return null;
-    const tables = tablesResponse.data || [];
-    return tables.find((table) => table.id === tableId) || null;
-  }, [tablesResponse, tableId]);
-
-  // Mutations
   const [createTable, { isLoading: isCreating }] = useCreateTableMutation();
   const [updateTable, { isLoading: isUpdating }] = useUpdateTableMutation();
 
@@ -123,15 +115,9 @@ export function TableFormDialog({ open, mode, tableId, branchId, onClose, onSucc
     formState: { isDirty },
   } = methods;
 
-  // Track if form has been initialized
-  const formInitializedRef = useRef(false);
-  const previousTableIdRef = useRef(null);
-
-  // Load table data for edit mode or reset for create mode
+  // Load table data for edit mode from record or reset for create/close
   useEffect(() => {
     if (!open) {
-      formInitializedRef.current = false;
-      previousTableIdRef.current = null;
       reset({
         branchId: null,
         tableNumber: '',
@@ -143,52 +129,53 @@ export function TableFormDialog({ open, mode, tableId, branchId, onClose, onSucc
       return;
     }
 
-    const currentTableId = mode === 'edit' ? tableId : 'create';
-    const shouldInitialize = !formInitializedRef.current || previousTableIdRef.current !== currentTableId;
-
-    if (shouldInitialize) {
-      if (mode === 'edit' && tableData) {
-        const matchingBranch = tableData.branchId && effectiveBranchOptions.length > 0
-          ? effectiveBranchOptions.find((b) => b.id === tableData.branchId)
+    if (mode === 'edit' && record) {
+      const matchingBranch =
+        record.branchId && effectiveBranchOptions.length > 0
+          ? effectiveBranchOptions.find((b) => b.id === record.branchId)
           : null;
+      const branchValue =
+        matchingBranch ||
+        (record.branchId ? { id: record.branchId, label: record.branchName || record.branchId } : null);
 
-        reset({
-          branchId: matchingBranch || null,
-          tableNumber: tableData.tableNumber || '',
-          capacity: tableData.capacity || 1,
-          location: tableData.location || null,
-          isAvailable: tableData.isAvailable ?? true,
-          isActive: tableData.isActive ?? true,
-        });
-
-        formInitializedRef.current = true;
-        previousTableIdRef.current = currentTableId;
-      } else if (mode === 'create') {
-        // Pre-select branch if provided
-        const branchToSelect = getId(branchId) && effectiveBranchOptions.length > 0
+      reset({
+        branchId: branchValue,
+        tableNumber: record.tableNumber || '',
+        capacity: record.capacity ?? 1,
+        location: record.location ?? null,
+        isAvailable: record.isAvailable ?? true,
+        isActive: record.isActive ?? true,
+      });
+    } else if (mode === 'edit' && !record) {
+      reset({
+        branchId: null,
+        tableNumber: '',
+        capacity: 1,
+        location: null,
+        isAvailable: true,
+        isActive: true,
+      });
+    } else if (mode === 'create') {
+      const branchToSelect =
+        getId(branchId) && effectiveBranchOptions.length > 0
           ? effectiveBranchOptions.find((b) => b.id === getId(branchId))
           : null;
-
-        reset({
-          branchId: branchToSelect || null,
-          tableNumber: '',
-          capacity: 1,
-          location: null,
-          isAvailable: true,
-          isActive: true,
-        });
-
-        formInitializedRef.current = true;
-        previousTableIdRef.current = currentTableId;
-      }
+      reset({
+        branchId: branchToSelect || null,
+        tableNumber: '',
+        capacity: 1,
+        location: null,
+        isAvailable: true,
+        isActive: true,
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, mode, tableId, tableData?.id, reset]);
+  }, [open, mode, record?.id, record?.branchId, record?.tableNumber, record?.capacity, record?.location, record?.isAvailable, record?.isActive, record?.branchName, branchId, effectiveBranchOptions, reset]);
 
-  // Separate effect to update branchId when branchOptions become available in edit mode
+  // When branch options load in edit mode, set branchId to matching option (replaces synthetic)
   useEffect(() => {
-    if (open && mode === 'edit' && tableData?.branchId && effectiveBranchOptions.length > 0) {
-      const matchingBranch = effectiveBranchOptions.find((b) => b.id === tableData.branchId);
+    if (open && mode === 'edit' && record?.branchId && effectiveBranchOptions.length > 0) {
+      const matchingBranch = effectiveBranchOptions.find((b) => b.id === record.branchId);
       if (matchingBranch) {
         const currentValue = getValues('branchId');
         const currentId = typeof currentValue === 'object' && currentValue !== null ? currentValue.id : currentValue;
@@ -198,7 +185,7 @@ export function TableFormDialog({ open, mode, tableId, branchId, onClose, onSucc
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, mode, tableData?.branchId, effectiveBranchOptions.length]);
+  }, [open, mode, record?.branchId, effectiveBranchOptions.length]);
 
   // Handle form submit (P0-002: ref guard prevents double-submit)
   const onSubmit = handleSubmit(async (data) => {
@@ -225,21 +212,31 @@ export function TableFormDialog({ open, mode, tableId, branchId, onClose, onSucc
           onSuccess(result, 'created');
         }
       } else {
-        await updateTable({ id: tableId, ...payload }).unwrap();
+        await updateTable({ id: record.id, ...payload }).unwrap();
         if (onSuccess) {
-          onSuccess(tableId, 'updated');
+          onSuccess(record.id, 'updated');
         }
       }
       reset();
       onClose();
     } catch (error) {
-      console.error('Failed to save table:', error);
-      const { message } = getApiErrorMessage(error, {
+      const { message, isRetryable } = getApiErrorMessage(error, {
         defaultMessage: `Failed to ${mode === 'create' ? 'create' : 'update'} table`,
         notFoundMessage: 'Table or branch not found',
         validationMessage: 'Validation failed. Please check your input.',
       });
-      toast.error(message);
+      if (isRetryable) {
+        toast.error(message, {
+          action: {
+            label: 'Retry',
+            onClick: () => {
+              setTimeout(() => onSubmit({ preventDefault: () => {}, target: { checkValidity: () => true } }), 100);
+            },
+          },
+        });
+      } else {
+        toast.error(message);
+      }
     } finally {
       isSubmittingRef.current = false;
     }
@@ -292,14 +289,10 @@ export function TableFormDialog({ open, mode, tableId, branchId, onClose, onSucc
         startIcon="solar:check-circle-bold"
         sx={{ minHeight: 44 }}
       >
-        {mode === 'create' ? 'Create' : 'Update'}
+        {mode === 'create' ? 'Save' : 'Update'}
       </Field.Button>
     </Box>
   );
-
-  // Loading state for edit mode
-  const isLoading = mode === 'edit' && isLoadingTable;
-  const hasError = mode === 'edit' && !tableData && !isLoadingTable && tableId && open;
 
   return (
     <>
@@ -310,7 +303,7 @@ export function TableFormDialog({ open, mode, tableId, branchId, onClose, onSucc
         maxWidth="md"
         fullWidth
         fullScreen={isMobile}
-        loading={isSubmitting || isLoading}
+        loading={isSubmitting}
         disableClose={isSubmitting}
         actions={renderActions()}
         slotProps={{
@@ -323,19 +316,7 @@ export function TableFormDialog({ open, mode, tableId, branchId, onClose, onSucc
           },
         }}
       >
-        <QueryStateContent
-          isLoading={isLoading}
-          isError={hasError}
-          error={queryError}
-          onRetry={refetchTable}
-          loadingMessage="Loading table data..."
-          errorTitle="Failed to load table data"
-          errorMessageOptions={{
-            defaultMessage: 'Failed to load table data',
-            notFoundMessage: 'Table not found or an error occurred.',
-          }}
-        >
-          <Form methods={methods} onSubmit={onSubmit}>
+        <Form methods={methods} onSubmit={onSubmit}>
             <Box
               sx={{
                 display: 'flex',
@@ -426,7 +407,6 @@ export function TableFormDialog({ open, mode, tableId, branchId, onClose, onSucc
               </Box>
             </Box>
           </Form>
-        </QueryStateContent>
       </CustomDialog>
 
       {/* Unsaved Changes Confirmation Dialog */}

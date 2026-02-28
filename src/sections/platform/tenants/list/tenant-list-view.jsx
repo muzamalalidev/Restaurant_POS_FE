@@ -1,7 +1,7 @@
 'use client';
 
 import { useForm, FormProvider } from 'react-hook-form';
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
 import { Card } from '@mui/material';
@@ -38,11 +38,11 @@ export function TenantListView() {
   // Dialog state management
   const [formDialogOpen, setFormDialogOpen] = useState(false);
   const [formDialogMode, setFormDialogMode] = useState('create');
-  const [formDialogTenantId, setFormDialogTenantId] = useState(null);
-  
+  const [formDialogRecord, setFormDialogRecord] = useState(null);
+
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
-  const [detailsDialogTenantId, setDetailsDialogTenantId] = useState(null);
-  
+  const [detailsDialogRecord, setDetailsDialogRecord] = useState(null);
+
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteTenantId, setDeleteTenantId] = useState(null);
   const [deleteTenantName, setDeleteTenantName] = useState(null);
@@ -118,7 +118,7 @@ export function TenantListView() {
       pageNumber,
       pageSize,
       searchTerm: debouncedSearchTerm.trim() || undefined,
-      ownerId: ownerId || undefined,
+      ownerId: ownerId?.id ?? ownerId ?? undefined,
     }),
     [pageNumber, pageSize, debouncedSearchTerm, ownerId]
   );
@@ -135,6 +135,8 @@ export function TenantListView() {
   const paginationMeta = useMemo(() => {
     if (!tenantsResponse) {
       return {
+        pageNumber: 1,
+        pageSize: DEFAULT_PAGINATION.pageSize,
         totalCount: 0,
         totalPages: 0,
         hasPreviousPage: false,
@@ -142,39 +144,44 @@ export function TenantListView() {
       };
     }
     return {
+      pageNumber: tenantsResponse.pageNumber ?? pageNumber,
+      pageSize: tenantsResponse.pageSize ?? pageSize,
       totalCount: tenantsResponse.totalCount || 0,
       totalPages: tenantsResponse.totalPages || 0,
       hasPreviousPage: tenantsResponse.hasPreviousPage || false,
       hasNextPage: tenantsResponse.hasNextPage || false,
     };
-  }, [tenantsResponse]);
+  }, [tenantsResponse, pageNumber, pageSize]);
 
   // Mutations
-  const [deleteTenant] = useDeleteTenantMutation();
+  const [deleteTenant, { isLoading: isDeleting }] = useDeleteTenantMutation();
   const [toggleTenantActive, { isLoading: _isTogglingActive }] = useToggleTenantActiveMutation();
 
   // Track which tenant is being toggled
   const [togglingTenantId, setTogglingTenantId] = useState(null);
+  const inFlightIdsRef = useRef(new Set());
 
   // Handle create
   const handleCreate = useCallback(() => {
     setFormDialogMode('create');
-    setFormDialogTenantId(null);
+    setFormDialogRecord(null);
     setFormDialogOpen(true);
   }, []);
 
-  // Handle edit
-  const handleEdit = useCallback((tenantId) => {
+  // Handle edit (pass full row from list; no getById)
+  const handleEdit = useCallback((row) => {
+    const record = tenants.find((t) => t.id === row.id) ?? null;
     setFormDialogMode('edit');
-    setFormDialogTenantId(tenantId);
+    setFormDialogRecord(record);
     setFormDialogOpen(true);
-  }, []);
+  }, [tenants]);
 
-  // Handle view
-  const handleView = useCallback((tenantId) => {
-    setDetailsDialogTenantId(tenantId);
+  // Handle view (pass full row from list; no getById)
+  const handleView = useCallback((row) => {
+    const record = tenants.find((t) => t.id === row.id) ?? null;
+    setDetailsDialogRecord(record);
     setDetailsDialogOpen(true);
-  }, []);
+  }, [tenants]);
 
   // Handle delete confirmation
   const handleDeleteClick = useCallback((tenant) => {
@@ -186,24 +193,28 @@ export function TenantListView() {
   // Handle delete confirm
   const handleDeleteConfirm = useCallback(async () => {
     if (!deleteTenantId) return;
-    
+
     try {
       await deleteTenant(deleteTenantId).unwrap();
       toast.success('Tenant deleted successfully');
       setDeleteConfirmOpen(false);
       setDeleteTenantId(null);
       setDeleteTenantName(null);
+      if (tenants.length === 1 && pageNumber > 1) {
+        setPageNumber((p) => p - 1);
+      }
     } catch (err) {
       const { message } = getApiErrorMessage(err, {
         defaultMessage: 'Failed to delete tenant',
       });
       toast.error(message);
-      console.error('Failed to delete tenant:', err);
     }
-  }, [deleteTenantId, deleteTenant]);
+  }, [deleteTenantId, deleteTenant, tenants.length, pageNumber]);
 
-  // Handle toggle active
+  // Handle toggle active (ref guard prevents rapid clicks)
   const handleToggleActive = useCallback(async (tenantId) => {
+    if (inFlightIdsRef.current.has(tenantId)) return;
+    inFlightIdsRef.current.add(tenantId);
     setTogglingTenantId(tenantId);
     try {
       await toggleTenantActive(tenantId).unwrap();
@@ -213,8 +224,8 @@ export function TenantListView() {
         defaultMessage: 'Failed to update tenant status',
       });
       toast.error(message);
-      console.error('Failed to toggle tenant active status:', err);
     } finally {
+      inFlightIdsRef.current.delete(tenantId);
       setTogglingTenantId(null);
     }
   }, [toggleTenantActive]);
@@ -223,15 +234,16 @@ export function TenantListView() {
   const handleFormSuccess = useCallback((id, action) => {
     setFormDialogOpen(false);
     setFormDialogMode('create');
-    setFormDialogTenantId(null);
+    setFormDialogRecord(null);
     toast.success(`Tenant ${action} successfully`);
-  }, []);
+    refetch();
+  }, [refetch]);
 
   // Handle form dialog close
   const handleFormClose = useCallback(() => {
     setFormDialogOpen(false);
     setFormDialogMode('create');
-    setFormDialogTenantId(null);
+    setFormDialogRecord(null);
   }, []);
 
   // Get primary phone from phoneNumbers array
@@ -256,6 +268,7 @@ export function TenantListView() {
   const handleSearchClear = useCallback(() => {
     searchForm.setValue('searchTerm', '');
     setSearchTerm('');
+    setPageNumber(1);
   }, [searchForm]);
 
 
@@ -270,24 +283,18 @@ export function TenantListView() {
       phoneNumbers: tenant.phoneNumbers || [],
     })), [tenants]);
 
-  // Define columns
+  // Define columns (sortable/filterable false: server pagination without server sort/filter)
   const columns = useMemo(
     () => [
       {
         field: 'name',
         headerName: 'Name',
         flex: 1,
-        // minWidth: 200,
-        sortable: true,
-        filterable: true,
       },
       {
         field: 'description',
         headerName: 'Description',
         flex: 1,
-        // minWidth: 200,
-        sortable: true,
-        filterable: true,
         renderCell: (params) => (
           <Typography variant="body2" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {params.value}
@@ -298,17 +305,11 @@ export function TenantListView() {
         field: 'primaryPhone',
         headerName: 'Primary Phone',
         flex: 1,
-        // width: 180,
-        sortable: true,
-        filterable: true,
       },
       {
         field: 'ownerId',
         headerName: 'Owner',
         flex: 1,
-        // width: 200,
-        sortable: true,
-        filterable: true,
         renderCell: (params) => (
           <Typography variant="body2" color="text.secondary">
             {params.value === '-' ? '-' : params.value}
@@ -319,9 +320,6 @@ export function TenantListView() {
         field: 'isActive',
         headerName: 'Status',
         flex: 1,
-        // width: 120,
-        sortable: true,
-        filterable: true,
         renderCell: (params) => (
           <Label color={params.value ? 'success' : 'default'} variant="soft">
             {params.value ? 'Active' : 'Inactive'}
@@ -339,14 +337,14 @@ export function TenantListView() {
         id: 'view',
         label: 'View',
         icon: 'solar:eye-bold',
-        onClick: (row) => handleView(row.id),
+        onClick: (row) => handleView(row),
         order: 1,
       },
       {
         id: 'edit',
         label: 'Edit',
         icon: 'solar:pen-bold',
-        onClick: (row) => handleEdit(row.id),
+        onClick: (row) => handleEdit(row),
         order: 2,
       },
       {
@@ -458,7 +456,7 @@ export function TenantListView() {
           variant="contained"
           startIcon="mingcute:add-line"
           onClick={handleCreate}
-          sx={{ ml: 'auto' }}
+          sx={{ ml: 'auto', minHeight: 44 }}
         >
           Create Tenant
         </Field.Button>
@@ -476,6 +474,7 @@ export function TenantListView() {
         pagination={{
           ...DEFAULT_PAGINATION,
           mode: 'server',
+          page: pageNumber - 1,
           pageSize,
           rowCount: paginationMeta.totalCount,
           onPageChange: handlePageChange,
@@ -500,7 +499,7 @@ export function TenantListView() {
       <TenantFormDialog
         open={formDialogOpen}
         mode={formDialogMode}
-        tenantId={formDialogTenantId}
+        record={formDialogRecord}
         onClose={handleFormClose}
         onSuccess={handleFormSuccess}
       />
@@ -508,10 +507,10 @@ export function TenantListView() {
       {/* Details Dialog */}
       <TenantDetailsDialog
         open={detailsDialogOpen}
-        tenantId={detailsDialogTenantId}
+        record={detailsDialogRecord}
         onClose={() => {
           setDetailsDialogOpen(false);
-          setDetailsDialogTenantId(null);
+          setDetailsDialogRecord(null);
         }}
       />
 
@@ -525,10 +524,12 @@ export function TenantListView() {
             : 'Are you sure you want to delete this tenant? This action cannot be undone.'
         }
         action={
-          <Field.Button variant="contained" color="error" onClick={handleDeleteConfirm}>
+          <Field.Button variant="contained" color="error" onClick={handleDeleteConfirm} disabled={isDeleting} loading={isDeleting}>
             Delete
           </Field.Button>
         }
+        loading={isDeleting}
+        disableClose={isDeleting}
         onClose={() => {
           setDeleteConfirmOpen(false);
           setDeleteTenantId(null);

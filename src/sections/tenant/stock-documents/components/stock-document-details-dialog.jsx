@@ -9,13 +9,13 @@ import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
 import { useTheme, useMediaQuery } from '@mui/material';
 
-import { useGetStockDocumentQuery } from 'src/store/api/stock-documents-api';
+import { fDateTime } from 'src/utils/format-time';
+import { fCurrency } from 'src/utils/format-number';
 
 import { Label } from 'src/components/label';
 import { Field } from 'src/components/hook-form';
 import { CustomTable } from 'src/components/custom-table';
 import { CustomDialog } from 'src/components/custom-dialog';
-import { QueryStateContent } from 'src/components/query-state-content';
 
 import {
   canEdit,
@@ -29,57 +29,34 @@ import {
 
 // ----------------------------------------------------------------------
 
-/**
- * Format amount as currency
- */
-const formatCurrency = (amount) => {
-  if (amount === null || amount === undefined) return '-';
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amount);
-};
+const formatCurrency = (amount) =>
+  amount == null ? '-' : fCurrency(amount, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-// ----------------------------------------------------------------------
-
-/**
- * Format date
- */
 const formatDate = (dateString) => {
   if (!dateString) return '-';
-  try {
-    return new Date(dateString).toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return dateString;
-  }
+  const formatted = fDateTime(dateString);
+  return formatted === 'Invalid date' ? '-' : formatted;
 };
 
 // ----------------------------------------------------------------------
 
 /**
  * Stock Document Details Dialog Component
- * 
- * Read-only view of stock document details with status-based actions.
- * 
+ *
+ * Read-only view of stock document details. Uses the full row object passed from the list
+ * (no getStockDocument API call). Status-based actions pass record to callbacks.
+ *
  * @param {Object} props
  * @param {boolean} props.open - Whether the dialog is open
- * @param {string|null} props.documentId - Document ID
+ * @param {Object|null} props.record - Full stock document from list
  * @param {Function} props.onClose - Callback when dialog closes
- * @param {Function} props.onEdit - Callback when Edit button is clicked
- * @param {Function} props.onPost - Callback when Post button is clicked
- * @param {Function} props.onDelete - Callback when Delete button is clicked
+ * @param {Function} props.onEdit - Callback when Edit is clicked (receives record)
+ * @param {Function} props.onPost - Callback when Post is clicked (receives record)
+ * @param {Function} props.onDelete - Callback when Delete is clicked (receives record)
  */
 export function StockDocumentDetailsDialog({
   open,
-  documentId,
+  record,
   onClose,
   onEdit,
   onPost,
@@ -88,64 +65,44 @@ export function StockDocumentDetailsDialog({
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
-  // Fetch document data
-  const { data: documentData, isLoading, error: queryError, isError, refetch } = useGetStockDocumentQuery(
-    documentId,
-    { skip: !documentId || !open }
-  );
-
-  // Determine if actions should be shown
   const showActions = useMemo(() => {
-    if (!documentData) return false;
-    return canEdit(documentData.status) || canDelete(documentData.status) || canPost(documentData.status);
-  }, [documentData]);
+    if (!record) return false;
+    return canEdit(record.status) || canDelete(record.status) || canPost(record.status);
+  }, [record]);
 
-  // Render actions
   const renderActions = () => {
-    if (!documentData || !showActions) return null;
+    if (!record || !showActions) return null;
 
     return (
       <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
-        {canEdit(documentData.status) && (
+        {canEdit(record.status) && (
           <Field.Button
             variant="outlined"
             color="primary"
             startIcon="solar:pen-bold"
-            onClick={() => {
-              if (onEdit) {
-                onEdit(documentData.id);
-              }
-            }}
+            onClick={() => onEdit?.(record)}
             sx={{ minHeight: 44 }}
           >
             Edit
           </Field.Button>
         )}
-        {canPost(documentData.status) && (
+        {canPost(record.status) && (
           <Field.Button
             variant="contained"
             color="success"
             startIcon="solar:check-circle-bold"
-            onClick={() => {
-              if (onPost) {
-                onPost(documentData.id);
-              }
-            }}
+            onClick={() => onPost?.(record)}
             sx={{ minHeight: 44 }}
           >
             Post
           </Field.Button>
         )}
-        {canDelete(documentData.status) && (
+        {canDelete(record.status) && (
           <Field.Button
             variant="outlined"
             color="error"
             startIcon="solar:trash-bin-trash-bold"
-            onClick={() => {
-              if (onDelete) {
-                onDelete(documentData.id);
-              }
-            }}
+            onClick={() => onDelete?.(record)}
             sx={{ minHeight: 44 }}
           >
             Delete
@@ -163,24 +120,9 @@ export function StockDocumentDetailsDialog({
       maxWidth="md"
       fullWidth
       fullScreen={isMobile}
-      loading={isLoading}
       actions={renderActions()}
     >
-      <QueryStateContent
-        isLoading={isLoading}
-        isError={isError}
-        error={queryError}
-        onRetry={refetch}
-        loadingMessage="Loading document details..."
-        errorTitle="Failed to load document details"
-        errorMessageOptions={{
-          defaultMessage: 'Failed to load document details',
-          notFoundMessage: 'Document not found or an error occurred.',
-        }}
-        isEmpty={!documentData && !isLoading && !isError}
-        emptyMessage="Document not found"
-      >
-        {documentData ? (
+      {record ? (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1, pb: 3 }}>
           {/* Document Header */}
           <Box>
@@ -193,7 +135,7 @@ export function StockDocumentDetailsDialog({
                   Document ID
                 </Typography>
                 <Typography variant="body1" sx={{ fontFamily: 'monospace', fontSize: '0.875rem' }}>
-                  {documentData.id || '-'}
+                  {record.id || '-'}
                 </Typography>
               </Box>
               <Box>
@@ -201,8 +143,8 @@ export function StockDocumentDetailsDialog({
                   Document Type
                 </Typography>
                 <Stack direction="row" spacing={1} sx={{ mt: 0.5 }}>
-                  <Label color={getDocumentTypeColor(documentData.documentType)} variant="soft">
-                    {getDocumentTypeLabel(documentData.documentType)}
+                  <Label color={getDocumentTypeColor(record.documentType)} variant="soft">
+                    {getDocumentTypeLabel(record.documentType)}
                   </Label>
                 </Stack>
               </Box>
@@ -211,8 +153,8 @@ export function StockDocumentDetailsDialog({
                   Status
                 </Typography>
                 <Stack direction="row" spacing={1} sx={{ mt: 0.5 }}>
-                  <Label color={getStatusColor(documentData.status)} variant="soft">
-                    {getStatusLabel(documentData.status)}
+                  <Label color={getStatusColor(record.status)} variant="soft">
+                    {getStatusLabel(record.status)}
                   </Label>
                 </Stack>
               </Box>
@@ -221,7 +163,7 @@ export function StockDocumentDetailsDialog({
                   Tenant ID
                 </Typography>
                 <Typography variant="body1" sx={{ fontFamily: 'monospace', fontSize: '0.875rem' }}>
-                  {documentData.tenantId || '-'}
+                  {record.tenantId || '-'}
                 </Typography>
               </Box>
               <Box>
@@ -229,23 +171,23 @@ export function StockDocumentDetailsDialog({
                   Branch ID
                 </Typography>
                 <Typography variant="body1" sx={{ fontFamily: 'monospace', fontSize: '0.875rem' }}>
-                  {documentData.branchId || '-'}
+                  {record.branchId || '-'}
                 </Typography>
               </Box>
-              {documentData.supplierName && (
+              {record.supplierName && (
                 <Box>
                   <Typography variant="caption" color="text.secondary">
                     Supplier Name
                   </Typography>
-                  <Typography variant="body1">{documentData.supplierName}</Typography>
+                  <Typography variant="body1">{record.supplierName}</Typography>
                 </Box>
               )}
-              {documentData.remarks && (
+              {record.remarks && (
                 <Box>
                   <Typography variant="caption" color="text.secondary">
                     Remarks
                   </Typography>
-                  <Typography variant="body1">{documentData.remarks}</Typography>
+                  <Typography variant="body1">{record.remarks}</Typography>
                 </Box>
               )}
               <Box>
@@ -253,25 +195,25 @@ export function StockDocumentDetailsDialog({
                   Is Active
                 </Typography>
                 <Stack direction="row" spacing={1} sx={{ mt: 0.5 }}>
-                  <Label color={documentData.isActive ? 'success' : 'default'} variant="soft">
-                    {documentData.isActive ? 'Active' : 'Inactive'}
+                  <Label color={record.isActive ? 'success' : 'default'} variant="soft">
+                    {record.isActive ? 'Active' : 'Inactive'}
                   </Label>
                 </Stack>
               </Box>
-              {documentData.createdAt && (
+              {record.createDate && (
                 <Box>
                   <Typography variant="caption" color="text.secondary">
                     Created At
                   </Typography>
-                  <Typography variant="body1">{formatDate(documentData.createdAt)}</Typography>
+                  <Typography variant="body1">{formatDate(record.createDate)}</Typography>
                 </Box>
               )}
-              {documentData.updatedAt && (
+              {record.updatedAt && (
                 <Box>
                   <Typography variant="caption" color="text.secondary">
                     Updated At
                   </Typography>
-                  <Typography variant="body1">{formatDate(documentData.updatedAt)}</Typography>
+                  <Typography variant="body1">{formatDate(record.updatedAt)}</Typography>
                 </Box>
               )}
             </Stack>
@@ -280,74 +222,72 @@ export function StockDocumentDetailsDialog({
           <Divider sx={{ borderStyle: 'dashed' }} />
 
           {/* Document Items */}
-          {documentData.items && documentData.items.length > 0 && (
+          {record.items && record.items.length > 0 && (
             <Box>
-                <Typography variant="subtitle2" sx={{ mb: 2 }}>
-                  Document Items ({documentData.items.length})
-                </Typography>
-                <Card>
-                  <CustomTable
-                    rows={documentData.items.map((item, index) => ({
-                      id: index,
-                      itemName: item.itemName || '-',
-                      quantity: item.quantity || '-',
-                      unitPrice: formatCurrency(item.unitPrice),
-                      remarks: item.remarks || '-',
-                    }))}
-                    columns={[
-                      {
-                        field: 'itemName',
-                        headerName: 'Item Name',
-                        flex: 1,
-                        sortable: false,
-                        renderCell: (params) => (
-                          <Typography variant="body2">
-                            {params.value}
-                          </Typography>
-                        ),
-                      },
-                      {
-                        field: 'quantity',
-                        headerName: 'Quantity',
-                        width: 120,
-                        sortable: false,
-                        renderCell: (params) => (
-                          <Typography variant="body2" align="right" sx={{ width: '100%', textAlign: 'right' }}>
-                            {params.value}
-                          </Typography>
-                        ),
-                      },
-                      {
-                        field: 'unitPrice',
-                        headerName: 'Unit Price',
-                        width: 120,
-                        sortable: false,
-                        renderCell: (params) => (
-                          <Typography variant="body2" align="right" sx={{ width: '100%', textAlign: 'right' }}>
-                            {params.value}
-                          </Typography>
-                        ),
-                      },
-                      {
-                        field: 'remarks',
-                        headerName: 'Remarks',
-                        flex: 1,
-                        sortable: false,
-                        renderCell: (params) => (
-                          <Typography variant="body2" color="text.secondary">
-                            {params.value}
-                          </Typography>
-                        ),
-                      },
-                    ]}
-                    pagination={{ enabled: false }}
-                    getRowId={(row) => row.id}
-                  />
-                </Card>
-              </Box>
+              <Typography variant="subtitle2" sx={{ mb: 2 }}>
+                Document Items ({record.items.length})
+              </Typography>
+              <Card sx={{ mb: 3 }}>
+                <CustomTable
+                  rows={record.items.map((item, index) => ({
+                    id: index,
+                    itemName: item.itemName || '-',
+                    quantity: item.quantity ?? '-',
+                    unitPrice: formatCurrency(item.unitPrice),
+                    remarks: item.remarks || '-',
+                  }))}
+                  columns={[
+                    {
+                      field: 'itemName',
+                      headerName: 'Item Name',
+                      flex: 1,
+                      renderCell: (params) => (
+                        <Typography variant="body2">
+                          {params.value}
+                        </Typography>
+                      ),
+                    },
+                    {
+                      field: 'quantity',
+                      headerName: 'Quantity',
+                      width: 120,
+                      renderCell: (params) => (
+                        <Typography variant="body2" align="right" sx={{ width: '100%', textAlign: 'right' }}>
+                          {params.value}
+                        </Typography>
+                      ),
+                    },
+                    {
+                      field: 'unitPrice',
+                      headerName: 'Unit Price',
+                      width: 120,
+                      renderCell: (params) => (
+                        <Typography variant="body2" align="right" sx={{ width: '100%', textAlign: 'right' }}>
+                          {params.value}
+                        </Typography>
+                      ),
+                    },
+                    {
+                      field: 'remarks',
+                      headerName: 'Remarks',
+                      flex: 1,
+                      renderCell: (params) => (
+                        <Typography variant="body2" color="text.secondary">
+                          {params.value}
+                        </Typography>
+                      ),
+                    },
+                  ]}
+                  pagination={false}
+                  toolbar={false}
+                  hideFooter
+                  getRowId={(row) => row.id}
+                />
+              </Card>
+            </Box>
           )}
 
-          {(!documentData.items || documentData.items.length === 0) && (
+          {(!record.items || record.items.length === 0) && (
             <Box sx={{ textAlign: 'center', py: 3 }}>
               <Typography variant="body2" color="text.secondary">
                 No items in this document.
@@ -355,9 +295,7 @@ export function StockDocumentDetailsDialog({
             </Box>
           )}
         </Box>
-        ) : null}
-      </QueryStateContent>
+      ) : null}
     </CustomDialog>
   );
 }
-

@@ -1,27 +1,39 @@
+import { fNumber } from 'src/utils/format-number';
+
 // ----------------------------------------------------------------------
 
 /**
- * Low stock threshold (hardcoded in backend to 10)
+ * Default low stock threshold when not provided by API/record
  */
-export const LOW_STOCK_THRESHOLD = 10;
+export const DEFAULT_LOW_STOCK_THRESHOLD = 10;
+
+/**
+ * Legacy constant (same as default)
+ */
+export const LOW_STOCK_THRESHOLD = DEFAULT_LOW_STOCK_THRESHOLD;
 
 // ----------------------------------------------------------------------
 
 /**
  * Check if stock is low
+ * @param {number|null|undefined} stockQuantity
+ * @param {number|null|undefined} [threshold] - Optional; defaults to DEFAULT_LOW_STOCK_THRESHOLD (10)
  */
-export const isLowStock = (stockQuantity) => {
+export const isLowStock = (stockQuantity, threshold = DEFAULT_LOW_STOCK_THRESHOLD) => {
   if (stockQuantity === null || stockQuantity === undefined) return false;
-  return stockQuantity <= LOW_STOCK_THRESHOLD;
+  const t = threshold ?? DEFAULT_LOW_STOCK_THRESHOLD;
+  return Number(stockQuantity) <= Number(t);
 };
 
 // ----------------------------------------------------------------------
 
 /**
  * Get stock color for badge/indicator
+ * @param {number|null|undefined} stockQuantity
+ * @param {number|null|undefined} [threshold] - Optional; defaults to DEFAULT_LOW_STOCK_THRESHOLD
  */
-export const getStockColor = (stockQuantity) => {
-  if (isLowStock(stockQuantity)) return 'error';
+export const getStockColor = (stockQuantity, threshold = DEFAULT_LOW_STOCK_THRESHOLD) => {
+  if (isLowStock(stockQuantity, threshold)) return 'error';
   return 'success';
 };
 
@@ -30,13 +42,8 @@ export const getStockColor = (stockQuantity) => {
 /**
  * Format stock quantity for display
  */
-export const formatStockQuantity = (stockQuantity) => {
-  if (stockQuantity === null || stockQuantity === undefined) return '-';
-  return new Intl.NumberFormat('en-US', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(stockQuantity);
-};
+export const formatStockQuantity = (stockQuantity) =>
+  stockQuantity == null ? '-' : fNumber(stockQuantity, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
 // ----------------------------------------------------------------------
 

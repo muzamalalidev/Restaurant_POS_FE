@@ -8,14 +8,15 @@ import Box from '@mui/material/Box';
 import Alert from '@mui/material/Alert';
 import { useTheme, useMediaQuery } from '@mui/material';
 
+import { getApiErrorMessage } from 'src/utils/api-error-message';
+
 import { updateOrderSchema } from 'src/schemas';
-import { useGetStaffQuery } from 'src/store/api/staff-api';
-import { useGetOrderByIdQuery, useUpdateOrderMutation } from 'src/store/api/orders-api';
+import { useUpdateOrderMutation } from 'src/store/api/orders-api';
+import { useGetStaffDropdownQuery } from 'src/store/api/staff-api';
 
 import { toast } from 'src/components/snackbar';
 import { Form, Field } from 'src/components/hook-form';
 import { CustomDialog } from 'src/components/custom-dialog';
-import { QueryStateContent } from 'src/components/query-state-content';
 import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
 
 import { isActiveStatus, isCompletionStatus, ORDER_STATUS_OPTIONS } from '../utils/order-status';
@@ -24,41 +25,43 @@ import { isActiveStatus, isCompletionStatus, ORDER_STATUS_OPTIONS } from '../uti
 
 /**
  * Order Update Dialog Component
- * 
- * Dialog component for updating order status, staff, and notes.
- * Handles form state, validation, and API calls.
- * 
+ *
+ * Dialog for updating order status, staff, and notes. Uses the passed record from the list (no getById).
+ *
+ * Dropdown analysis:
+ * - status: Static (ORDER_STATUS_OPTIONS). No dependency.
+ * - staffId: API (useGetStaffDropdownQuery scoped by record.branchId when open). Synthetic option used when record.staffId not yet in staffOptions.
+ *
  * @param {Object} props
  * @param {boolean} props.open - Whether the dialog is open
- * @param {string} props.orderId - Order ID for update
+ * @param {Object|null} props.record - Full order record from list (id, staffId, status, notes, tableId, branchId, staffName?)
  * @param {Function} props.onClose - Callback when dialog closes
  * @param {Function} props.onSuccess - Callback when form is successfully submitted
  */
-export function OrderUpdateDialog({ open, orderId, onClose, onSuccess }) {
+export function OrderUpdateDialog({ open, record, onClose, onSuccess }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   // State for unsaved changes confirmation
   const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] = useState(false);
 
-  // Fetch order data (P1-006: refetch for Retry on error)
-  const { data: orderData, isLoading: isLoadingOrder, error: queryError, isError: _isError, refetch: refetchOrder } = useGetOrderByIdQuery(
-    { id: orderId, includeItems: false },
-    { skip: !orderId || !open }
+  // Fetch staff options from dropdown API (scoped to order branch when available)
+  const { data: staffDropdown } = useGetStaffDropdownQuery(
+    open && record?.branchId ? { branchId: record.branchId } : undefined,
+    { skip: !open }
   );
 
-  // Fetch staff options (P0-003: limit to 200)
-  const { data: staffResponse } = useGetStaffQuery({ pageSize: 200 });
+  const staffOptionsBase = useMemo(() => {
+    if (!staffDropdown || !Array.isArray(staffDropdown)) return [];
+    return staffDropdown.map((item) => ({ id: item.key, label: item.value || item.key }));
+  }, [staffDropdown]);
 
-  // Staff options
-  const staffOptions = useMemo(() => {
-    if (!staffResponse) return [];
-    const staff = staffResponse.data || [];
-    return staff.map((s) => ({
-      id: s.id,
-      label: s.name || s.id,
-    }));
-  }, [staffResponse]);
+  const effectiveStaffOptions = useMemo(() => {
+    if (record?.staffId && !staffOptionsBase.some((s) => s.id === record.staffId)) {
+      return [...staffOptionsBase, { id: record.staffId, label: record.staffName || record.staffId }];
+    }
+    return staffOptionsBase;
+  }, [record?.staffId, record?.staffName, staffOptionsBase]);
 
   // Mutations
   const [updateOrder, { isLoading: isUpdating }] = useUpdateOrderMutation();
@@ -84,13 +87,15 @@ export function OrderUpdateDialog({ open, orderId, onClose, onSuccess }) {
     reset,
     handleSubmit,
     watch,
+    getValues,
+    setValue,
     formState: { isDirty },
   } = methods;
 
   // Watch status to show table availability warning
   const watchedStatus = watch('status');
-  const currentStatus = orderData?.status;
-  const hasTable = orderData?.tableId !== null && orderData?.tableId !== undefined;
+  const currentStatus = record?.status;
+  const hasTable = record?.tableId !== null && record?.tableId !== undefined;
 
   // Check if status change will affect table availability
   const willFreeTable = useMemo(() => {
@@ -115,7 +120,7 @@ export function OrderUpdateDialog({ open, orderId, onClose, onSuccess }) {
     return currentIsCompletion && newIsActive;
   }, [hasTable, currentStatus, watchedStatus]);
 
-  // Load order data for edit mode
+  // Load order data from passed record or reset when closed / no record
   useEffect(() => {
     if (!open) {
       reset({
@@ -126,21 +131,42 @@ export function OrderUpdateDialog({ open, orderId, onClose, onSuccess }) {
       return;
     }
 
-    if (orderData) {
-      // Find matching staff and status objects from options
-      const matchingStaff = orderData.staffId
-        ? staffOptions.find((s) => s.id === orderData.staffId)
-        : null;
-      const matchingStatus = ORDER_STATUS_OPTIONS.find((opt) => opt.id === orderData.status);
+    if (record) {
+      const matchingStaff =
+        record.staffId && effectiveStaffOptions.length > 0
+          ? effectiveStaffOptions.find((s) => s.id === record.staffId)
+          : null;
+      const staffValue =
+        matchingStaff || (record.staffId ? { id: record.staffId, label: record.staffName || record.staffId } : null);
+      const matchingStatus = ORDER_STATUS_OPTIONS.find((opt) => opt.id === record.status);
 
       reset({
-        staffId: matchingStaff || null,
+        staffId: staffValue,
         status: matchingStatus || ORDER_STATUS_OPTIONS[0],
-        notes: orderData.notes || null,
+        notes: record.notes || null,
+      });
+    } else {
+      reset({
+        staffId: null,
+        status: ORDER_STATUS_OPTIONS[0],
+        notes: null,
       });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, orderData?.id, orderData?.staffId, orderData?.status, orderData?.notes, staffOptions, reset]);
+  }, [open, record, record?.id, record?.staffId, record?.status, record?.notes, record?.staffName, effectiveStaffOptions, reset]);
+
+  // When staff options load, set staffId to matching option (replaces synthetic)
+  useEffect(() => {
+    if (open && record?.staffId && staffOptionsBase.length > 0) {
+      const matchingStaff = staffOptionsBase.find((s) => s.id === record.staffId);
+      if (matchingStaff) {
+        const currentValue = getValues('staffId');
+        const currentId = typeof currentValue === 'object' && currentValue !== null ? currentValue.id : currentValue;
+        if (currentId !== matchingStaff.id) {
+          setValue('staffId', matchingStaff, { shouldValidate: false, shouldDirty: false });
+        }
+      }
+    }
+  }, [open, record?.staffId, staffOptionsBase, getValues, setValue]);
 
   // Handle form submit (P0-002: ref guard prevents double-submit)
   const onSubmit = handleSubmit(async (data) => {
@@ -157,17 +183,25 @@ export function OrderUpdateDialog({ open, orderId, onClose, onSuccess }) {
         notes: data.notes === '' ? null : data.notes,
       };
 
-      await updateOrder({ id: orderId, ...updateData }).unwrap();
+      await updateOrder({ id: record.id, ...updateData }).unwrap();
       if (onSuccess) {
-        onSuccess(orderId, 'updated');
+        onSuccess(record.id, 'updated');
       }
       reset();
       onClose();
       // P0-004: Parent shows toast on onSuccess; no duplicate here
     } catch (error) {
-      console.error('Failed to update order:', error);
-      const errorMessage = error?.data?.message || error?.data || error?.message || 'Failed to update order';
-      toast.error(errorMessage);
+      const { message, isRetryable } = getApiErrorMessage(error, {
+        defaultMessage: 'Failed to update order',
+        notFoundMessage: 'Order not found or already updated',
+      });
+      if (isRetryable) {
+        toast.error(message, {
+          action: { label: 'Retry', onClick: () => handleSubmit(onSubmit)() },
+        });
+      } else {
+        toast.error(message);
+      }
     } finally {
       isSubmittingRef.current = false;
     }
@@ -225,8 +259,8 @@ export function OrderUpdateDialog({ open, orderId, onClose, onSuccess }) {
     </Box>
   );
 
-  const isLoading = isLoadingOrder;
-  const hasError = !orderData && !isLoadingOrder && orderId && open;
+  const isLoading = false;
+  const hasRecord = Boolean(record);
 
   return (
     <>
@@ -241,18 +275,7 @@ export function OrderUpdateDialog({ open, orderId, onClose, onSuccess }) {
         disableClose={isSubmitting}
         actions={renderActions()}
       >
-        <QueryStateContent
-          isLoading={isLoading}
-          isError={hasError}
-          error={queryError}
-          onRetry={refetchOrder}
-          loadingMessage="Loading order data..."
-          errorTitle="Failed to load order data"
-          errorMessageOptions={{
-            defaultMessage: 'Failed to load order data',
-            notFoundMessage: 'Order not found or an error occurred.',
-          }}
-        >
+        {hasRecord ? (
           <Form methods={methods} onSubmit={onSubmit}>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1 }}>
               {/* Table Availability Warning */}
@@ -289,7 +312,7 @@ export function OrderUpdateDialog({ open, orderId, onClose, onSuccess }) {
               <Field.Autocomplete
                 name="staffId"
                 label="Staff"
-                options={staffOptions}
+                options={effectiveStaffOptions}
                 getOptionLabel={(option) => {
                   if (!option) return '';
                   return option.label || option.name || option.id || '';
@@ -320,7 +343,7 @@ export function OrderUpdateDialog({ open, orderId, onClose, onSuccess }) {
               />
             </Box>
           </Form>
-        </QueryStateContent>
+        ) : null}
       </CustomDialog>
 
       {/* Unsaved Changes Confirmation Dialog */}

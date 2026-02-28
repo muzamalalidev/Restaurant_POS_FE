@@ -222,13 +222,16 @@ function CustomTableComponent({
 
     if (toolbarComponent) {
       defaultSlots.toolbar = () => toolbarComponent;
+    } else if (toolbarProp === false) {
+      // Only hide when explicitly toolbar={false}; otherwise DataGrid can show its default toolbar
+      defaultSlots.toolbar = () => null;
     }
 
     return {
       ...defaultSlots,
       ...slotsProp,
     };
-  }, [toolbarComponent, slotsProp, emptyContent]);
+  }, [toolbarComponent, toolbarProp, slotsProp, emptyContent]);
 
   // Build slotProps
   const slotProps = useMemo(() => {
@@ -247,9 +250,20 @@ function CustomTableComponent({
       };
     }
 
+    // Force toolbar quick filter off unless explicitly enabled (overrides any consumer slotProps.toolbar.showQuickFilter)
+    const toolbarQuickFilterEnabled = typeof toolbarConfig === 'object' && toolbarConfig.quickFilter === true;
+    defaultSlotProps.toolbar = {
+      ...slotPropsProp?.toolbar,
+      showQuickFilter: toolbarQuickFilterEnabled,
+    };
+
     return {
       ...defaultSlotProps,
       ...slotPropsProp,
+      toolbar: {
+        ...slotPropsProp?.toolbar,
+        showQuickFilter: toolbarQuickFilterEnabled,
+      },
     };
   }, [columns, toolbarConfig, slotPropsProp]);
 
@@ -323,6 +337,12 @@ function CustomTableComponent({
       }
     } else {
       props.disableColumnFilter = true;
+    }
+
+    // Keep quick filter disabled unless toolbar explicitly enables it (toolbar config wins over filtering config for toolbar UX)
+    const toolbarQuickFilterOn = typeof toolbarConfig === 'object' && toolbarConfig.quickFilter === true;
+    if (!toolbarQuickFilterOn) {
+      props.disableQuickFilter = true;
     }
 
     // Selection
@@ -422,6 +442,7 @@ function CustomTableComponent({
     columns,
     loading,
     tableState,
+    toolbarConfig,
     toolbarSettings.settings.density,
     height,
     sx,
@@ -548,11 +569,11 @@ export const CustomTable = memo(CustomTableComponent, (prevProps, nextProps) => 
 function CustomToolbar({ settings, onChangeSettings, config }) {
   return (
     <Toolbar>
-      {config.quickFilter !== false && <CustomToolbarQuickFilter />}
+      {config.quickFilter === true && <CustomToolbarQuickFilter />}
       <Box component="span" sx={{ flexGrow: 1 }} />
       {config.customActions && <Box sx={{ display: 'flex', gap: 1, mr: 1 }}>{config.customActions}</Box>}
       {config.columns !== false && <CustomToolbarColumnsButton />}
-      {config.filter !== false && <CustomToolbarFilterButton />}
+      {config.filter === true && <CustomToolbarFilterButton />}
       {config.export !== false && <CustomToolbarExportButton />}
       {config.settings !== false && (
         <CustomToolbarSettingsButton settings={settings} onChangeSettings={onChangeSettings} />

@@ -82,7 +82,7 @@ export function RecipeIngredientsField({ name = 'ingredients', itemOptions = [],
           </Typography>
         </Card>
       ) : (
-        <Card>
+        <Card sx={{ mb: 3 }}>
           <CustomTable
             rows={fields.map((field, index) => ({
               id: field.id,
@@ -96,7 +96,6 @@ export function RecipeIngredientsField({ name = 'ingredients', itemOptions = [],
                 field: 'itemId',
                 headerName: 'Item',
                 flex: 2,
-                sortable: false,
                 renderCell: (params) => (
                   <Field.Autocomplete
                     name={`${name}.${params.row.index}.itemId`}
@@ -132,7 +131,6 @@ export function RecipeIngredientsField({ name = 'ingredients', itemOptions = [],
                 field: 'quantity',
                 headerName: 'Quantity',
                 width: 150,
-                sortable: false,
                 renderCell: (params) => (
                   <Field.Text
                     name={`${name}.${params.row.index}.quantity`}
@@ -155,7 +153,6 @@ export function RecipeIngredientsField({ name = 'ingredients', itemOptions = [],
                 field: 'notes',
                 headerName: 'Notes',
                 flex: 2,
-                sortable: false,
                 renderCell: (params) => (
                   <Field.Text
                     name={`${name}.${params.row.index}.notes`}
@@ -169,11 +166,6 @@ export function RecipeIngredientsField({ name = 'ingredients', itemOptions = [],
                         },
                       },
                     }}
-                    helperText={
-                      ingredients[params.row.index]?.notes
-                        ? `${(ingredients[params.row.index]?.notes || '').length}/500`
-                        : 'Optional'
-                    }
                   />
                 ),
               },
@@ -181,7 +173,6 @@ export function RecipeIngredientsField({ name = 'ingredients', itemOptions = [],
                 field: 'actions',
                 headerName: '',
                 width: 60,
-                sortable: false,
                 renderCell: (params) => (
                   <IconButton
                     size="small"
@@ -194,7 +185,9 @@ export function RecipeIngredientsField({ name = 'ingredients', itemOptions = [],
                 ),
               },
             ]}
-            pagination={{ enabled: false }}
+            pagination={false}
+            toolbar={false}
+            hideFooter
             getRowId={(row) => row.id}
           />
         </Card>

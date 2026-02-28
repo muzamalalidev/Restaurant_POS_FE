@@ -70,11 +70,11 @@ export function TableListView() {
   // Dialog state management
   const [formDialogOpen, setFormDialogOpen] = useState(false);
   const [formDialogMode, setFormDialogMode] = useState('create');
-  const [formDialogTableId, setFormDialogTableId] = useState(null);
-  
+  const [formDialogRecord, setFormDialogRecord] = useState(null);
+
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
-  const [detailsDialogTableId, setDetailsDialogTableId] = useState(null);
-  
+  const [detailsDialogRecord, setDetailsDialogRecord] = useState(null);
+
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteTableId, setDeleteTableId] = useState(null);
   const [deleteTableNumber, setDeleteTableNumber] = useState(null);
@@ -204,7 +204,7 @@ export function TableListView() {
   }, [tablesResponse]);
 
   // Mutations
-  const [deleteTable] = useDeleteTableMutation();
+  const [deleteTable, { isLoading: isDeleting }] = useDeleteTableMutation();
   const [releaseTable, { isLoading: _isReleasing }] = useReleaseTableMutation();
   const [toggleTableActive, { isLoading: _isTogglingActive }] = useToggleTableActiveMutation();
 
@@ -221,22 +221,26 @@ export function TableListView() {
       return;
     }
     setFormDialogMode('create');
-    setFormDialogTableId(null);
+    setFormDialogRecord(null);
     setFormDialogOpen(true);
   }, [branchId]);
 
-  // Handle edit
-  const handleEdit = useCallback((tableId) => {
+  // Handle edit (pass full row; resolve record from tables)
+  const handleEdit = useCallback((row) => {
+    const record = tables.find((t) => t.id === row.id) ?? null;
+    if (!record) return;
     setFormDialogMode('edit');
-    setFormDialogTableId(tableId);
+    setFormDialogRecord(record);
     setFormDialogOpen(true);
-  }, []);
+  }, [tables]);
 
   // Handle view
-  const handleView = useCallback((tableId) => {
-    setDetailsDialogTableId(tableId);
+  const handleView = useCallback((row) => {
+    const record = tables.find((t) => t.id === row.id) ?? null;
+    if (!record) return;
+    setDetailsDialogRecord(record);
     setDetailsDialogOpen(true);
-  }, []);
+  }, [tables]);
 
   // Handle delete confirmation
   const handleDeleteClick = useCallback((table) => {
@@ -248,22 +252,33 @@ export function TableListView() {
   // Handle delete confirm
   const handleDeleteConfirm = useCallback(async () => {
     if (!deleteTableId) return;
-    
+
     try {
       await deleteTable(deleteTableId).unwrap();
       toast.success('Table deleted successfully');
       setDeleteConfirmOpen(false);
       setDeleteTableId(null);
       setDeleteTableNumber(null);
+      if (tables.length === 1 && pageNumber > 1) {
+        setPageNumber((p) => p - 1);
+      }
     } catch (err) {
-      const { message } = getApiErrorMessage(err, {
+      const { message, isRetryable } = getApiErrorMessage(err, {
         defaultMessage: 'Failed to delete table',
         notFoundMessage: 'Table not found',
       });
-      toast.error(message);
-      console.error('Failed to delete table:', err);
+      if (isRetryable) {
+        toast.error(message, {
+          action: {
+            label: 'Retry',
+            onClick: () => handleDeleteConfirm(),
+          },
+        });
+      } else {
+        toast.error(message);
+      }
     }
-  }, [deleteTableId, deleteTable]);
+  }, [deleteTableId, deleteTable, tables.length, pageNumber]);
 
   // Handle release table (P0-004: ref guard prevents rapid clicks)
   const handleRelease = useCallback(async (tableId) => {
@@ -274,12 +289,20 @@ export function TableListView() {
       await releaseTable(tableId).unwrap();
       toast.success('Table released successfully');
     } catch (err) {
-      const { message } = getApiErrorMessage(err, {
+      const { message, isRetryable } = getApiErrorMessage(err, {
         defaultMessage: 'Failed to release table',
         notFoundMessage: 'Table not found',
       });
-      toast.error(message);
-      console.error('Failed to release table:', err);
+      if (isRetryable) {
+        toast.error(message, {
+          action: {
+            label: 'Retry',
+            onClick: () => handleRelease(tableId),
+          },
+        });
+      } else {
+        toast.error(message);
+      }
     } finally {
       inFlightIdsRef.current.delete(`release:${tableId}`);
       setReleasingTableId(null);
@@ -295,12 +318,20 @@ export function TableListView() {
       await toggleTableActive(tableId).unwrap();
       toast.success('Table status updated successfully');
     } catch (err) {
-      const { message } = getApiErrorMessage(err, {
+      const { message, isRetryable } = getApiErrorMessage(err, {
         defaultMessage: 'Failed to update table status',
         notFoundMessage: 'Table not found',
       });
-      toast.error(message);
-      console.error('Failed to toggle table active status:', err);
+      if (isRetryable) {
+        toast.error(message, {
+          action: {
+            label: 'Retry',
+            onClick: () => handleToggleActive(tableId),
+          },
+        });
+      } else {
+        toast.error(message);
+      }
     } finally {
       inFlightIdsRef.current.delete(`toggle:${tableId}`);
       setTogglingTableId(null);
@@ -311,7 +342,7 @@ export function TableListView() {
   const handleFormSuccess = useCallback((id, action) => {
     setFormDialogOpen(false);
     setFormDialogMode('create');
-    setFormDialogTableId(null);
+    setFormDialogRecord(null);
     toast.success(`Table ${action} successfully`);
     refetch();
   }, [refetch]);
@@ -320,7 +351,7 @@ export function TableListView() {
   const handleFormClose = useCallback(() => {
     setFormDialogOpen(false);
     setFormDialogMode('create');
-    setFormDialogTableId(null);
+    setFormDialogRecord(null);
   }, []);
 
   // Handle pagination change
@@ -337,6 +368,7 @@ export function TableListView() {
   const handleSearchClear = useCallback(() => {
     searchForm.setValue('searchTerm', '');
     setSearchTerm('');
+    setPageNumber(1); // Reset to first page when clearing search
   }, [searchForm]);
 
   // Prepare table rows
@@ -357,13 +389,11 @@ export function TableListView() {
         field: 'tableNumber',
         headerName: 'Table Number',
         flex: 1,
-        sortable: false,
       },
       {
         field: 'branchName',
         headerName: 'Branch',
         flex: 1,
-        sortable: false,
         renderCell: (params) => (
           <Typography variant="body2" color="text.secondary">
             {params.value === '-' ? '-' : params.value}
@@ -374,7 +404,6 @@ export function TableListView() {
         field: 'capacity',
         headerName: 'Capacity',
         flex: 1,
-        sortable: false,
         renderCell: (params) => (
           <Typography variant="body2">
             {params.value}
@@ -385,7 +414,6 @@ export function TableListView() {
         field: 'location',
         headerName: 'Location',
         flex: 1,
-        sortable: false,
         renderCell: (params) => (
           <Typography variant="body2" color="text.secondary" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {params.value === '-' ? 'Not specified' : params.value}
@@ -396,7 +424,6 @@ export function TableListView() {
         field: 'isAvailable',
         headerName: 'Available',
         flex: 1,
-        sortable: false,
         renderCell: (params) => (
           <Label color={getAvailabilityColor(params.value)} variant="soft">
             {getAvailabilityLabel(params.value)}
@@ -407,7 +434,6 @@ export function TableListView() {
         field: 'isActive',
         headerName: 'Status',
         flex: 1,
-        sortable: false,
         renderCell: (params) => (
           <Label color={getActiveStatusColor(params.value)} variant="soft">
             {getActiveStatusLabel(params.value)}
@@ -425,14 +451,14 @@ export function TableListView() {
         id: 'view',
         label: 'View Details',
         icon: 'solar:eye-bold',
-        onClick: (row) => handleView(row.id),
+        onClick: (row) => handleView(row),
         order: 1,
       },
       {
         id: 'edit',
         label: 'Edit',
         icon: 'solar:pen-bold',
-        onClick: (row) => handleEdit(row.id),
+        onClick: (row) => handleEdit(row),
         order: 2,
         visible: (row) => canEdit(row.isActive),
       },
@@ -485,88 +511,82 @@ export function TableListView() {
   return (
     <Box>
       <Card variant="outlined" sx={{ p: 2 }}>
-        {/* Header with Create Button */}
-        <Stack direction="row" spacing={2} sx={{ mb: 3 }} alignItems="center">
-          <Typography variant="h5" sx={{ flexGrow: 1 }}>
-            Tables
-          </Typography>
+        {/* Search and Filter Bar */}
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={2}
+          sx={{ mb: 3 }}
+        >
+          <FormProvider {...searchForm}>
+            <Field.Text
+              name="searchTerm"
+              size="small"
+              placeholder="Search by Table Number or Location..."
+              slotProps={{
+                input: {
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <Iconify icon="eva:search-fill" sx={{ color: 'text.disabled' }} />
+                    </InputAdornment>
+                  ),
+                  endAdornment: searchTerm && (
+                    <InputAdornment position="end">
+                      <IconButton
+                        size="small"
+                        onClick={handleSearchClear}
+                        sx={{ minWidth: 'auto', minHeight: 'auto', p: 0.5 }}
+                        aria-label="Clear search"
+                      >
+                        <Iconify icon="eva:close-fill" />
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                },
+              }}
+              sx={{ maxWidth: { sm: 400 } }}
+            />
+          </FormProvider>
+          <FormProvider {...branchFilterForm}>
+            <Field.Autocomplete
+              name="branchId"
+              label="Branch"
+              options={branchOptions}
+              required
+              getOptionLabel={(option) => {
+                if (!option) return '';
+                return option.label || option.name || option.id || '';
+              }}
+              isOptionEqualToValue={(option, value) => {
+                if (!option || !value) return option === value;
+                return option.id === value.id;
+              }}
+              slotProps={{
+                textField: {
+                  size: 'small',
+                  placeholder: 'Select branch',
+                },
+              }}
+              sx={{ minWidth: { sm: 200 } }}
+            />
+          </FormProvider>
+          
           <Field.Button
             variant="contained"
             startIcon="mingcute:add-line"
             onClick={handleCreate}
             disabled={!hasRequiredFilters}
-            sx={{ minHeight: 44 }}
+            sx={{ ml: 'auto', minHeight: 44 }}
           >
             Create Table
           </Field.Button>
         </Stack>
 
-        {/* Filters */}
-        <Card sx={{ p: 2, mb: 3 }}>
-          <Stack spacing={2}>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-              {/* Branch Filter (Required) */}
-              <FormProvider {...branchFilterForm}>
-                <Field.Autocomplete
-                  name="branchId"
-                  label="Branch"
-                  options={branchOptions}
-                  required
-                  sx={{ flex: 1 }}
-                  getOptionLabel={(option) => {
-                    if (!option) return '';
-                    return option.label || option.name || option.id || '';
-                  }}
-                  isOptionEqualToValue={(option, value) => {
-                    if (!option || !value) return option === value;
-                    return option.id === value.id;
-                  }}
-                />
-              </FormProvider>
-
-              {/* Search */}
-              <FormProvider {...searchForm}>
-                <Field.Text
-                  name="searchTerm"
-                  placeholder="Search by Table Number or Location..."
-                  slotProps={{
-                    textField: {
-                      InputProps: {
-                        startAdornment: (
-                          <InputAdornment position="start">
-                            <Iconify icon="eva:search-fill" sx={{ color: 'text.disabled' }} />
-                          </InputAdornment>
-                        ),
-                        endAdornment: searchTerm && (
-                          <InputAdornment position="end">
-                            <IconButton
-                              size="small"
-                              onClick={handleSearchClear}
-                              sx={{ minWidth: 'auto', minHeight: 'auto', p: 0.5 }}
-                              aria-label="Clear search"
-                            >
-                              <Iconify icon="eva:close-fill" />
-                            </IconButton>
-                          </InputAdornment>
-                        ),
-                      },
-                    },
-                  }}
-                  sx={{ flex: 1 }}
-                />
-              </FormProvider>
-            </Stack>
-          </Stack>
-        </Card>
-
         {/* Table - P0-005: show error in table area so branch/Create remain; P0-001: sorting disabled with server pagination */}
         {!hasRequiredFilters ? (
-          <Card sx={{ p: 6 }}>
             <EmptyContent
               title="Select a Branch"
               description="Please select a branch to view tables"
             />
-          </Card>
         ) : (
           <CustomTable
             rows={rows}
@@ -579,6 +599,7 @@ export function TableListView() {
             pagination={{
               ...DEFAULT_PAGINATION,
               mode: 'server',
+              page: pageNumber - 1,
               pageSize,
               rowCount: paginationMeta.totalCount,
               onPageChange: handlePageChange,
@@ -603,7 +624,7 @@ export function TableListView() {
       <TableFormDialog
         open={formDialogOpen}
         mode={formDialogMode}
-        tableId={formDialogTableId}
+        record={formDialogRecord}
         branchId={getId(branchId)}
         onClose={handleFormClose}
         onSuccess={handleFormSuccess}
@@ -613,11 +634,10 @@ export function TableListView() {
       {/* Details Dialog */}
       <TableDetailsDialog
         open={detailsDialogOpen}
-        tableId={detailsDialogTableId}
-        branchId={getId(branchId)}
+        record={detailsDialogRecord}
         onClose={() => {
           setDetailsDialogOpen(false);
-          setDetailsDialogTableId(null);
+          setDetailsDialogRecord(null);
         }}
       />
 
@@ -627,7 +647,13 @@ export function TableListView() {
         title="Delete Table?"
         content={`Are you sure you want to delete table "${deleteTableNumber}"? This action cannot be undone.`}
         action={
-          <Field.Button variant="contained" color="error" onClick={handleDeleteConfirm}>
+          <Field.Button
+            variant="contained"
+            color="error"
+            onClick={handleDeleteConfirm}
+            disabled={isDeleting}
+            loading={isDeleting}
+          >
             Delete
           </Field.Button>
         }
@@ -636,6 +662,8 @@ export function TableListView() {
           setDeleteTableId(null);
           setDeleteTableNumber(null);
         }}
+        loading={isDeleting}
+        disableClose={isDeleting}
       />
     </Box>
   );

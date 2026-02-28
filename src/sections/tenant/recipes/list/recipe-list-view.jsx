@@ -52,11 +52,11 @@ export function RecipeListView() {
   // Dialog state management
   const [formDialogOpen, setFormDialogOpen] = useState(false);
   const [formDialogMode, setFormDialogMode] = useState('create');
-  const [formDialogRecipeId, setFormDialogRecipeId] = useState(null);
-  
+  const [formDialogRecord, setFormDialogRecord] = useState(null);
+
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
-  const [detailsDialogRecipeId, setDetailsDialogRecipeId] = useState(null);
-  
+  const [detailsDialogRecord, setDetailsDialogRecord] = useState(null);
+
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteRecipeId, setDeleteRecipeId] = useState(null);
   const [deleteRecipeName, setDeleteRecipeName] = useState(null);
@@ -138,7 +138,7 @@ export function RecipeListView() {
   }, [recipesResponse]);
 
   // Mutations
-  const [deleteRecipe] = useDeleteRecipeMutation();
+  const [deleteRecipe, { isLoading: isDeleting }] = useDeleteRecipeMutation();
   const [toggleRecipeActive, { isLoading: _isTogglingActive }] = useToggleRecipeActiveMutation();
 
   // Track which recipe is being toggled
@@ -149,22 +149,26 @@ export function RecipeListView() {
   // Handle create
   const handleCreate = useCallback(() => {
     setFormDialogMode('create');
-    setFormDialogRecipeId(null);
+    setFormDialogRecord(null);
     setFormDialogOpen(true);
   }, []);
 
-  // Handle edit
-  const handleEdit = useCallback((recipeId) => {
+  // Handle edit (pass full row; resolve record from recipes)
+  const handleEdit = useCallback((row) => {
+    const record = recipes.find((r) => r.id === row.id) ?? null;
+    if (!record) return;
     setFormDialogMode('edit');
-    setFormDialogRecipeId(recipeId);
+    setFormDialogRecord(record);
     setFormDialogOpen(true);
-  }, []);
+  }, [recipes]);
 
   // Handle view
-  const handleView = useCallback((recipeId) => {
-    setDetailsDialogRecipeId(recipeId);
+  const handleView = useCallback((row) => {
+    const record = recipes.find((r) => r.id === row.id) ?? null;
+    if (!record) return;
+    setDetailsDialogRecord(record);
     setDetailsDialogOpen(true);
-  }, []);
+  }, [recipes]);
 
   // Handle delete confirmation
   const handleDeleteClick = useCallback((recipe) => {
@@ -173,25 +177,35 @@ export function RecipeListView() {
     setDeleteConfirmOpen(true);
   }, []);
 
-  // Handle delete confirm
   const handleDeleteConfirm = useCallback(async () => {
     if (!deleteRecipeId) return;
-    
+
     try {
       await deleteRecipe(deleteRecipeId).unwrap();
       toast.success('Recipe deleted successfully');
       setDeleteConfirmOpen(false);
       setDeleteRecipeId(null);
       setDeleteRecipeName(null);
+      if (recipes.length === 1 && pageNumber > 1) {
+        setPageNumber((p) => p - 1);
+      }
     } catch (err) {
-      const { message } = getApiErrorMessage(err, {
+      const { message, isRetryable } = getApiErrorMessage(err, {
         defaultMessage: 'Failed to delete recipe',
         notFoundMessage: 'Recipe not found',
       });
-      toast.error(message);
-      console.error('Failed to delete recipe:', err);
+      if (isRetryable) {
+        toast.error(message, {
+          action: {
+            label: 'Retry',
+            onClick: () => handleDeleteConfirm(),
+          },
+        });
+      } else {
+        toast.error(message);
+      }
     }
-  }, [deleteRecipeId, deleteRecipe]);
+  }, [deleteRecipeId, deleteRecipe, recipes.length, pageNumber]);
 
   // Handle toggle active (P0-004: ref guard prevents rapid clicks)
   const handleToggleActive = useCallback(async (recipeId) => {
@@ -202,12 +216,20 @@ export function RecipeListView() {
       await toggleRecipeActive(recipeId).unwrap();
       toast.success('Recipe status updated successfully');
     } catch (err) {
-      const { message } = getApiErrorMessage(err, {
+      const { message, isRetryable } = getApiErrorMessage(err, {
         defaultMessage: 'Failed to update recipe status',
         notFoundMessage: 'Recipe not found',
       });
-      toast.error(message);
-      console.error('Failed to toggle recipe active status:', err);
+      if (isRetryable) {
+        toast.error(message, {
+          action: {
+            label: 'Retry',
+            onClick: () => handleToggleActive(recipeId),
+          },
+        });
+      } else {
+        toast.error(message);
+      }
     } finally {
       inFlightIdsRef.current.delete(recipeId);
       setTogglingRecipeId(null);
@@ -218,7 +240,7 @@ export function RecipeListView() {
   const handleFormSuccess = useCallback((id, action) => {
     setFormDialogOpen(false);
     setFormDialogMode('create');
-    setFormDialogRecipeId(null);
+    setFormDialogRecord(null);
     toast.success(`Recipe ${action} successfully`);
     refetch();
   }, [refetch]);
@@ -227,7 +249,7 @@ export function RecipeListView() {
   const handleFormClose = useCallback(() => {
     setFormDialogOpen(false);
     setFormDialogMode('create');
-    setFormDialogRecipeId(null);
+    setFormDialogRecord(null);
   }, []);
 
   // Handle pagination change
@@ -244,6 +266,7 @@ export function RecipeListView() {
   const handleSearchClear = useCallback(() => {
     searchForm.setValue('searchTerm', '');
     setSearchTerm('');
+    setPageNumber(1); // Reset to first page when clearing search
   }, [searchForm]);
 
   // Prepare table rows
@@ -256,7 +279,7 @@ export function RecipeListView() {
       return {
         id: recipe.id,
         name: recipe.name,
-        itemName: item?.name || '-',
+        itemName: item?.itemName || '-',
         servings: recipe.servings,
         preparationTimeMinutes: recipe.preparationTimeMinutes,
         cookingTimeMinutes: recipe.cookingTimeMinutes,
@@ -273,13 +296,11 @@ export function RecipeListView() {
         field: 'name',
         headerName: 'Name',
         flex: 2,
-        sortable: false,
       },
       {
         field: 'itemName',
         headerName: 'Item Name',
         flex: 2,
-        sortable: false,
         renderCell: (params) => (
           <Typography variant="body2" color="text.secondary">
             {params.value === '-' ? '-' : params.value}
@@ -290,7 +311,6 @@ export function RecipeListView() {
         field: 'servings',
         headerName: 'Servings',
         flex: 1,
-        sortable: false,
         renderCell: (params) => (
           <Typography variant="body2">
             {params.value}
@@ -301,7 +321,6 @@ export function RecipeListView() {
         field: 'preparationTimeMinutes',
         headerName: 'Prep Time',
         flex: 1,
-        sortable: false,
         renderCell: (params) => (
           <Typography variant="body2">
             {formatTimeMinutes(params.value)}
@@ -312,7 +331,6 @@ export function RecipeListView() {
         field: 'cookingTimeMinutes',
         headerName: 'Cook Time',
         flex: 1,
-        sortable: false,
         renderCell: (params) => (
           <Typography variant="body2">
             {formatTimeMinutes(params.value)}
@@ -323,7 +341,6 @@ export function RecipeListView() {
         field: 'ingredientsCount',
         headerName: 'Ingredients',
         flex: 1,
-        sortable: false,
         renderCell: (params) => (
           <Label variant="soft" color="default">
             {params.value} {params.value === 1 ? 'ingredient' : 'ingredients'}
@@ -334,7 +351,6 @@ export function RecipeListView() {
         field: 'isActive',
         headerName: 'Status',
         flex: 1,
-        sortable: false,
         renderCell: (params) => (
           <Label color={getActiveStatusColor(params.value)} variant="soft">
             {getActiveStatusLabel(params.value)}
@@ -352,14 +368,14 @@ export function RecipeListView() {
         id: 'view',
         label: 'View Details',
         icon: 'solar:eye-bold',
-        onClick: (row) => handleView(row.id),
+        onClick: (row) => handleView(row),
         order: 1,
       },
       {
         id: 'edit',
         label: 'Edit',
         icon: 'solar:pen-bold',
-        onClick: (row) => handleEdit(row.id),
+        onClick: (row) => handleEdit(row),
         order: 2,
         visible: (row) => canEdit(row.isActive),
       },
@@ -403,59 +419,50 @@ export function RecipeListView() {
   return (
     <Box>
       <Card variant="outlined" sx={{ p: 2 }}>
-        {/* Header with Create Button */}
-        <Stack direction="row" spacing={2} sx={{ mb: 3 }} alignItems="center">
-          <Typography variant="h5" sx={{ flexGrow: 1 }}>
-            Recipes
-          </Typography>
+        {/* Search and Filter Bar */}
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={2}
+          sx={{ mb: 3 }}
+        >
+          <FormProvider {...searchForm}>
+            <Field.Text
+              name="searchTerm"
+              size="small"
+              placeholder="Search by Name, Description, or Instructions..."
+              slotProps={{
+                input: {
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <Iconify icon="eva:search-fill" sx={{ color: 'text.disabled' }} />
+                    </InputAdornment>
+                  ),
+                  endAdornment: searchTerm && (
+                    <InputAdornment position="end">
+                      <IconButton
+                        size="small"
+                        onClick={handleSearchClear}
+                        sx={{ minWidth: 'auto', minHeight: 'auto', p: 0.5 }}
+                        aria-label="Clear search"
+                      >
+                        <Iconify icon="eva:close-fill" />
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                },
+              }}
+              sx={{ maxWidth: { sm: 400 } }}
+            />
+          </FormProvider>
           <Field.Button
             variant="contained"
             startIcon="mingcute:add-line"
             onClick={handleCreate}
-            sx={{ minHeight: 44 }}
+            sx={{ ml: 'auto', minHeight: 44 }}
           >
             Create Recipe
           </Field.Button>
         </Stack>
-
-        {/* Filters */}
-        <Card sx={{ p: 2, mb: 3 }}>
-          <Stack spacing={2}>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-              {/* Search */}
-              <FormProvider {...searchForm}>
-                <Field.Text
-                  name="searchTerm"
-                  placeholder="Search by Name, Description, or Instructions..."
-                  slotProps={{
-                    textField: {
-                      InputProps: {
-                        startAdornment: (
-                          <InputAdornment position="start">
-                            <Iconify icon="eva:search-fill" sx={{ color: 'text.disabled' }} />
-                          </InputAdornment>
-                        ),
-                        endAdornment: searchTerm && (
-                          <InputAdornment position="end">
-                            <IconButton
-                              size="small"
-                              onClick={handleSearchClear}
-                              sx={{ minWidth: 'auto', minHeight: 'auto', p: 0.5 }}
-                              aria-label="Clear search"
-                            >
-                              <Iconify icon="eva:close-fill" />
-                            </IconButton>
-                          </InputAdornment>
-                        ),
-                      },
-                    },
-                  }}
-                  sx={{ flex: 1 }}
-                />
-              </FormProvider>
-            </Stack>
-          </Stack>
-        </Card>
 
         {/* Table - P0-005: show error in table area so search/Create remain; P0-001: sorting disabled with server pagination */}
         <CustomTable
@@ -469,6 +476,7 @@ export function RecipeListView() {
           pagination={{
             ...DEFAULT_PAGINATION,
             mode: 'server',
+            page: pageNumber - 1,
             pageSize,
             rowCount: paginationMeta.totalCount,
             onPageChange: handlePageChange,
@@ -492,7 +500,7 @@ export function RecipeListView() {
       <RecipeFormDialog
         open={formDialogOpen}
         mode={formDialogMode}
-        recipeId={formDialogRecipeId}
+        record={formDialogRecord}
         onClose={handleFormClose}
         onSuccess={handleFormSuccess}
       />
@@ -500,10 +508,10 @@ export function RecipeListView() {
       {/* Details Dialog */}
       <RecipeDetailsDialog
         open={detailsDialogOpen}
-        recipeId={detailsDialogRecipeId}
+        record={detailsDialogRecord}
         onClose={() => {
           setDetailsDialogOpen(false);
-          setDetailsDialogRecipeId(null);
+          setDetailsDialogRecord(null);
         }}
       />
 
@@ -513,7 +521,7 @@ export function RecipeListView() {
         title="Delete Recipe?"
         content={`Are you sure you want to delete recipe "${deleteRecipeName}"? This will permanently delete all ingredients. This action cannot be undone.`}
         action={
-          <Field.Button variant="contained" color="error" onClick={handleDeleteConfirm}>
+          <Field.Button variant="contained" color="error" onClick={handleDeleteConfirm} disabled={isDeleting} loading={isDeleting}>
             Delete
           </Field.Button>
         }
@@ -522,6 +530,8 @@ export function RecipeListView() {
           setDeleteRecipeId(null);
           setDeleteRecipeName(null);
         }}
+        loading={isDeleting}
+        disableClose={isDeleting}
       />
     </Box>
   );

@@ -39,11 +39,11 @@ export function BranchListView() {
   // Dialog state management
   const [formDialogOpen, setFormDialogOpen] = useState(false);
   const [formDialogMode, setFormDialogMode] = useState('create');
-  const [formDialogBranchId, setFormDialogBranchId] = useState(null);
-  
+  const [formDialogRecord, setFormDialogRecord] = useState(null);
+
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
-  const [detailsDialogBranchId, setDetailsDialogBranchId] = useState(null);
-  
+  const [detailsDialogRecord, setDetailsDialogRecord] = useState(null);
+
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteBranchId, setDeleteBranchId] = useState(null);
   const [deleteBranchName, setDeleteBranchName] = useState(null);
@@ -176,6 +176,8 @@ export function BranchListView() {
   const paginationMeta = useMemo(() => {
     if (!branchesResponse) {
       return {
+        pageNumber: 1,
+        pageSize: DEFAULT_PAGINATION.pageSize,
         totalCount: 0,
         totalPages: 0,
         hasPreviousPage: false,
@@ -183,39 +185,44 @@ export function BranchListView() {
       };
     }
     return {
+      pageNumber: branchesResponse.pageNumber ?? pageNumber,
+      pageSize: branchesResponse.pageSize ?? pageSize,
       totalCount: branchesResponse.totalCount || 0,
       totalPages: branchesResponse.totalPages || 0,
       hasPreviousPage: branchesResponse.hasPreviousPage || false,
       hasNextPage: branchesResponse.hasNextPage || false,
     };
-  }, [branchesResponse]);
+  }, [branchesResponse, pageNumber, pageSize]);
 
   // Mutations
-  const [deleteBranch] = useDeleteBranchMutation();
+  const [deleteBranch, { isLoading: isDeleting }] = useDeleteBranchMutation();
   const [toggleBranchActive, { isLoading: _isTogglingActive }] = useToggleBranchActiveMutation();
 
   // Track which branch is being toggled
   const [togglingBranchId, setTogglingBranchId] = useState(null);
+  const inFlightIdsRef = useRef(new Set());
 
   // Handle create
   const handleCreate = useCallback(() => {
     setFormDialogMode('create');
-    setFormDialogBranchId(null);
+    setFormDialogRecord(null);
     setFormDialogOpen(true);
   }, []);
 
-  // Handle edit
-  const handleEdit = useCallback((branchId) => {
+  // Handle edit (pass full row from list; no getById)
+  const handleEdit = useCallback((row) => {
+    const record = branches.find((b) => b.id === row.id) ?? null;
     setFormDialogMode('edit');
-    setFormDialogBranchId(branchId);
+    setFormDialogRecord(record);
     setFormDialogOpen(true);
-  }, []);
+  }, [branches]);
 
-  // Handle view
-  const handleView = useCallback((branchId) => {
-    setDetailsDialogBranchId(branchId);
+  // Handle view (pass full row from list; no getById)
+  const handleView = useCallback((row) => {
+    const record = branches.find((b) => b.id === row.id) ?? null;
+    setDetailsDialogRecord(record);
     setDetailsDialogOpen(true);
-  }, []);
+  }, [branches]);
 
   // Handle delete confirmation
   const handleDeleteClick = useCallback((branch) => {
@@ -227,30 +234,29 @@ export function BranchListView() {
   // Handle delete confirm
   const handleDeleteConfirm = useCallback(async () => {
     if (!deleteBranchId) return;
-    
+
     try {
       await deleteBranch(deleteBranchId).unwrap();
       toast.success('Branch deleted successfully');
       setDeleteConfirmOpen(false);
       setDeleteBranchId(null);
       setDeleteBranchName(null);
+      if (branches.length === 1 && pageNumber > 1) {
+        setPageNumber((p) => p - 1);
+      }
     } catch (err) {
       const { message } = getApiErrorMessage(err, {
         defaultMessage: 'Failed to delete branch',
         notFoundMessage: 'Branch not found',
       });
       toast.error(message);
-      console.error('Failed to delete branch:', err);
     }
-  }, [deleteBranchId, deleteBranch]);
+  }, [deleteBranchId, deleteBranch, branches.length, pageNumber]);
 
-  // Handle toggle active
+  // Handle toggle active (ref guard prevents rapid clicks)
   const handleToggleActive = useCallback(async (branchId) => {
-    // P1-011 FIX: Prevent rapid clicks - disable immediately
-    if (togglingBranchId === branchId) {
-      return; // Already toggling this branch
-    }
-    
+    if (inFlightIdsRef.current.has(branchId)) return;
+    inFlightIdsRef.current.add(branchId);
     setTogglingBranchId(branchId);
     try {
       await toggleBranchActive(branchId).unwrap();
@@ -261,20 +267,19 @@ export function BranchListView() {
         notFoundMessage: 'Branch not found',
       });
       toast.error(message);
-      console.error('Failed to toggle branch active status:', err);
     } finally {
+      inFlightIdsRef.current.delete(branchId);
       setTogglingBranchId(null);
     }
-  }, [toggleBranchActive, togglingBranchId]);
+  }, [toggleBranchActive]);
 
   // Handle form dialog success
   const handleFormSuccess = useCallback((id, action) => {
     setFormDialogOpen(false);
     setFormDialogMode('create');
-    setFormDialogBranchId(null);
+    setFormDialogRecord(null);
     toast.success(`Branch ${action} successfully`);
     // P0-002 FIX: Explicitly refetch branches to ensure list updates after create/update
-    // RTK Query cache invalidation should handle this, but explicit refetch ensures immediate update
     refetch();
   }, [refetch]);
 
@@ -282,7 +287,7 @@ export function BranchListView() {
   const handleFormClose = useCallback(() => {
     setFormDialogOpen(false);
     setFormDialogMode('create');
-    setFormDialogBranchId(null);
+    setFormDialogRecord(null);
   }, []);
 
   // Get primary phone from phoneNumbers array or primaryPhone field
@@ -308,6 +313,7 @@ export function BranchListView() {
   const handleSearchClear = useCallback(() => {
     searchForm.setValue('searchTerm', '');
     setSearchTerm('');
+    setPageNumber(1); // Reset to first page when clearing search
   }, [searchForm]);
 
   // Prepare table rows
@@ -321,22 +327,18 @@ export function BranchListView() {
       phoneNumbers: branch.phoneNumbers || [],
     })), [branches]);
 
-  // Define columns
+  // Define columns (sortable/filterable false: server pagination without server sort/filter)
   const columns = useMemo(
     () => [
       {
         field: 'name',
         headerName: 'Name',
         flex: 1,
-        sortable: true,
-        filterable: true,
       },
       {
         field: 'tenantName',
         headerName: 'Tenant',
         flex: 1,
-        sortable: true,
-        filterable: true,
         renderCell: (params) => (
           <Typography variant="body2" color="text.secondary">
             {params.value === '-' ? '-' : params.value}
@@ -347,8 +349,6 @@ export function BranchListView() {
         field: 'address',
         headerName: 'Address',
         flex: 1,
-        sortable: true,
-        filterable: true,
         renderCell: (params) => (
           <Typography variant="body2" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {params.value}
@@ -359,15 +359,11 @@ export function BranchListView() {
         field: 'primaryPhone',
         headerName: 'Primary Phone',
         flex: 1,
-        sortable: true,
-        filterable: true,
       },
       {
         field: 'isActive',
         headerName: 'Status',
         flex: 1,
-        sortable: true,
-        filterable: true,
         renderCell: (params) => (
           <Label color={params.value ? 'success' : 'default'} variant="soft">
             {params.value ? 'Active' : 'Inactive'}
@@ -385,14 +381,14 @@ export function BranchListView() {
         id: 'view',
         label: 'View',
         icon: 'solar:eye-bold',
-        onClick: (row) => handleView(row.id),
+        onClick: (row) => handleView(row),
         order: 1,
       },
       {
         id: 'edit',
         label: 'Edit',
         icon: 'solar:pen-bold',
-        onClick: (row) => handleEdit(row.id),
+        onClick: (row) => handleEdit(row),
         order: 2,
       },
       {
@@ -495,7 +491,7 @@ export function BranchListView() {
             variant="contained"
             startIcon="mingcute:add-line"
             onClick={handleCreate}
-            sx={{ ml: 'auto' }}
+            sx={{ ml: 'auto', minHeight: 44 }}
           >
             Create Branch
           </Field.Button>
@@ -512,6 +508,7 @@ export function BranchListView() {
           pagination={{
             ...DEFAULT_PAGINATION,
             mode: 'server',
+            page: pageNumber - 1,
             pageSize,
             rowCount: paginationMeta.totalCount,
             onPageChange: handlePageChange,
@@ -535,7 +532,7 @@ export function BranchListView() {
       <BranchFormDialog
         open={formDialogOpen}
         mode={formDialogMode}
-        branchId={formDialogBranchId}
+        record={formDialogRecord}
         onClose={handleFormClose}
         onSuccess={handleFormSuccess}
         tenantOptions={tenantOptions}
@@ -544,10 +541,10 @@ export function BranchListView() {
       {/* Details Dialog */}
       <BranchDetailsDialog
         open={detailsDialogOpen}
-        branchId={detailsDialogBranchId}
+        record={detailsDialogRecord}
         onClose={() => {
           setDetailsDialogOpen(false);
-          setDetailsDialogBranchId(null);
+          setDetailsDialogRecord(null);
         }}
       />
 
@@ -561,7 +558,7 @@ export function BranchListView() {
             : 'Are you sure you want to delete this branch? This action cannot be undone.'
         }
         action={
-          <Field.Button variant="contained" color="error" onClick={handleDeleteConfirm}>
+          <Field.Button variant="contained" color="error" onClick={handleDeleteConfirm} disabled={isDeleting} loading={isDeleting}>
             Delete
           </Field.Button>
         }
@@ -570,6 +567,8 @@ export function BranchListView() {
           setDeleteBranchId(null);
           setDeleteBranchName(null);
         }}
+        loading={isDeleting}
+        disableClose={isDeleting}
       />
     </Box>
   );

@@ -1,5 +1,3 @@
-import { useMemo } from 'react';
-
 import Box from '@mui/material/Box';
 import Link from '@mui/material/Link';
 import Stack from '@mui/material/Stack';
@@ -7,13 +5,10 @@ import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
 import { useTheme, useMediaQuery } from '@mui/material';
 
-import { useGetItemsQuery } from 'src/store/api/items-api';
-import { useGetTenantsQuery } from 'src/store/api/tenants-api';
-import { useGetCategoriesQuery } from 'src/store/api/categories-api';
+import { fNumber, fCurrency } from 'src/utils/format-number';
 
 import { Label } from 'src/components/label';
 import { CustomDialog } from 'src/components/custom-dialog';
-import { QueryStateContent } from 'src/components/query-state-content';
 
 // ----------------------------------------------------------------------
 
@@ -30,84 +25,32 @@ const getItemTypeLabel = (itemType) => {
   return labels[itemType] || `Unknown (${itemType})`;
 };
 
-/**
- * Format price as currency
- */
-const formatPrice = (price) => {
-  if (price === null || price === undefined) return '-';
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(price);
-};
+const formatPrice = (price) =>
+  price == null ? '-' : fCurrency(price, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-/**
- * Format stock quantity
- */
-const formatStockQuantity = (quantity) => {
-  if (quantity === null || quantity === undefined) return '-';
-  return new Intl.NumberFormat('en-US', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(quantity);
-};
+const formatStockQuantity = (quantity) =>
+  quantity == null ? '-' : fNumber(quantity, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
 // ----------------------------------------------------------------------
 
 /**
  * Item Details Dialog Component
- * 
- * Read-only view of item details.
- * No action buttons - purely informational.
- * 
- * Uses GetAll endpoint to find item by ID (since GetById is placeholder).
+ *
+ * Read-only view of item details. Uses the full row object passed from the list
+ * (no getById or extra API calls). List view may enrich record with categoryName
+ * and tenantName for display.
+ *
+ * @param {Object} props
+ * @param {boolean} props.open - Whether the dialog is open
+ * @param {Object|null} props.record - Full item object from list (may include categoryName, tenantName)
+ * @param {Function} props.onClose - Callback when dialog closes
  */
-export function ItemDetailsDialog({ open, itemId, onClose }) {
+export function ItemDetailsDialog({ open, record, onClose }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
-  // Fetch all items to find the one we need (since GetById is placeholder)
-  const { data: itemsResponse, isLoading, error: queryError, isError, refetch } = useGetItemsQuery(
-    { pageSize: 1000 },
-    { skip: !itemId || !open }
-  );
-
-  // Fetch categories and tenants for names
-  const { data: categoriesResponse } = useGetCategoriesQuery({
-    pageSize: 1000,
-  }, {
-    skip: !open,
-  });
-
-  const { data: tenantsResponse } = useGetTenantsQuery({
-    pageSize: 1000,
-  }, {
-    skip: !open,
-  });
-
-  // Find the item by ID from the response
-  const item = useMemo(() => {
-    if (itemId && itemsResponse?.data) {
-      return itemsResponse.data.find((i) => i.id === itemId);
-    }
-    return null;
-  }, [itemId, itemsResponse]);
-
-  // Find category name
-  const categoryName = useMemo(() => {
-    if (!item?.categoryId || !categoriesResponse?.data) return null;
-    const category = categoriesResponse.data.find((cat) => cat.id === item.categoryId);
-    return category?.name || null;
-  }, [item?.categoryId, categoriesResponse]);
-
-  // Find tenant name
-  const tenantName = useMemo(() => {
-    if (!item?.tenantId || !tenantsResponse?.data) return null;
-    const tenant = tenantsResponse.data.find((t) => t.id === item.tenantId);
-    return tenant?.name || null;
-  }, [item?.tenantId, tenantsResponse]);
+  const categoryDisplay = record?.categoryName ?? record?.categoryId ?? '-';
+  const tenantDisplay = record?.tenantName ?? record?.tenantId ?? '-';
 
   return (
     <CustomDialog
@@ -117,23 +60,8 @@ export function ItemDetailsDialog({ open, itemId, onClose }) {
       maxWidth="sm"
       fullWidth
       fullScreen={isMobile}
-      loading={isLoading}
     >
-      <QueryStateContent
-        isLoading={isLoading}
-        isError={isError}
-        error={queryError}
-        onRetry={refetch}
-        loadingMessage="Loading item details..."
-        errorTitle="Failed to load item details"
-        errorMessageOptions={{
-          defaultMessage: 'Failed to load item details',
-          notFoundMessage: 'Item not found or an error occurred.',
-        }}
-        isEmpty={!item && !isLoading && !isError}
-        emptyMessage="Item not found"
-      >
-        {item ? (
+      {record ? (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1, pb: 3 }}>
           {/* Basic Information */}
           <Box>
@@ -145,30 +73,26 @@ export function ItemDetailsDialog({ open, itemId, onClose }) {
                 <Typography variant="caption" color="text.secondary">
                   Name
                 </Typography>
-                <Typography variant="body1">{item.name || '-'}</Typography>
+                <Typography variant="body1">{record.name || '-'}</Typography>
               </Box>
               <Box>
                 <Typography variant="caption" color="text.secondary">
                   Category
                 </Typography>
-                <Typography variant="body1">
-                  {categoryName || item.categoryId || '-'}
-                </Typography>
+                <Typography variant="body1">{categoryDisplay}</Typography>
               </Box>
               <Box>
                 <Typography variant="caption" color="text.secondary">
                   Tenant
                 </Typography>
-                <Typography variant="body1">
-                  {tenantName || item.tenantId || '-'}
-                </Typography>
+                <Typography variant="body1">{tenantDisplay}</Typography>
               </Box>
               <Box>
                 <Typography variant="caption" color="text.secondary">
                   Item Type
                 </Typography>
                 <Typography variant="body1">
-                  {getItemTypeLabel(item.itemType)}
+                  {getItemTypeLabel(record.itemType)}
                 </Typography>
               </Box>
             </Stack>
@@ -186,13 +110,13 @@ export function ItemDetailsDialog({ open, itemId, onClose }) {
                 <Typography variant="caption" color="text.secondary">
                   Price
                 </Typography>
-                <Typography variant="body1">{formatPrice(item.price)}</Typography>
+                <Typography variant="body1">{formatPrice(record.price)}</Typography>
               </Box>
               <Box>
                 <Typography variant="caption" color="text.secondary">
                   Stock Quantity
                 </Typography>
-                <Typography variant="body1">{formatStockQuantity(item.stockQuantity)}</Typography>
+                <Typography variant="body1">{formatStockQuantity(record.stockQuantity)}</Typography>
               </Box>
             </Stack>
           </Box>
@@ -205,49 +129,54 @@ export function ItemDetailsDialog({ open, itemId, onClose }) {
               Additional Information
             </Typography>
             <Stack spacing={2}>
-              {item.description && (
+              {record.description && (
                 <Box>
                   <Typography variant="caption" color="text.secondary">
                     Description
                   </Typography>
-                  <Typography variant="body1">{item.description}</Typography>
+                  <Typography variant="body1">{record.description}</Typography>
                 </Box>
               )}
-              {item.imageUrl && (
+              {record.imageUrl && (
                 <Box>
                   <Typography variant="caption" color="text.secondary">
                     Image URL
                   </Typography>
                   <Link
-                    href={item.imageUrl}
+                    href={record.imageUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     variant="body1"
                     sx={{ display: 'block', wordBreak: 'break-all' }}
                   >
-                    {item.imageUrl}
+                    {record.imageUrl}
                   </Link>
                 </Box>
               )}
               <Box>
                 <Typography variant="caption" color="text.secondary">
+                  Available
+                </Typography>
+                <Box sx={{ mt: 0.5 }}>
+                  <Label color={record.isAvailable ? 'success' : 'error'} variant="soft">
+                    {record.isAvailable ? 'Available' : 'Unavailable'}
+                  </Label>
+                </Box>
+              </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary">
                   Status
                 </Typography>
-                <Stack direction="row" spacing={1} sx={{ mt: 0.5 }}>
-                  <Label color={item.isActive ? 'success' : 'default'} variant="soft">
-                    {item.isActive ? 'Active' : 'Inactive'}
+                <Box sx={{ mt: 0.5 }}>
+                  <Label color={record.isActive ? 'success' : 'default'} variant="soft">
+                    {record.isActive ? 'Active' : 'Inactive'}
                   </Label>
-                  <Label color={item.isAvailable ? 'success' : 'default'} variant="soft">
-                    {item.isAvailable ? 'Available' : 'Unavailable'}
-                  </Label>
-                </Stack>
+                </Box>
               </Box>
             </Stack>
           </Box>
         </Box>
-        ) : null}
-      </QueryStateContent>
+      ) : null}
     </CustomDialog>
   );
 }
-

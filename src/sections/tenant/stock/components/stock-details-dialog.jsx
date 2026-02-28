@@ -6,36 +6,30 @@ import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
 import { useTheme, useMediaQuery } from '@mui/material';
 
-import { useGetStockQuery } from 'src/store/api/stock-api';
-
 import { Label } from 'src/components/label';
 import { CustomDialog } from 'src/components/custom-dialog';
-import { QueryStateContent } from 'src/components/query-state-content';
 
-import { isLowStock, getStockColor, formatStockQuantity, LOW_STOCK_THRESHOLD } from '../utils/stock-helpers';
+import { isLowStock, getStockColor, formatStockQuantity, DEFAULT_LOW_STOCK_THRESHOLD } from '../utils/stock-helpers';
 
 // ----------------------------------------------------------------------
 
 /**
  * Stock Details Dialog Component
- * 
- * Read-only view of stock information.
- * Displays stock details with low stock indicator.
- * 
+ *
+ * Read-only view of stock information. Uses the full row object passed from the list
+ * (no getStock API call). lowStockThreshold defaults to 10 when not present on record.
+ *
  * @param {Object} props
  * @param {boolean} props.open - Whether the dialog is open
- * @param {string} props.itemId - Item ID for stock details
+ * @param {Object|null} props.record - Full item/stock row from list (id, name, stockQuantity, lowStockThreshold?, ...)
  * @param {Function} props.onClose - Callback when dialog closes
  */
-export function StockDetailsDialog({ open, itemId, onClose }) {
+export function StockDetailsDialog({ open, record, onClose }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
-  // Fetch stock data
-  const { data: stockData, isLoading, error: queryError, isError, refetch } = useGetStockQuery(
-    itemId,
-    { skip: !itemId || !open }
-  );
+  const threshold = record?.lowStockThreshold ?? DEFAULT_LOW_STOCK_THRESHOLD;
+  const stockQuantity = record?.stockQuantity;
 
   return (
     <CustomDialog
@@ -45,23 +39,8 @@ export function StockDetailsDialog({ open, itemId, onClose }) {
       maxWidth="sm"
       fullWidth
       fullScreen={isMobile}
-      loading={isLoading}
     >
-      <QueryStateContent
-        isLoading={isLoading}
-        isError={isError}
-        error={queryError}
-        onRetry={refetch}
-        loadingMessage="Loading stock details..."
-        errorTitle="Failed to load stock details"
-        errorMessageOptions={{
-          defaultMessage: 'Failed to load stock details',
-          notFoundMessage: 'Item not found or an error occurred.',
-        }}
-        isEmpty={!stockData && !isLoading && !isError}
-        emptyMessage="Stock information not found"
-      >
-        {stockData ? (
+      {record ? (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1, pb: 3 }}>
           {/* Item Information */}
           <Box>
@@ -73,7 +52,7 @@ export function StockDetailsDialog({ open, itemId, onClose }) {
                 <Typography variant="caption" color="text.secondary">
                   Item Name
                 </Typography>
-                <Typography variant="body1">{stockData.itemName || '-'}</Typography>
+                <Typography variant="body1">{record.name || '-'}</Typography>
               </Box>
             </Stack>
           </Box>
@@ -91,36 +70,54 @@ export function StockDetailsDialog({ open, itemId, onClose }) {
                   Stock Quantity
                 </Typography>
                 <Typography variant="h5" sx={{ fontWeight: 700, mt: 0.5 }}>
-                  {formatStockQuantity(stockData.stockQuantity)}
+                  {formatStockQuantity(stockQuantity)}
                 </Typography>
               </Box>
               <Box>
                 <Typography variant="caption" color="text.secondary">
                   Low Stock Threshold
                 </Typography>
-                <Typography variant="body1">{formatStockQuantity(LOW_STOCK_THRESHOLD)}</Typography>
+                <Typography variant="body1">{formatStockQuantity(threshold)}</Typography>
               </Box>
               <Box>
                 <Typography variant="caption" color="text.secondary">
-                  Status
+                  Stock Level
                 </Typography>
                 <Stack direction="row" spacing={1} sx={{ mt: 0.5 }}>
-                  <Label color={getStockColor(stockData.stockQuantity)} variant="soft">
-                    {isLowStock(stockData.stockQuantity) ? 'Low Stock' : 'Sufficient Stock'}
+                  <Label color={getStockColor(stockQuantity, threshold)} variant="soft">
+                    {isLowStock(stockQuantity, threshold) ? 'Low Stock' : 'Sufficient Stock'}
                   </Label>
-                  {isLowStock(stockData.stockQuantity) && (
+                  {isLowStock(stockQuantity, threshold) && (
                     <Label color="error" variant="soft">
                       Warning
                     </Label>
                   )}
                 </Stack>
               </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary">
+                  Available
+                </Typography>
+                <Box sx={{ mt: 0.5 }}>
+                  <Label color={record.isAvailable ? 'success' : 'error'} variant="soft">
+                    {record.isAvailable ? 'Available' : 'Unavailable'}
+                  </Label>
+                </Box>
+              </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary">
+                  Status
+                </Typography>
+                <Box sx={{ mt: 0.5 }}>
+                  <Label color={record.isActive ? 'success' : 'default'} variant="soft">
+                    {record.isActive ? 'Active' : 'Inactive'}
+                  </Label>
+                </Box>
+              </Box>
             </Stack>
           </Box>
         </Box>
-        ) : null}
-      </QueryStateContent>
+      ) : null}
     </CustomDialog>
   );
 }
-

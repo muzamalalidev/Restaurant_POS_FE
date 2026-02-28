@@ -24,7 +24,7 @@ export const createItemSchema = zod.object({
     1,
     4
   ),
-  price: numberFromInput({ nonnegative: true }),
+  price: numberFromInput({ nonnegative: true, emptyAs: 0 }),
   imageUrl: optionalUrl('Invalid URL format'),
   isActive: booleanField(undefined),
   stockQuantity: numberFromInput({ nonnegative: true, emptyAs: 0 }).optional(),
@@ -41,7 +41,7 @@ export const updateItemSchema = zod.object({
     1,
     4
   ),
-  price: numberFromInput({ nonnegative: true }),
+  price: numberFromInput({ nonnegative: true, emptyAs: 0 }),
   imageUrl: optionalUrl('Invalid URL format'),
   isActive: zod.boolean(),
   isAvailable: zod.boolean(),

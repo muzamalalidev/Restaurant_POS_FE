@@ -15,7 +15,7 @@ import {
 const orderItemSchema = zod.object({
   itemId: requiredId('Item is required', 'Item ID must be a valid GUID'),
   quantity: numberFromInput({ positive: true, int: true }),
-  unitPrice: numberFromInput({ nonnegative: true }),
+  unitPrice: numberFromInput({ nonnegative: true, emptyAs: 0 }),
   notes: optionalString(2000),
 });
 

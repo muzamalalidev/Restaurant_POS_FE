@@ -41,13 +41,13 @@ import { isLowStock, getStockColor, formatStockQuantity } from '../utils/stock-h
 export function StockListView() {
   // Dialog state management
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
-  const [detailsDialogItemId, setDetailsDialogItemId] = useState(null);
-  
+  const [detailsDialogRecord, setDetailsDialogRecord] = useState(null);
+
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
-  const [updateDialogItemId, setUpdateDialogItemId] = useState(null);
-  
+  const [updateDialogRecord, setUpdateDialogRecord] = useState(null);
+
   const [adjustDialogOpen, setAdjustDialogOpen] = useState(false);
-  const [adjustDialogItemId, setAdjustDialogItemId] = useState(null);
+  const [adjustDialogRecord, setAdjustDialogRecord] = useState(null);
 
   // Pagination state
   const [pageNumber, setPageNumber] = useState(1);
@@ -257,7 +257,7 @@ export function StockListView() {
   // Filter items by low stock if enabled
   const filteredItems = useMemo(() => {
     if (!lowStockOnly) return items;
-    return items.filter((item) => isLowStock(item.stockQuantity));
+    return items.filter((item) => isLowStock(item.stockQuantity, item.lowStockThreshold ?? 10));
   }, [items, lowStockOnly]);
 
   // Extract pagination metadata (P0-002: always use server totalCount so pagination stays consistent; Low Stock Only filters current page only)
@@ -281,22 +281,31 @@ export function StockListView() {
   }, [itemsResponse, pageSize, pageNumber]);
 
   // Handle view stock details
-  const handleView = useCallback((itemId) => {
-    setDetailsDialogItemId(itemId);
+  const handleView = useCallback((row) => {
+    const record = filteredItems.find((i) => i.id === row.id) ?? null;
+    if (!record) return;
+    setDetailsDialogRecord({
+      ...record,
+      lowStockThreshold: record.lowStockThreshold ?? 10,
+    });
     setDetailsDialogOpen(true);
-  }, []);
+  }, [filteredItems]);
 
   // Handle update stock
-  const handleUpdate = useCallback((itemId) => {
-    setUpdateDialogItemId(itemId);
+  const handleUpdate = useCallback((row) => {
+    const record = filteredItems.find((i) => i.id === row.id) ?? null;
+    if (!record) return;
+    setUpdateDialogRecord({ ...record, lowStockThreshold: record.lowStockThreshold ?? 10 });
     setUpdateDialogOpen(true);
-  }, []);
+  }, [filteredItems]);
 
   // Handle adjust stock
-  const handleAdjust = useCallback((itemId) => {
-    setAdjustDialogItemId(itemId);
+  const handleAdjust = useCallback((row) => {
+    const record = filteredItems.find((i) => i.id === row.id) ?? null;
+    if (!record) return;
+    setAdjustDialogRecord({ ...record, lowStockThreshold: record.lowStockThreshold ?? 10 });
     setAdjustDialogOpen(true);
-  }, []);
+  }, [filteredItems]);
 
   // Handle stock operation success
   const handleStockSuccess = useCallback((id, action) => {
@@ -318,34 +327,29 @@ export function StockListView() {
   const handleSearchClear = useCallback(() => {
     searchForm.setValue('searchTerm', '');
     setSearchTerm('');
+    setPageNumber(1); // Reset to first page when clearing search
   }, [searchForm]);
 
-  const getCategoryName = useCallback((categoryIdParam, options) => {
-    if (!categoryIdParam || !options?.length) return null;
-    const opt = options.find((cat) => cat.id === categoryIdParam);
-    return opt?.label ?? null;
-  }, []);
+ 
 
-  const getTenantName = useCallback((tenantIdParam, options) => {
-    if (!tenantIdParam || !options?.length) return null;
-    const opt = options.find((t) => t.id === tenantIdParam);
-    return opt?.label ?? null;
-  }, []);
-
-  const rows = useMemo(() => filteredItems.map((item) => ({
+  const rows = useMemo(() => filteredItems.map((item) => {
+    const threshold = item.lowStockThreshold ?? 10;
+    return {
       id: item.id,
       name: item.name,
       categoryId: item.categoryId,
-      categoryName: getCategoryName(item.categoryId, categoryOptions),
+      categoryName: item.categoryName ?? '-',
       tenantId: item.tenantId,
-      tenantName: getTenantName(item.tenantId, tenantOptions),
+      tenantName: item.tenantName ?? '-',
       stockQuantity: item.stockQuantity,
       stockQuantityFormatted: formatStockQuantity(item.stockQuantity),
-      isLowStock: isLowStock(item.stockQuantity),
-      stockColor: getStockColor(item.stockQuantity),
+      isLowStock: isLowStock(item.stockQuantity, threshold),
+      stockColor: getStockColor(item.stockQuantity, threshold),
       isActive: item.isActive,
       isAvailable: item.isAvailable,
-    })), [filteredItems, categoryOptions, tenantOptions, getCategoryName, getTenantName]);
+      lowStockThreshold: threshold,
+    };
+  }), [filteredItems]);
 
   // Define columns
   const columns = useMemo(
@@ -354,15 +358,11 @@ export function StockListView() {
         field: 'name',
         headerName: 'Item Name',
         flex: 1,
-        sortable: true,
-        filterable: true,
       },
       {
         field: 'categoryName',
         headerName: 'Category',
         flex: 1,
-        sortable: true,
-        filterable: true,
         renderCell: (params) => (
           <Typography variant="body2" color="text.secondary">
             {params.value || params.row.categoryId || '-'}
@@ -373,8 +373,6 @@ export function StockListView() {
         field: 'stockQuantityFormatted',
         headerName: 'Stock Quantity',
         flex: 1,
-        sortable: true,
-        filterable: false,
         renderCell: (params) => (
           <Stack direction="row" spacing={1} alignItems="center">
             <Typography
@@ -395,20 +393,23 @@ export function StockListView() {
         ),
       },
       {
-        field: 'status',
+        field: 'isAvailable',
+        headerName: 'Available',
+        flex: 1,
+        renderCell: (params) => (
+          <Label color={params.value ? 'success' : 'error'} variant="soft">
+            {params.value ? 'Available' : 'Unavailable'}
+          </Label>
+        ),
+      },
+      {
+        field: 'isActive',
         headerName: 'Status',
         flex: 1,
-        sortable: false,
-        filterable: false,
         renderCell: (params) => (
-          <Stack direction="row" spacing={1}>
-            <Label color={params.row.isActive ? 'success' : 'default'} variant="soft" sx={{ fontSize: '0.75rem' }}>
-              {params.row.isActive ? 'Active' : 'Inactive'}
-            </Label>
-            <Label color={params.row.isAvailable ? 'success' : 'default'} variant="soft" sx={{ fontSize: '0.75rem' }}>
-              {params.row.isAvailable ? 'Available' : 'Unavailable'}
-            </Label>
-          </Stack>
+          <Label color={params.value ? 'success' : 'default'} variant="soft">
+            {params.value ? 'Active' : 'Inactive'}
+          </Label>
         ),
       },
     ],
@@ -422,21 +423,21 @@ export function StockListView() {
         id: 'view',
         label: 'View Details',
         icon: 'solar:eye-bold',
-        onClick: (row) => handleView(row.id),
+        onClick: (row) => handleView(row),
         order: 1,
       },
       {
         id: 'update',
         label: 'Update Stock',
         icon: 'solar:pen-bold',
-        onClick: (row) => handleUpdate(row.id),
+        onClick: (row) => handleUpdate(row),
         order: 2,
       },
       {
         id: 'adjust',
         label: 'Adjust Stock',
         icon: 'solar:add-circle-bold',
-        onClick: (row) => handleAdjust(row.id),
+        onClick: (row) => handleAdjust(row),
         order: 3,
       },
     ],
@@ -470,9 +471,9 @@ export function StockListView() {
                   endAdornment: searchTerm && (
                     <InputAdornment position="end">
                       <IconButton
-                        edge="end"
+                        size="small"
                         onClick={handleSearchClear}
-                        sx={{ p: 0.5 }}
+                        sx={{ minWidth: 'auto', minHeight: 'auto', p: 0.5 }}
                         aria-label="Clear search"
                       >
                         <Iconify icon="eva:close-fill" />
@@ -480,24 +481,8 @@ export function StockListView() {
                     </InputAdornment>
                   ),
                 },
-                textField: {
-                  sx: { flex: { xs: 1, sm: '0 0 300px' } },
-                },
               }}
-            />
-          </FormProvider>
-
-          <FormProvider {...categoryFilterForm}>
-            <Field.Autocomplete
-              name="categoryId"
-              label="Category"
-              options={categoryOptions}
-              size="small"
-              slotProps={{
-                autocomplete: {
-                  sx: { flex: { xs: 1, sm: '0 0 200px' } },
-                },
-              }}
+              sx={{ maxWidth: { sm: 400 } }}
             />
           </FormProvider>
 
@@ -506,15 +491,38 @@ export function StockListView() {
               name="tenantId"
               label="Tenant"
               options={tenantOptions}
+              getOptionLabel={(option) => {
+                if (!option) return '';
+                return option.label || option.name || option.id || '';
+              }}
+              isOptionEqualToValue={(option, value) => {
+                if (!option || !value) return option === value;
+                return option.id === value.id;
+              }}
               size="small"
               disabled={isCategorySelected}
-              slotProps={{
-                autocomplete: {
-                  sx: { flex: { xs: 1, sm: '0 0 200px' } },
-                },
-              }}
+              sx={{ minWidth: { sm: 200 } }}
             />
           </FormProvider>
+
+          <FormProvider {...categoryFilterForm}>
+            <Field.Autocomplete
+              name="categoryId"
+              label="Category"
+              options={categoryOptions}
+              getOptionLabel={(option) => {
+                if (!option) return '';
+                return option.label || option.name || option.id || '';
+              }}
+              isOptionEqualToValue={(option, value) => {
+                if (!option || !value) return option === value;
+                return option.id === value.id;
+              }}
+              size="small"
+              sx={{ minWidth: { sm: 200 } }}
+            />
+          </FormProvider>
+         
 
           <FormProvider {...lowStockFilterForm}>
             <Field.Switch
@@ -538,6 +546,7 @@ export function StockListView() {
           pagination={{
             ...DEFAULT_PAGINATION,
             mode: 'server',
+            page: pageNumber - 1,
             pageSize,
             rowCount: paginationMeta.totalCount,
             onPageChange: handlePageChange,
@@ -548,9 +557,9 @@ export function StockListView() {
             <EmptyContent
               title="No stock found"
               description={
-                searchTerm
-                  ? "Try adjusting your search criteria"
-                  : "Get started by creating a new stock item"
+                searchTerm || categoryId || tenantId
+                  ? 'Try adjusting your search or filter criteria'
+                  : 'Get started by creating a new stock item'
               }
             />
           }
@@ -560,20 +569,20 @@ export function StockListView() {
       {/* Stock Details Dialog */}
       <StockDetailsDialog
         open={detailsDialogOpen}
-        itemId={detailsDialogItemId}
+        record={detailsDialogRecord}
         onClose={() => {
           setDetailsDialogOpen(false);
-          setDetailsDialogItemId(null);
+          setDetailsDialogRecord(null);
         }}
       />
 
       {/* Update Stock Dialog */}
       <UpdateStockDialog
         open={updateDialogOpen}
-        itemId={updateDialogItemId}
+        record={updateDialogRecord}
         onClose={() => {
           setUpdateDialogOpen(false);
-          setUpdateDialogItemId(null);
+          setUpdateDialogRecord(null);
         }}
         onSuccess={handleStockSuccess}
       />
@@ -581,10 +590,10 @@ export function StockListView() {
       {/* Adjust Stock Dialog */}
       <AdjustStockDialog
         open={adjustDialogOpen}
-        itemId={adjustDialogItemId}
+        record={adjustDialogRecord}
         onClose={() => {
           setAdjustDialogOpen(false);
-          setAdjustDialogItemId(null);
+          setAdjustDialogRecord(null);
         }}
         onSuccess={handleStockSuccess}
       />

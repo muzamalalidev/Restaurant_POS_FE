@@ -43,10 +43,10 @@ import { getActiveStatusLabel, getActiveStatusColor } from '../utils/tenant-mast
 export function TenantMasterListView() {
   const [formDialogOpen, setFormDialogOpen] = useState(false);
   const [formDialogMode, setFormDialogMode] = useState('create');
-  const [formDialogTenantMasterId, setFormDialogTenantMasterId] = useState(null);
+  const [formDialogRecord, setFormDialogRecord] = useState(null);
 
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
-  const [detailsDialogTenantMasterId, setDetailsDialogTenantMasterId] = useState(null);
+  const [detailsDialogRecord, setDetailsDialogRecord] = useState(null);
 
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteTenantMasterId, setDeleteTenantMasterId] = useState(null);
@@ -140,20 +140,22 @@ export function TenantMasterListView() {
 
   const handleCreate = useCallback(() => {
     setFormDialogMode('create');
-    setFormDialogTenantMasterId(null);
+    setFormDialogRecord(null);
     setFormDialogOpen(true);
   }, []);
 
-  const handleEdit = useCallback((id) => {
+  const handleEdit = useCallback((row) => {
+    const record = tenantMasters.find((tm) => tm.id === row.id) ?? null;
     setFormDialogMode('edit');
-    setFormDialogTenantMasterId(id);
+    setFormDialogRecord(record);
     setFormDialogOpen(true);
-  }, []);
+  }, [tenantMasters]);
 
-  const handleView = useCallback((id) => {
-    setDetailsDialogTenantMasterId(id);
+  const handleView = useCallback((row) => {
+    const record = tenantMasters.find((tm) => tm.id === row.id) ?? null;
+    setDetailsDialogRecord(record);
     setDetailsDialogOpen(true);
-  }, []);
+  }, [tenantMasters]);
 
   const handleDeleteClick = useCallback((row) => {
     setDeleteTenantMasterId(row.id);
@@ -169,13 +171,16 @@ export function TenantMasterListView() {
       setDeleteConfirmOpen(false);
       setDeleteTenantMasterId(null);
       setDeleteTenantMasterName(null);
+      if (tenantMasters.length === 1 && pageNumber > 1) {
+        setPageNumber((p) => p - 1);
+      }
     } catch (err) {
       const { message } = getApiErrorMessage(err, {
         defaultMessage: 'Failed to delete tenant master',
       });
       toast.error(message);
     }
-  }, [deleteTenantMasterId, deleteTenantMaster]);
+  }, [deleteTenantMasterId, deleteTenantMaster, tenantMasters.length, pageNumber]);
 
   // P0-004: ref guard prevents rapid clicks
   const handleToggleActive = useCallback(
@@ -203,7 +208,7 @@ export function TenantMasterListView() {
   const handleFormSuccess = useCallback((id, action) => {
     setFormDialogOpen(false);
     setFormDialogMode('create');
-    setFormDialogTenantMasterId(null);
+    setFormDialogRecord(null);
     toast.success(`Tenant master ${action} successfully`);
     refetch(); // P1-004: immediate refresh and consistency with other modules
   }, [refetch]);
@@ -211,7 +216,7 @@ export function TenantMasterListView() {
   const handleFormClose = useCallback(() => {
     setFormDialogOpen(false);
     setFormDialogMode('create');
-    setFormDialogTenantMasterId(null);
+    setFormDialogRecord(null);
   }, []);
 
   const handlePageChange = useCallback((newPage) => {
@@ -226,6 +231,7 @@ export function TenantMasterListView() {
   const handleSearchClear = useCallback(() => {
     searchForm.setValue('searchTerm', '');
     setSearchTerm('');
+    setPageNumber(1);
   }, [searchForm]);
 
   const rows = useMemo(
@@ -247,15 +253,11 @@ export function TenantMasterListView() {
         field: 'name',
         headerName: 'Name',
         flex: 1,
-        sortable: false,
-        filterable: true,
       },
       {
         field: 'description',
         headerName: 'Description',
         flex: 1,
-        sortable: false,
-        filterable: true,
         renderCell: (params) => (
           <Typography variant="body2" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {params.value}
@@ -266,8 +268,6 @@ export function TenantMasterListView() {
         field: 'ownerId',
         headerName: 'Owner',
         flex: 1,
-        sortable: false,
-        filterable: true,
         renderCell: (params) => (
           <Typography variant="body2" color="text.secondary">
             {params.value === '-' ? '–' : params.value}
@@ -278,8 +278,6 @@ export function TenantMasterListView() {
         field: 'isActive',
         headerName: 'Status',
         flex: 1,
-        sortable: false,
-        filterable: true,
         renderCell: (params) => (
           <Label color={getActiveStatusColor(params.value)} variant="soft">
             {getActiveStatusLabel(params.value)}
@@ -296,14 +294,14 @@ export function TenantMasterListView() {
         id: 'view',
         label: 'View',
         icon: 'solar:eye-bold',
-        onClick: (row) => handleView(row.id),
+        onClick: (row) => handleView(row),
         order: 1,
       },
       {
         id: 'edit',
         label: 'Edit',
         icon: 'solar:pen-bold',
-        onClick: (row) => handleEdit(row.id),
+        onClick: (row) => handleEdit(row),
         order: 2,
       },
       {
@@ -360,13 +358,13 @@ export function TenantMasterListView() {
                       <Iconify icon="eva:search-fill" sx={{ color: 'text.disabled' }} />
                     </InputAdornment>
                   ),
-                  endAdornment: searchTerm && (
+                  endAdornment: searchTerm ? (
                     <InputAdornment position="end">
                       <IconButton size="small" onClick={handleSearchClear} sx={{ minWidth: 'auto', minHeight: 'auto', p: 0.5 }} aria-label="Clear search">
                         <Iconify icon="eva:close-fill" />
                       </IconButton>
                     </InputAdornment>
-                  ),
+                  ) : undefined,
                 },
               }}
               sx={{ maxWidth: { sm: 400 } }}
@@ -408,6 +406,7 @@ export function TenantMasterListView() {
           pagination={{
             ...DEFAULT_PAGINATION,
             mode: 'server',
+            page: pageNumber - 1,
             pageSize,
             rowCount: paginationMeta.totalCount,
             onPageChange: handlePageChange,
@@ -428,17 +427,17 @@ export function TenantMasterListView() {
         <TenantMasterFormDialog
           open={formDialogOpen}
           mode={formDialogMode}
-          tenantMasterId={formDialogTenantMasterId}
+          record={formDialogRecord}
           onClose={handleFormClose}
           onSuccess={handleFormSuccess}
         />
 
         <TenantMasterDetailsDialog
           open={detailsDialogOpen}
-          tenantMasterId={detailsDialogTenantMasterId}
+          record={detailsDialogRecord}
           onClose={() => {
             setDetailsDialogOpen(false);
-            setDetailsDialogTenantMasterId(null);
+            setDetailsDialogRecord(null);
           }}
         />
 
@@ -455,6 +454,8 @@ export function TenantMasterListView() {
               Delete
             </Field.Button>
           }
+          loading={isDeleting}
+          disableClose={isDeleting}
           onClose={() => {
             setDeleteConfirmOpen(false);
             setDeleteTenantMasterId(null);

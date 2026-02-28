@@ -1,7 +1,7 @@
 'use client';
 
 import { useForm, FormProvider } from 'react-hook-form';
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
@@ -16,7 +16,6 @@ import { getApiErrorMessage } from 'src/utils/api-error-message';
 import {
   useGetStaffTypesQuery,
   useDeleteStaffTypeMutation,
-  useGetStaffTypesDropdownQuery,
   useToggleStaffTypeActiveMutation,
 } from 'src/store/api/staff-types-api';
 
@@ -43,15 +42,14 @@ export function StaffTypeListView() {
   // Dialog state management
   const [formDialogOpen, setFormDialogOpen] = useState(false);
   const [formDialogMode, setFormDialogMode] = useState('create');
-  const [formDialogStaffTypeId, setFormDialogStaffTypeId] = useState(null);
-  
+  const [formDialogRecord, setFormDialogRecord] = useState(null);
+
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
-  const [detailsDialogStaffTypeId, setDetailsDialogStaffTypeId] = useState(null);
-  
+  const [detailsDialogRecord, setDetailsDialogRecord] = useState(null);
+
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteStaffTypeId, setDeleteStaffTypeId] = useState(null);
   const [deleteStaffType, setDeleteStaffType] = useState(null); // P2-003 FIX: Store full object for details
-  const [isDeleting, setIsDeleting] = useState(false); // P2-004 FIX: Track delete loading state
 
   // Pagination state
   const [pageNumber, setPageNumber] = useState(1);
@@ -97,21 +95,27 @@ export function StaffTypeListView() {
 
   const { data: staffTypesResponse, isLoading, error, refetch } = useGetStaffTypesQuery(queryParams);
 
-  const { data: staffTypesDropdown } = useGetStaffTypesDropdownQuery();
-  const allStaffTypes = useMemo(() => {
-    if (!staffTypesDropdown || !Array.isArray(staffTypesDropdown)) return [];
-    return staffTypesDropdown.map((item) => ({ id: item.key, name: item.value || item.key }));
-  }, [staffTypesDropdown]);
-
   const staffTypes = useMemo(() => {
     if (!staffTypesResponse) return [];
     return staffTypesResponse.data || [];
   }, [staffTypesResponse]);
 
+  // Use list API response for form dialog (duplicate name validation); dropdown remains in form for edge cases
+  const allStaffTypes = useMemo(
+    () =>
+      staffTypes.map((st) => ({
+        id: st.id,
+        name: st.name,
+      })),
+    [staffTypes]
+  );
+
   // Extract pagination metadata
   const paginationMeta = useMemo(() => {
     if (!staffTypesResponse) {
       return {
+        pageNumber: 1,
+        pageSize: DEFAULT_PAGINATION.pageSize,
         totalCount: 0,
         totalPages: 0,
         hasPreviousPage: false,
@@ -119,42 +123,47 @@ export function StaffTypeListView() {
       };
     }
     return {
+      pageNumber: staffTypesResponse.pageNumber ?? pageNumber,
+      pageSize: staffTypesResponse.pageSize ?? pageSize,
       totalCount: staffTypesResponse.totalCount || 0,
       totalPages: staffTypesResponse.totalPages || 0,
       hasPreviousPage: staffTypesResponse.hasPreviousPage || false,
       hasNextPage: staffTypesResponse.hasNextPage || false,
     };
-  }, [staffTypesResponse]);
+  }, [staffTypesResponse, pageNumber, pageSize]);
 
   // Mutations
-  const [deleteStaffTypeMutation] = useDeleteStaffTypeMutation();
+  const [deleteStaffTypeMutation, { isLoading: isDeleting }] = useDeleteStaffTypeMutation();
   const [toggleStaffTypeActive, { isLoading: _isTogglingActive }] = useToggleStaffTypeActiveMutation();
 
   // Track which staff type is being toggled
   const [togglingStaffTypeId, setTogglingStaffTypeId] = useState(null);
-  
+  const inFlightIdsRef = useRef(new Set());
+
   // P2-REMAINING-002 FIX: Track optimistic updates for toggle active
   const [optimisticToggleUpdates, setOptimisticToggleUpdates] = useState({});
 
   // Handle create
   const handleCreate = useCallback(() => {
     setFormDialogMode('create');
-    setFormDialogStaffTypeId(null);
+    setFormDialogRecord(null);
     setFormDialogOpen(true);
   }, []);
 
-  // Handle edit
-  const handleEdit = useCallback((staffTypeId) => {
+  // Handle edit (pass full row from list; no getById)
+  const handleEdit = useCallback((row) => {
+    const record = staffTypes.find((st) => st.id === row.id) ?? null;
     setFormDialogMode('edit');
-    setFormDialogStaffTypeId(staffTypeId);
+    setFormDialogRecord(record);
     setFormDialogOpen(true);
-  }, []);
+  }, [staffTypes]);
 
-  // Handle view
-  const handleView = useCallback((staffTypeId) => {
-    setDetailsDialogStaffTypeId(staffTypeId);
+  // Handle view (pass full row from list; no getById)
+  const handleView = useCallback((row) => {
+    const record = staffTypes.find((st) => st.id === row.id) ?? null;
+    setDetailsDialogRecord(record);
     setDetailsDialogOpen(true);
-  }, []);
+  }, [staffTypes]);
 
   // Handle delete confirmation
   const handleDeleteClick = useCallback((staffType) => {
@@ -165,16 +174,17 @@ export function StaffTypeListView() {
 
   // Handle delete confirm
   const handleDeleteConfirm = useCallback(async () => {
-    // P2-004 FIX: Prevent multiple delete clicks
-    if (!deleteStaffTypeId || isDeleting) return;
-    
-    setIsDeleting(true);
+    if (!deleteStaffTypeId) return;
+
     try {
       await deleteStaffTypeMutation(deleteStaffTypeId).unwrap();
       toast.success('Staff type deleted successfully');
       setDeleteConfirmOpen(false);
       setDeleteStaffTypeId(null);
       setDeleteStaffType(null);
+      if (staffTypes.length === 1 && pageNumber > 1) {
+        setPageNumber((p) => p - 1);
+      }
     } catch (err) {
       const { message } = getApiErrorMessage(err, {
         defaultMessage: 'Failed to delete staff type',
@@ -182,70 +192,61 @@ export function StaffTypeListView() {
         validationMessage: 'Validation failed. Please check your input.',
       });
       toast.error(message);
-      console.error('Failed to delete staff type:', err);
-    } finally {
-      setIsDeleting(false);
     }
-  }, [deleteStaffTypeId, deleteStaffTypeMutation, isDeleting]);
+  }, [deleteStaffTypeId, deleteStaffTypeMutation, staffTypes.length, pageNumber]);
 
-  // Handle toggle active
+  // Handle toggle active (ref guard prevents rapid clicks; keep optimistic update and revert on error)
   const handleToggleActive = useCallback(async (staffTypeId) => {
-    // P1-005 FIX: Prevent rapid clicks
-    if (togglingStaffTypeId === staffTypeId) {
-      return; // Already toggling this staff type
-    }
-    
+    if (inFlightIdsRef.current.has(staffTypeId)) return;
+
     // P2-REMAINING-002 FIX: Get current state for optimistic update
-    // Check optimistic update first, then fall back to actual data
     const optimisticIsActive = optimisticToggleUpdates[staffTypeId];
     const currentStaffType = staffTypes.find((st) => st.id === staffTypeId);
-    const currentIsActive = optimisticIsActive !== undefined 
-      ? optimisticIsActive 
+    const currentIsActive = optimisticIsActive !== undefined
+      ? optimisticIsActive
       : (currentStaffType?.isActive ?? false);
     const newIsActive = !currentIsActive;
-    
+
     // P2-REMAINING-002 FIX: Optimistic update - immediately update UI
     setOptimisticToggleUpdates((prev) => ({
       ...prev,
       [staffTypeId]: newIsActive,
     }));
-    
+
+    inFlightIdsRef.current.add(staffTypeId);
     setTogglingStaffTypeId(staffTypeId);
     try {
       await toggleStaffTypeActive(staffTypeId).unwrap();
       toast.success('Staff type status updated successfully');
-      // P2-REMAINING-002 FIX: Clear optimistic update on success (cache invalidation will update data)
       setOptimisticToggleUpdates((prev) => {
         const updated = { ...prev };
         delete updated[staffTypeId];
         return updated;
       });
     } catch (err) {
-      // P2-REMAINING-002 FIX: Revert optimistic update on error
       setOptimisticToggleUpdates((prev) => {
         const updated = { ...prev };
         delete updated[staffTypeId];
         return updated;
       });
-      
+
       const { message } = getApiErrorMessage(err, {
         defaultMessage: 'Failed to update staff type status',
         notFoundMessage: 'Staff type not found or has been deleted',
       });
       toast.error(message);
-      console.error('Failed to toggle staff type active status:', err);
     } finally {
+      inFlightIdsRef.current.delete(staffTypeId);
       setTogglingStaffTypeId(null);
     }
-  }, [toggleStaffTypeActive, togglingStaffTypeId, staffTypes, optimisticToggleUpdates]);
+  }, [toggleStaffTypeActive, staffTypes, optimisticToggleUpdates]);
 
   // Handle form dialog success
   const handleFormSuccess = useCallback((id, action) => {
     setFormDialogOpen(false);
     setFormDialogMode('create');
-    setFormDialogStaffTypeId(null);
+    setFormDialogRecord(null);
     toast.success(`Staff type ${action} successfully`);
-    // P2-REMAINING-003 FIX: Explicitly refetch to ensure list updates (cache invalidation should handle this, but explicit refetch ensures immediate update)
     refetch();
   }, [refetch]);
 
@@ -253,7 +254,7 @@ export function StaffTypeListView() {
   const handleFormClose = useCallback(() => {
     setFormDialogOpen(false);
     setFormDialogMode('create');
-    setFormDialogStaffTypeId(null);
+    setFormDialogRecord(null);
   }, []);
 
   // Handle pagination change
@@ -270,6 +271,7 @@ export function StaffTypeListView() {
   const handleSearchClear = useCallback(() => {
     searchForm.setValue('searchTerm', '');
     setSearchTerm('');
+    setPageNumber(1); // Reset to first page when clearing search
   }, [searchForm]);
 
   // Prepare table rows
@@ -286,22 +288,18 @@ export function StaffTypeListView() {
       };
     }), [staffTypes, optimisticToggleUpdates]);
 
-  // Define columns
+  // Define columns (sortable/filterable false: server pagination without server sort/filter)
   const columns = useMemo(
     () => [
       {
         field: 'name',
         headerName: 'Name',
         flex: 1,
-        sortable: true,
-        filterable: true,
       },
       {
         field: 'description',
         headerName: 'Description',
         flex: 1,
-        sortable: true,
-        filterable: true,
         renderCell: (params) => (
           <Typography variant="body2" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {params.value}
@@ -312,8 +310,6 @@ export function StaffTypeListView() {
         field: 'isActive',
         headerName: 'Status',
         flex: 1,
-        sortable: true,
-        filterable: true,
         renderCell: (params) => (
           <Label color={params.value ? 'success' : 'default'} variant="soft">
             {params.value ? 'Active' : 'Inactive'}
@@ -331,14 +327,14 @@ export function StaffTypeListView() {
         id: 'view',
         label: 'View',
         icon: 'solar:eye-bold',
-        onClick: (row) => handleView(row.id),
+        onClick: (row) => handleView(row),
         order: 1,
       },
       {
         id: 'edit',
         label: 'Edit',
         icon: 'solar:pen-bold',
-        onClick: (row) => handleEdit(row.id),
+        onClick: (row) => handleEdit(row),
         order: 2,
       },
       {
@@ -419,7 +415,7 @@ export function StaffTypeListView() {
             variant="contained"
             startIcon="mingcute:add-line"
             onClick={handleCreate}
-            sx={{ ml: 'auto' }}
+            sx={{ ml: 'auto', minHeight: 44 }}
           >
             Create Staff Type
           </Field.Button>
@@ -436,6 +432,7 @@ export function StaffTypeListView() {
           pagination={{
             ...DEFAULT_PAGINATION,
             mode: 'server',
+            page: pageNumber - 1,
             pageSize,
             rowCount: paginationMeta.totalCount,
             onPageChange: handlePageChange,
@@ -459,9 +456,8 @@ export function StaffTypeListView() {
       <StaffTypeFormDialog
         open={formDialogOpen}
         mode={formDialogMode}
-        staffTypeId={formDialogStaffTypeId}
-        staffTypeData={staffTypes.find((st) => st.id === formDialogStaffTypeId) || null}
-        allStaffTypes={allStaffTypes} // P2-REMAINING-001 FIX: Pass all staff types for duplicate validation
+        record={formDialogRecord}
+        allStaffTypes={allStaffTypes}
         onClose={handleFormClose}
         onSuccess={handleFormSuccess}
       />
@@ -469,11 +465,10 @@ export function StaffTypeListView() {
       {/* Details Dialog */}
       <StaffTypeDetailsDialog
         open={detailsDialogOpen}
-        staffTypeId={detailsDialogStaffTypeId}
-        staffTypeData={staffTypes.find((st) => st.id === detailsDialogStaffTypeId) || null}
+        record={detailsDialogRecord}
         onClose={() => {
           setDetailsDialogOpen(false);
-          setDetailsDialogStaffTypeId(null);
+          setDetailsDialogRecord(null);
         }}
       />
 
@@ -507,16 +502,14 @@ export function StaffTypeListView() {
           )
         }
         action={
-          <Field.Button variant="contained" color="error" onClick={handleDeleteConfirm} disabled={isDeleting}>
+          <Field.Button variant="contained" color="error" onClick={handleDeleteConfirm} disabled={isDeleting} loading={isDeleting}>
             Delete
           </Field.Button>
         }
         onClose={() => {
-          if (!isDeleting) {
-            setDeleteConfirmOpen(false);
-            setDeleteStaffTypeId(null);
-            setDeleteStaffType(null);
-          }
+          setDeleteConfirmOpen(false);
+          setDeleteStaffTypeId(null);
+          setDeleteStaffType(null);
         }}
       />
     </Box>

@@ -33,7 +33,7 @@ export const DEFAULT_TOOLBAR = {
   quickFilter: false,
   export: false,
   columns: true,
-  filter: true,
+  filter: false,
   settings: true,
   position: 'top',
 };

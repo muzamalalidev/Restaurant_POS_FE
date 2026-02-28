@@ -11,6 +11,7 @@ import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
 
+import { fDate } from 'src/utils/format-time';
 import { getApiErrorMessage } from 'src/utils/api-error-message';
 
 import { useGetBranchesDropdownQuery } from 'src/store/api/branches-api';
@@ -40,12 +41,11 @@ export function StaffListView() {
   // Dialog state management
   const [formDialogOpen, setFormDialogOpen] = useState(false);
   const [formDialogMode, setFormDialogMode] = useState('create');
-  const [formDialogStaffId, setFormDialogStaffId] = useState(null);
-  const [formDialogStaffData, setFormDialogStaffData] = useState(null);
-  
+  const [formDialogRecord, setFormDialogRecord] = useState(null);
+
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
-  const [detailsDialogStaffId, setDetailsDialogStaffId] = useState(null);
-  
+  const [detailsDialogRecord, setDetailsDialogRecord] = useState(null);
+
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteStaffId, setDeleteStaffId] = useState(null);
   const [deleteStaffName, setDeleteStaffName] = useState(null);
@@ -208,7 +208,7 @@ export function StaffListView() {
   }, [staffResponse]);
 
   // Mutations
-  const [deleteStaff] = useDeleteStaffMutation();
+  const [deleteStaff, { isLoading: isDeleting }] = useDeleteStaffMutation();
   const [toggleStaffActive, { isLoading: _isTogglingActive }] = useToggleStaffActiveMutation();
 
   // Track which staff is being toggled
@@ -217,43 +217,40 @@ export function StaffListView() {
   // Handle create
   const handleCreate = useCallback(() => {
     setFormDialogMode('create');
-    setFormDialogStaffId(null);
+    setFormDialogRecord(null);
     setFormDialogOpen(true);
   }, []);
 
-  // Handle edit
-  const handleEdit = useCallback((staffId) => {
-    // Find staff data from current list to avoid re-fetch
-    const staffData = staff.find((s) => s.id === staffId) || null;
+  // Handle edit (pass full row from list; no getById)
+  const handleEdit = useCallback((row) => {
+    const record = staff.find((s) => s.id === row.id) ?? null;
     setFormDialogMode('edit');
-    setFormDialogStaffId(staffId);
+    setFormDialogRecord(record);
     setFormDialogOpen(true);
-    // Store staff data for edit dialog (avoids inefficient 1000-record fetch)
-    setFormDialogStaffData(staffData);
   }, [staff]);
 
-  // Handle view
-  const handleView = useCallback((staffId) => {
-    setDetailsDialogStaffId(staffId);
+  // Handle view (pass full row from list; no getById)
+  const handleView = useCallback((row) => {
+    const record = staff.find((s) => s.id === row.id) ?? null;
+    setDetailsDialogRecord(record);
     setDetailsDialogOpen(true);
-  }, []);
+  }, [staff]);
 
   // Handle delete confirmation
   const handleDeleteClick = useCallback((row) => {
     setDeleteStaffId(row.id);
-    // Include staff type and branch name for better identification
     const staffTypeName = row.staffTypeName && row.staffTypeName !== '-' ? row.staffTypeName : '';
-    const branchName = branchOptions.find((b) => b.id === row.branchId)?.label || '';
+    const branchName = row.branchName && row.branchName !== '-' ? row.branchName : '';
     const fullName = row.fullName || 'Staff member';
     const identifier = [fullName, staffTypeName, branchName].filter(Boolean).join(' - ');
     setDeleteStaffName(identifier);
     setDeleteConfirmOpen(true);
-  }, [branchOptions]);
+  }, []);
 
   // Handle delete confirm
   const handleDeleteConfirm = useCallback(async () => {
     if (!deleteStaffId) return;
-    
+
     try {
       await deleteStaff(deleteStaffId).unwrap();
       // Use the deleteStaffName which already includes staff type and branch
@@ -262,8 +259,10 @@ export function StaffListView() {
       setDeleteConfirmOpen(false);
       setDeleteStaffId(null);
       setDeleteStaffName(null);
+      if (staff.length === 1 && pageNumber > 1) {
+        setPageNumber((p) => p - 1);
+      }
     } catch (err) {
-      console.error('Failed to delete staff member:', err);
       const { message, isRetryable } = getApiErrorMessage(err, {
         defaultMessage: 'Failed to delete staff member',
         notFoundMessage: 'Staff member not found',
@@ -276,7 +275,7 @@ export function StaffListView() {
         toast.error(message);
       }
     }
-  }, [deleteStaffId, deleteStaff, deleteStaffName]);
+  }, [deleteStaffId, deleteStaff, deleteStaffName, staff.length, pageNumber]);
 
   // Handle toggle active with optimistic update
   const handleToggleActive = useCallback(async (staffId) => {
@@ -303,14 +302,8 @@ export function StaffListView() {
       const newStatus = previousIsActive ? 'deactivated' : 'activated';
       toast.success(`${staffName} ${newStatus} successfully`);
     } catch (err) {
-      console.error('Failed to toggle staff active status:', err);
-      
-      // Clear toggling state immediately to revert optimistic update
       setTogglingStaffId(null);
-      
-      // Revert optimistic update by refetching
       refetch();
-      
       const { message, isRetryable } = getApiErrorMessage(err, {
         defaultMessage: 'Failed to update staff member status',
         notFoundMessage: 'Staff member not found',
@@ -328,27 +321,30 @@ export function StaffListView() {
   }, [toggleStaffActive, staff, refetch]);
 
   // Handle form dialog success
-  const handleFormSuccess = useCallback((id, action) => {
+  // Contract: onSuccess(id, action, payload?). id is scalar; for create, payload is API result (for display name).
+  const handleFormSuccess = useCallback((id, action, payload) => {
     setFormDialogOpen(false);
     setFormDialogMode('create');
-    setFormDialogStaffId(null);
-    setFormDialogStaffData(null);
-    
-    // Find staff name for success message
-    const staffMember = staff.find((s) => s.id === id);
-    const staffName = staffMember 
-      ? `${staffMember.firstName} ${staffMember.lastName}`.trim() 
-      : 'Staff member';
-    
-    toast.success(`${staffName} ${action} successfully`);
-  }, [staff]);
+    setFormDialogRecord(null);
+    refetch();
+    const displayName =
+      action === 'created' && payload && (payload.firstName != null || payload.lastName != null)
+        ? `${payload.firstName || ''} ${payload.lastName || ''}`.trim() || 'Staff member'
+        : (() => {
+            const staffMember = typeof id === 'string' || typeof id === 'number' ? staff.find((s) => s.id === id) : null;
+            return staffMember
+              ? `${staffMember.firstName || ''} ${staffMember.lastName || ''}`.trim()
+              : 'Staff member';
+          })();
+    const verb = action === 'created' ? 'created' : 'updated';
+    toast.success(`${displayName} ${verb} successfully`);
+  }, [staff, refetch]);
 
   // Handle form dialog close
   const handleFormClose = useCallback(() => {
     setFormDialogOpen(false);
     setFormDialogMode('create');
-    setFormDialogStaffId(null);
-    setFormDialogStaffData(null);
+    setFormDialogRecord(null);
   }, []);
 
   // Handle pagination change
@@ -368,34 +364,24 @@ export function StaffListView() {
     setPageNumber(1); // Reset to first page when clearing search
   }, [searchForm]);
 
-  // Format date for display
+  // Format date for display (uses shared fDate from format-time)
   const formatDate = useCallback((dateString) => {
     if (!dateString) return '-';
-    try {
-      const date = new Date(dateString);
-      return date.toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-      });
-    } catch {
-      return dateString;
-    }
+    const formatted = fDate(dateString);
+    return formatted === 'Invalid date' ? '-' : formatted;
   }, []);
 
-  // Prepare table rows with optimistic update for toggling
+  // Prepare table rows with optimistic update for toggling (use API response keys: branchName, staffTypeName)
   const rows = useMemo(() => staff.map((staffMember) => {
-      // Apply optimistic update if this staff is being toggled
       let isActive = staffMember.isActive;
       if (togglingStaffId === staffMember.id) {
-        // Optimistically toggle the state (will be corrected by cache invalidation)
         isActive = !isActive;
       }
-      
       return {
         id: staffMember.id,
         fullName: `${staffMember.firstName} ${staffMember.lastName}`.trim() || '-',
         staffTypeName: staffMember.staffTypeName || '-',
+        branchName: staffMember.branchName || '-',
         branchId: staffMember.branchId,
         email: staffMember.email || '-',
         phone: staffMember.phone || '-',
@@ -411,15 +397,11 @@ export function StaffListView() {
         field: 'fullName',
         headerName: 'Full Name',
         flex: 1,
-        sortable: true,
-        filterable: true,
       },
       {
         field: 'staffTypeName',
         headerName: 'Staff Type',
         flex: 1,
-        sortable: true,
-        filterable: true,
         renderCell: (params) => (
           <Typography variant="body2" color="text.secondary">
             {params.value === '-' ? '-' : params.value}
@@ -427,27 +409,19 @@ export function StaffListView() {
         ),
       },
       {
-        field: 'branchId',
+        field: 'branchName',
         headerName: 'Branch',
         flex: 1,
-        sortable: true,
-        filterable: true,
-        renderCell: (params) => {
-          // Try to find branch name from options
-          const branch = branchOptions.find((b) => b.id === params.value);
-          return (
-            <Typography variant="body2" color="text.secondary">
-              {branch ? branch.label : params.value}
-            </Typography>
-          );
-        },
+        renderCell: (params) => (
+          <Typography variant="body2" color="text.secondary">
+            {params.value === '-' ? '-' : params.value}
+          </Typography>
+        ),
       },
       {
         field: 'email',
         headerName: 'Email',
         flex: 1,
-        sortable: true,
-        filterable: true,
         renderCell: (params) => (
           <Typography variant="body2" color="text.secondary">
             {params.value === '-' ? '-' : params.value}
@@ -458,8 +432,6 @@ export function StaffListView() {
         field: 'phone',
         headerName: 'Phone',
         flex: 1,
-        sortable: true,
-        filterable: true,
         renderCell: (params) => (
           <Typography variant="body2" color="text.secondary">
             {params.value === '-' ? '-' : params.value}
@@ -470,8 +442,6 @@ export function StaffListView() {
         field: 'hireDate',
         headerName: 'Hire Date',
         flex: 1,
-        sortable: true,
-        filterable: true,
         renderCell: (params) => (
           <Typography variant="body2" color="text.secondary">
             {params.value}
@@ -482,8 +452,6 @@ export function StaffListView() {
         field: 'isActive',
         headerName: 'Status',
         flex: 1,
-        sortable: true,
-        filterable: true,
         renderCell: (params) => (
           <Label color={params.value ? 'success' : 'default'} variant="soft">
             {params.value ? 'Active' : 'Inactive'}
@@ -491,7 +459,7 @@ export function StaffListView() {
         ),
       },
     ],
-    [branchOptions]
+    []
   );
 
   // Define actions
@@ -501,14 +469,14 @@ export function StaffListView() {
         id: 'view',
         label: 'View',
         icon: 'solar:eye-bold',
-        onClick: (row) => handleView(row.id),
+        onClick: (row) => handleView(row),
         order: 1,
       },
       {
         id: 'edit',
         label: 'Edit',
         icon: 'solar:pen-bold',
-        onClick: (row) => handleEdit(row.id),
+        onClick: (row) => handleEdit(row),
         order: 2,
       },
       {
@@ -634,7 +602,7 @@ export function StaffListView() {
             variant="contained"
             startIcon="mingcute:add-line"
             onClick={handleCreate}
-            sx={{ ml: 'auto' }}
+            sx={{ ml: 'auto', minHeight: 44 }}
           >
             Create Staff
           </Field.Button>
@@ -651,6 +619,7 @@ export function StaffListView() {
           pagination={{
             ...DEFAULT_PAGINATION,
             mode: 'server',
+            page: pageNumber - 1,
             pageSize,
             rowCount: paginationMeta.totalCount,
             onPageChange: handlePageChange,
@@ -674,8 +643,7 @@ export function StaffListView() {
       <StaffFormDialog
         open={formDialogOpen}
         mode={formDialogMode}
-        staffId={formDialogStaffId}
-        staffData={formDialogStaffData}
+        record={formDialogRecord}
         onClose={handleFormClose}
         onSuccess={handleFormSuccess}
         branchOptions={branchOptions}
@@ -685,10 +653,10 @@ export function StaffListView() {
       {/* Details Dialog */}
       <StaffDetailsDialog
         open={detailsDialogOpen}
-        staffId={detailsDialogStaffId}
+        record={detailsDialogRecord}
         onClose={() => {
           setDetailsDialogOpen(false);
-          setDetailsDialogStaffId(null);
+          setDetailsDialogRecord(null);
         }}
       />
 
@@ -702,7 +670,13 @@ export function StaffListView() {
             : 'Are you sure you want to delete this staff member? This action cannot be undone.'
         }
         action={
-          <Field.Button variant="contained" color="error" onClick={handleDeleteConfirm}>
+          <Field.Button
+            variant="contained"
+            color="error"
+            onClick={handleDeleteConfirm}
+            disabled={isDeleting}
+            loading={isDeleting}
+          >
             Delete
           </Field.Button>
         }
@@ -711,6 +685,8 @@ export function StaffListView() {
           setDeleteStaffId(null);
           setDeleteStaffName(null);
         }}
+        loading={isDeleting}
+        disableClose={isDeleting}
       />
     </Box>
   );

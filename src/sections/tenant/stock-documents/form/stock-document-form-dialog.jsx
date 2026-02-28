@@ -6,7 +6,6 @@ import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
 import Alert from '@mui/material/Alert';
-import Stack from '@mui/material/Stack';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
 import { useTheme, useMediaQuery } from '@mui/material';
@@ -18,7 +17,6 @@ import { useGetTenantsDropdownQuery } from 'src/store/api/tenants-api';
 import { useGetBranchesDropdownQuery } from 'src/store/api/branches-api';
 import { createStockDocumentSchema, updateStockDocumentSchema } from 'src/schemas';
 import {
-  useGetStockDocumentQuery,
   useCreateStockDocumentMutation,
   useUpdateStockDocumentMutation,
 } from 'src/store/api/stock-documents-api';
@@ -26,7 +24,6 @@ import {
 import { toast } from 'src/components/snackbar';
 import { Form, Field } from 'src/components/hook-form';
 import { CustomDialog } from 'src/components/custom-dialog';
-import { QueryStateContent } from 'src/components/query-state-content';
 import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
 
 import { DOCUMENT_TYPE_OPTIONS } from '../utils/stock-document-helpers';
@@ -36,29 +33,30 @@ import { StockDocumentItemsField } from './components/stock-document-items-field
 
 /**
  * Stock Document Form Dialog Component
- * 
- * Single dialog component for both create and edit operations.
- * Handles form state, validation, and API calls.
- * 
+ *
+ * Single dialog for create and edit. Edit mode uses record from list (no getById).
+ *
+ * Dropdown analysis:
+ * - tenantId: API (tenantOptions from list or useGetTenantsDropdownQuery when open). Parent of branchId.
+ * - branchId: API (useGetBranchesDropdownQuery({ tenantId })). Dependent on tenantId; loaded only when tenant selected; disabled when no tenant. When tenant cleared, branchId resets via effect.
+ * - documentType: Static (DOCUMENT_TYPE_OPTIONS: Purchase, Adjustment, Wastage).
+ * - items[].itemId: API (useGetItemsQuery). Synthetic options used in edit when item not yet in itemOptions.
+ *
  * @param {Object} props
  * @param {boolean} props.open - Whether the dialog is open
  * @param {string} props.mode - 'create' or 'edit'
- * @param {string|null} props.documentId - Document ID for edit mode
+ * @param {Object|null} props.record - Full stock document for edit mode (from list)
  * @param {Function} props.onClose - Callback when dialog closes
  * @param {Function} props.onSuccess - Callback when form is successfully submitted
  * @param {Array} props.tenantOptions - Tenant options (from list view; fallback: fetch in form when empty)
  */
-export function StockDocumentFormDialog({ open, mode, documentId, onClose, onSuccess, tenantOptions = [] }) {
+export function StockDocumentFormDialog({ open, mode, record, onClose, onSuccess, tenantOptions = [] }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] = useState(false);
   const [itemsReplacementWarningOpen, setItemsReplacementWarningOpen] = useState(false);
   const [pendingSubmit, setPendingSubmit] = useState(null);
-
-  const { data: documentData, isLoading: isLoadingDocument, error: queryError, isError: _isError, refetch: refetchDocument } = useGetStockDocumentQuery(documentId, {
-    skip: !documentId || mode !== 'edit' || !open,
-  });
 
   const [createStockDocument, { isLoading: isCreating }] = useCreateStockDocumentMutation();
   const [updateStockDocument, { isLoading: isUpdating }] = useUpdateStockDocumentMutation();
@@ -102,12 +100,21 @@ export function StockDocumentFormDialog({ open, mode, documentId, onClose, onSuc
       : watchedTenantId;
   })();
 
-  const { data: tenantsDropdownFallback } = useGetTenantsDropdownQuery(undefined, { skip: tenantOptions.length > 0 });
+  const { data: tenantsDropdownFallback } = useGetTenantsDropdownQuery(undefined, {
+    skip: tenantOptions.length > 0 || !open,
+  });
   const effectiveTenantOptions = useMemo(() => {
-    if (tenantOptions.length > 0) return tenantOptions;
-    if (!tenantsDropdownFallback || !Array.isArray(tenantsDropdownFallback)) return [];
-    return tenantsDropdownFallback.map((item) => ({ id: item.key, label: item.value || item.key }));
-  }, [tenantOptions, tenantsDropdownFallback]);
+    const base =
+      tenantOptions.length > 0
+        ? tenantOptions
+        : Array.isArray(tenantsDropdownFallback)
+          ? tenantsDropdownFallback.map((item) => ({ id: item.key, label: item.value || item.key }))
+          : [];
+    if (mode === 'edit' && record?.tenantId && !base.some((t) => t.id === record.tenantId)) {
+      return [...base, { id: record.tenantId, label: record.tenantName || record.tenantId }];
+    }
+    return base;
+  }, [tenantOptions, tenantsDropdownFallback, mode, record?.tenantId, record?.tenantName]);
 
   const { data: branchesDropdown } = useGetBranchesDropdownQuery(
     { tenantId: tenantIdForBranches },
@@ -118,23 +125,33 @@ export function StockDocumentFormDialog({ open, mode, documentId, onClose, onSuc
     return branchesDropdown.map((item) => ({ id: item.key, label: item.value || item.key }));
   }, [branchesDropdown]);
 
-  const { data: itemsResponse } = useGetItemsQuery({ pageSize: 200 });
+  const effectiveBranchOptions = useMemo(() => {
+    if (
+      mode === 'edit' &&
+      record?.branchId &&
+      tenantIdForBranches &&
+      !branchOptions.some((b) => b.id === record.branchId)
+    ) {
+      return [...branchOptions, { id: record.branchId, label: record.branchName || record.branchId }];
+    }
+    return branchOptions;
+  }, [mode, record?.branchId, record?.branchName, branchOptions, tenantIdForBranches]);
 
   // Validate branch is in current options (e.g. belongs to selected tenant)
   const branchValidationError = useMemo(() => {
-    if (!watchedBranchId || branchOptions.length === 0) return null;
+    if (!watchedBranchId || effectiveBranchOptions.length === 0) return null;
     const branchIdValue = typeof watchedBranchId === 'object' && watchedBranchId !== null && 'id' in watchedBranchId
       ? watchedBranchId.id
       : watchedBranchId;
-    const found = branchOptions.some((b) => b.id === branchIdValue);
+    const found = effectiveBranchOptions.some((b) => b.id === branchIdValue);
     if (!found) return 'Selected branch does not belong to the selected tenant';
     return null;
-  }, [watchedBranchId, branchOptions]);
+  }, [watchedBranchId, effectiveBranchOptions]);
 
-  // Item options (for document items)
+  const { data: itemsQueryData } = useGetItemsQuery({ pageSize: 200 }, { skip: !open });
   const itemOptions = useMemo(() => {
-    if (!itemsResponse) return [];
-    const items = itemsResponse.data || [];
+    if (!itemsQueryData) return [];
+    const items = itemsQueryData.data || [];
     return items.map((item) => ({
       id: item.id,
       name: item.name || item.id,
@@ -142,9 +159,26 @@ export function StockDocumentFormDialog({ open, mode, documentId, onClose, onSuc
       isActive: item.isActive ?? true,
       isAvailable: item.isAvailable ?? true,
     }));
-  }, [itemsResponse]);
+  }, [itemsQueryData]);
 
-  // Load document data for edit mode
+  // Effective item options: include synthetics for record items not yet in itemOptions (edit mode)
+  const effectiveItemOptions = useMemo(() => {
+    if (mode !== 'edit' || !record?.items?.length) return itemOptions;
+    const idsInOptions = new Set(itemOptions.map((o) => o.id));
+    const synthetics = record.items
+      .filter((item) => item.itemId && !idsInOptions.has(item.itemId))
+      .map((item) => ({
+        id: item.itemId,
+        name: item.itemName || item.itemId,
+        price: item.unitPrice ?? 0,
+        isActive: true,
+        isAvailable: true,
+      }));
+    if (synthetics.length === 0) return itemOptions;
+    return [...itemOptions, ...synthetics];
+  }, [mode, record?.items, itemOptions]);
+
+  // Load document data for edit mode from record or reset for create/close
   useEffect(() => {
     if (!open) {
       reset({
@@ -160,41 +194,72 @@ export function StockDocumentFormDialog({ open, mode, documentId, onClose, onSuc
       return;
     }
 
-    if (mode === 'edit' && documentData) {
-      // Find matching tenant and branch objects (branchOptions are tenant-scoped from API)
-      const matchingTenant = documentData.tenantId && tenantOptions.length > 0
-        ? tenantOptions.find((t) => t.id === documentData.tenantId)
-        : null;
-      
-      const matchingBranch = documentData.branchId && branchOptions.length > 0
-        ? branchOptions.find((b) => b.id === documentData.branchId)
-        : null;
+    if (mode === 'edit' && record) {
+      const matchingTenant =
+        record.tenantId && effectiveTenantOptions.length > 0
+          ? effectiveTenantOptions.find((t) => t.id === record.tenantId)
+          : null;
+      const tenantValue = matchingTenant || (record.tenantId ? { id: record.tenantId, label: record.tenantName || record.tenantId } : null);
 
-      const matchingDocumentType = documentData.documentType
-        ? DOCUMENT_TYPE_OPTIONS.find((dt) => dt.id === documentData.documentType)
-        : null;
+      const matchingBranch =
+        record.branchId && effectiveBranchOptions.length > 0
+          ? effectiveBranchOptions.find((b) => b.id === record.branchId)
+          : null;
+      const branchValue = matchingBranch || (record.branchId ? { id: record.branchId, label: record.branchName || record.branchId } : null);
 
-      // Transform items for form
-      const itemsData = documentData.items?.map((item) => {
-        const matchingItem = itemOptions.find((opt) => opt.id === item.itemId);
-        return {
-          itemId: matchingItem || item.itemId,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          remarks: item.remarks || null,
-        };
-      }) || [{ itemId: null, quantity: 1, unitPrice: null, remarks: null }];
+      const matchingDocumentType = record.documentType
+        ? DOCUMENT_TYPE_OPTIONS.find((dt) => dt.id === record.documentType)
+        : null;
+      const documentTypeValue = matchingDocumentType || (record.documentType != null ? { id: record.documentType, label: String(record.documentType) } : null);
+
+      const itemsData =
+        record.items?.map((item) => {
+          const matchingItem = effectiveItemOptions.find((opt) => opt.id === item.itemId);
+          const itemValue = matchingItem || (item.itemId ? { id: item.itemId, name: item.itemName || item.itemId, price: item.unitPrice ?? 0, isActive: true, isAvailable: true } : null);
+          return {
+            itemId: itemValue,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            remarks: item.remarks || null,
+          };
+        }) || [{ itemId: null, quantity: 1, unitPrice: null, remarks: null }];
 
       reset({
-        tenantId: matchingTenant || documentData.tenantId,
-        branchId: matchingBranch || documentData.branchId,
-        documentType: matchingDocumentType || documentData.documentType,
-        supplierName: documentData.supplierName || null,
-        remarks: documentData.remarks || null,
+        tenantId: tenantValue,
+        branchId: branchValue,
+        documentType: documentTypeValue,
+        supplierName: record.supplierName || null,
+        remarks: record.remarks || null,
         items: itemsData,
       });
+    } else if (mode === 'edit' && !record) {
+      reset({
+        tenantId: null,
+        branchId: null,
+        documentType: null,
+        supplierName: null,
+        remarks: null,
+        items: [{ itemId: null, quantity: 1, unitPrice: null, remarks: null }],
+      });
+    } else if (mode === 'create') {
+      reset({
+        tenantId: null,
+        branchId: null,
+        documentType: null,
+        supplierName: null,
+        remarks: null,
+        items: [{ itemId: null, quantity: 1, unitPrice: null, remarks: null }],
+      });
     }
-  }, [open, mode, documentData, effectiveTenantOptions, tenantOptions, branchOptions, itemOptions, reset]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, mode, record?.id, record?.tenantId, record?.branchId, record?.documentType, record?.supplierName, record?.remarks, record?.items, record?.tenantName, record?.branchName, effectiveTenantOptions, effectiveBranchOptions, effectiveItemOptions, reset]);
+
+  // When tenant is cleared, reset branch (dependent dropdown)
+  useEffect(() => {
+    if (open && !tenantIdForBranches && watchedBranchId) {
+      setValue('branchId', null, { shouldValidate: true });
+    }
+  }, [open, tenantIdForBranches, watchedBranchId, setValue]);
 
   // Handle branch change - validate it belongs to tenant
   useEffect(() => {
@@ -207,15 +272,14 @@ export function StockDocumentFormDialog({ open, mode, documentId, onClose, onSuc
   // Handle form submit
   const onSubmit = handleSubmit(async (data) => {
     // Check if editing and items are being replaced
-    if (mode === 'edit' && data.items && data.items.length > 0) {
-      const currentItemsCount = documentData?.items?.length || 0;
+    if (mode === 'edit' && data.items && data.items.length > 0 && record) {
+      const currentItemsCount = record.items?.length || 0;
       const newItemsCount = data.items.length;
-      
-      // Check if items are actually being replaced (not just updated)
+
       const itemsChanged = JSON.stringify(data.items.map((i) => ({
-        itemId: typeof i.itemId === 'object' ? i.itemId.id : i.itemId,
+        itemId: typeof i.itemId === 'object' ? i.itemId?.id : i.itemId,
         quantity: i.quantity,
-      }))) !== JSON.stringify(documentData.items.map((i) => ({
+      }))) !== JSON.stringify((record.items || []).map((i) => ({
         itemId: i.itemId,
         quantity: i.quantity,
       })));
@@ -276,24 +340,34 @@ export function StockDocumentFormDialog({ open, mode, documentId, onClose, onSuc
           items: transformedItems, // Empty array preserves, non-empty replaces
         };
 
-        await updateStockDocument({ id: documentId, ...updateData }).unwrap();
+        await updateStockDocument({ id: record.id, ...updateData }).unwrap();
         if (onSuccess) {
-          onSuccess(documentId, 'updated');
+          onSuccess(record.id, 'updated');
         }
         reset();
         onClose();
         toast.success('Stock document updated successfully');
       }
     } catch (error) {
-      console.error(`Failed to ${mode} stock document:`, error);
-      const { message } = getApiErrorMessage(error, {
+      const { message, isRetryable } = getApiErrorMessage(error, {
         defaultMessage: `Failed to ${mode} stock document`,
       });
-      toast.error(message);
+      if (isRetryable) {
+        toast.error(message, {
+          action: {
+            label: 'Retry',
+            onClick: () => {
+              setTimeout(() => performSubmit(data), 100);
+            },
+          },
+        });
+      } else {
+        toast.error(message);
+      }
     } finally {
       isSubmittingRef.current = false;
     }
-  }, [mode, createStockDocument, updateStockDocument, documentId, onSuccess, reset, onClose]);
+  }, [mode, createStockDocument, updateStockDocument, record, onSuccess, reset, onClose]);
 
   // Handle confirm items replacement
   const handleConfirmItemsReplacement = useCallback(() => {
@@ -357,14 +431,10 @@ export function StockDocumentFormDialog({ open, mode, documentId, onClose, onSuc
         startIcon="solar:check-circle-bold"
         sx={{ minHeight: 44 }}
       >
-        {mode === 'create' ? 'Create' : 'Update'}
+        {mode === 'create' ? 'Save' : 'Update'}
       </Field.Button>
     </Box>
   );
-
-  // Loading state for edit mode
-  const isLoading = mode === 'edit' && isLoadingDocument;
-  const hasError = mode === 'edit' && !documentData && !isLoadingDocument && documentId && open;
 
   return (
     <>
@@ -375,23 +445,11 @@ export function StockDocumentFormDialog({ open, mode, documentId, onClose, onSuc
         maxWidth="md"
         fullWidth
         fullScreen={isMobile}
-        loading={isSubmitting || isLoading}
+        loading={isSubmitting}
         disableClose={isSubmitting}
         actions={renderActions()}
       >
-        <QueryStateContent
-          isLoading={isLoading}
-          isError={hasError}
-          error={queryError}
-          onRetry={refetchDocument}
-          loadingMessage="Loading document information..."
-          errorTitle="Failed to load document"
-          errorMessageOptions={{
-            defaultMessage: 'Failed to load document',
-            notFoundMessage: 'Document not found or an error occurred.',
-          }}
-        >
-          <Form methods={methods} onSubmit={onSubmit}>
+        <Form methods={methods} onSubmit={onSubmit}>
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1 }}>
               {/* Branch validation error */}
               {branchValidationError && (
@@ -403,7 +461,8 @@ export function StockDocumentFormDialog({ open, mode, documentId, onClose, onSuc
                 <Typography variant="subtitle2" sx={{ mb: 2 }}>
                   Document Information
                 </Typography>
-                <Stack spacing={2}>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <Box sx={{ display: 'flex', gap: 2 }}>
                   {/* Tenant */}
                   <Field.Autocomplete
                     name="tenantId"
@@ -420,13 +479,14 @@ export function StockDocumentFormDialog({ open, mode, documentId, onClose, onSuc
                         },
                       },
                     }}
+                    sx={{ flex: 1 }}
                   />
 
                   {/* Branch */}
                   <Field.Autocomplete
                     name="branchId"
                     label="Branch"
-                    options={branchOptions}
+                    options={effectiveBranchOptions}
                     required
                     disabled={mode === 'edit' || !watchedTenantId}
                     slotProps={{
@@ -434,7 +494,10 @@ export function StockDocumentFormDialog({ open, mode, documentId, onClose, onSuc
                         helperText: !watchedTenantId ? 'Please select a tenant first' : undefined,
                       },
                     }}
+                    sx={{ flex: 1 }}
                   />
+                       </Box>
+                       <Box sx={{ display: 'flex', gap: 2 }}>
 
                   {/* Document Type */}
                   <Field.Autocomplete
@@ -443,6 +506,7 @@ export function StockDocumentFormDialog({ open, mode, documentId, onClose, onSuc
                     options={DOCUMENT_TYPE_OPTIONS}
                     required
                     disabled={mode === 'edit'}
+                    sx={{ flex: 1 }}
                   />
 
                   {/* Supplier Name */}
@@ -450,7 +514,9 @@ export function StockDocumentFormDialog({ open, mode, documentId, onClose, onSuc
                     name="supplierName"
                     label="Supplier Name"
                     placeholder="Enter supplier name (optional)"
+                    sx={{ flex: 1 }}
                   />
+                       </Box>
 
                   {/* Remarks */}
                   <Field.Text
@@ -460,18 +526,17 @@ export function StockDocumentFormDialog({ open, mode, documentId, onClose, onSuc
                     multiline
                     rows={3}
                   />
-                </Stack>
+                </Box>
               </Box>
 
               <Divider sx={{ borderStyle: 'dashed' }} />
 
               {/* Items */}
               <Box>
-                <StockDocumentItemsField name="items" itemOptions={itemOptions} />
+                <StockDocumentItemsField name="items" itemOptions={effectiveItemOptions} />
               </Box>
             </Box>
           </Form>
-        </QueryStateContent>
       </CustomDialog>
 
       {/* Unsaved Changes Confirmation Dialog */}

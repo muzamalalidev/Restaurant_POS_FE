@@ -6,11 +6,8 @@ import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
 import { useTheme, useMediaQuery } from '@mui/material';
 
-import { useGetBranchByIdQuery } from 'src/store/api/branches-api';
-
 import { Label } from 'src/components/label';
 import { CustomDialog } from 'src/components/custom-dialog';
-import { QueryStateContent } from 'src/components/query-state-content';
 
 // ----------------------------------------------------------------------
 
@@ -27,18 +24,13 @@ const PHONE_LABEL_MAP = {
 
 /**
  * Branch Details Dialog Component
- * 
- * Read-only view of branch details.
+ *
+ * Read-only view using record from list (no getById).
  * No action buttons - purely informational.
  */
-export function BranchDetailsDialog({ open, branchId, onClose }) {
+export function BranchDetailsDialog({ open, record, onClose }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-
-  // Fetch branch data
-  const { data: branch, isLoading, error: queryError, isError, refetch } = useGetBranchByIdQuery(branchId, {
-    skip: !branchId || !open,
-  });
 
   return (
     <CustomDialog
@@ -48,23 +40,8 @@ export function BranchDetailsDialog({ open, branchId, onClose }) {
       maxWidth="sm"
       fullWidth
       fullScreen={isMobile}
-      loading={isLoading}
     >
-      <QueryStateContent
-        isLoading={isLoading}
-        isError={isError}
-        error={queryError}
-        onRetry={refetch}
-        loadingMessage="Loading branch details..."
-        errorTitle="Failed to load branch details"
-        errorMessageOptions={{
-          defaultMessage: 'Failed to load branch details',
-          notFoundMessage: 'Branch not found',
-        }}
-        isEmpty={!branch && !isLoading && !isError}
-        emptyMessage="Branch not found"
-      >
-        {branch ? (
+      {record ? (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1, pb: 3 }}>
           {/* Basic Information */}
           <Box>
@@ -76,29 +53,29 @@ export function BranchDetailsDialog({ open, branchId, onClose }) {
                 <Typography variant="caption" color="text.secondary">
                   Name
                 </Typography>
-                <Typography variant="body1">{branch.name}</Typography>
+                <Typography variant="body1">{record.name}</Typography>
               </Box>
-              {branch.address && (
+              {record.address && (
                 <Box>
                   <Typography variant="caption" color="text.secondary">
                     Address
                   </Typography>
-                  <Typography variant="body1">{branch.address}</Typography>
+                  <Typography variant="body1">{record.address}</Typography>
                 </Box>
               )}
               <Box>
                 <Typography variant="caption" color="text.secondary">
                   Tenant
                 </Typography>
-                <Typography variant="body1">{branch.tenantName || '-'}</Typography>
+                <Typography variant="body1">{record.tenantName || '-'}</Typography>
               </Box>
               <Box>
                 <Typography variant="caption" color="text.secondary">
                   Status
                 </Typography>
                 <Box sx={{ mt: 0.5 }}>
-                  <Label color={branch.isActive ? 'success' : 'default'} variant="soft">
-                    {branch.isActive ? 'Active' : 'Inactive'}
+                  <Label color={record.isActive ? 'success' : 'default'} variant="soft">
+                    {record.isActive ? 'Active' : 'Inactive'}
                   </Label>
                 </Box>
               </Box>
@@ -112,9 +89,9 @@ export function BranchDetailsDialog({ open, branchId, onClose }) {
             <Typography variant="subtitle2" sx={{ mb: 2 }}>
               Phone Numbers
             </Typography>
-            {branch.phoneNumbers && branch.phoneNumbers.length > 0 ? (
+            {record.phoneNumbers && record.phoneNumbers.length > 0 ? (
               <Stack spacing={1.5}>
-                {branch.phoneNumbers.map((phone) => (
+                {record.phoneNumbers.map((phone) => (
                   <Box
                     key={phone.id}
                     sx={{
@@ -159,9 +136,7 @@ export function BranchDetailsDialog({ open, branchId, onClose }) {
             )}
           </Box>
         </Box>
-        ) : null}
-      </QueryStateContent>
+      ) : null}
     </CustomDialog>
   );
 }
-

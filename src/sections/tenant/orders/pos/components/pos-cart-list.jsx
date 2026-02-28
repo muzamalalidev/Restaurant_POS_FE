@@ -8,6 +8,8 @@ import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 
+import { fCurrency } from 'src/utils/format-number';
+
 import { Iconify } from 'src/components/iconify';
 
 // ----------------------------------------------------------------------
@@ -83,10 +85,7 @@ export function PosCartList({ name = 'items', itemOptions = [] }) {
                 {itemName}
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                {new Intl.NumberFormat('en-US', {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                }).format(unitPrice)}{' '}
+                {fCurrency(unitPrice, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
                 each
               </Typography>
             </Box>
@@ -112,10 +111,7 @@ export function PosCartList({ name = 'items', itemOptions = [] }) {
               </IconButton>
             </Stack>
             <Typography variant="subtitle2" sx={{ minWidth: 56, textAlign: 'right' }}>
-              {new Intl.NumberFormat('en-US', {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              }).format(lineTotal)}
+              {fCurrency(lineTotal, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </Typography>
             <IconButton
               size="small"

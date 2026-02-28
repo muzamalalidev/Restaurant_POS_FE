@@ -6,27 +6,19 @@ import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
 import { useTheme, useMediaQuery } from '@mui/material';
 
-import { useGetTenantByIdQuery } from 'src/store/api/tenants-api';
-
 import { Label } from 'src/components/label';
 import { CustomDialog } from 'src/components/custom-dialog';
-import { QueryStateContent } from 'src/components/query-state-content';
 
 // ----------------------------------------------------------------------
 
 /**
  * Tenant Details Dialog Component
- * 
- * Read-only view of tenant details.
+ *
+ * Read-only view using record from list (no getById).
  */
-export function TenantDetailsDialog({ open, tenantId, onClose }) {
+export function TenantDetailsDialog({ open, record, onClose }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-
-  // Fetch tenant data
-  const { data: tenant, isLoading, error: queryError, isError, refetch } = useGetTenantByIdQuery(tenantId, {
-    skip: !tenantId || !open,
-  });
 
   return (
     <CustomDialog
@@ -36,23 +28,8 @@ export function TenantDetailsDialog({ open, tenantId, onClose }) {
       maxWidth="sm"
       fullWidth
       fullScreen={isMobile}
-      loading={isLoading}
     >
-      <QueryStateContent
-        isLoading={isLoading}
-        isError={isError}
-        error={queryError}
-        onRetry={refetch}
-        loadingMessage="Loading tenant details..."
-        errorTitle="Failed to load tenant details"
-        errorMessageOptions={{
-          defaultMessage: 'Failed to load tenant details',
-          notFoundMessage: 'Tenant not found',
-        }}
-        isEmpty={!tenant && !isLoading && !isError}
-        emptyMessage="Tenant not found"
-      >
-        {tenant ? (
+      {record ? (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1, pb: 3 }}>
           {/* Basic Information */}
           <Box>
@@ -64,14 +41,14 @@ export function TenantDetailsDialog({ open, tenantId, onClose }) {
                 <Typography variant="caption" color="text.secondary">
                   Name
                 </Typography>
-                <Typography variant="body1">{tenant.name}</Typography>
+                <Typography variant="body1">{record.name}</Typography>
               </Box>
-              {tenant.description && (
+              {record.description && (
                 <Box>
                   <Typography variant="caption" color="text.secondary">
                     Description
                   </Typography>
-                  <Typography variant="body1">{tenant.description}</Typography>
+                  <Typography variant="body1">{record.description}</Typography>
                 </Box>
               )}
               <Box>
@@ -79,17 +56,17 @@ export function TenantDetailsDialog({ open, tenantId, onClose }) {
                   Status
                 </Typography>
                 <Box sx={{ mt: 0.5 }}>
-                  <Label color={tenant.isActive ? 'success' : 'default'} variant="soft">
-                    {tenant.isActive ? 'Active' : 'Inactive'}
+                  <Label color={record.isActive ? 'success' : 'default'} variant="soft">
+                    {record.isActive ? 'Active' : 'Inactive'}
                   </Label>
                 </Box>
               </Box>
-              {tenant.ownerId && (
+              {record.ownerId && (
                 <Box>
                   <Typography variant="caption" color="text.secondary">
                     Owner ID
                   </Typography>
-                  <Typography variant="body1">{tenant.ownerId}</Typography>
+                  <Typography variant="body1">{record.ownerId}</Typography>
                 </Box>
               )}
             </Stack>
@@ -102,9 +79,9 @@ export function TenantDetailsDialog({ open, tenantId, onClose }) {
             <Typography variant="subtitle2" sx={{ mb: 2 }}>
               Phone Numbers
             </Typography>
-            {tenant.phoneNumbers && tenant.phoneNumbers.length > 0 ? (
+            {record.phoneNumbers && record.phoneNumbers.length > 0 ? (
               <Stack spacing={1.5}>
-                {tenant.phoneNumbers.map((phone) => (
+                {record.phoneNumbers.map((phone) => (
                   <Box
                     key={phone.id}
                     sx={{
@@ -149,9 +126,7 @@ export function TenantDetailsDialog({ open, tenantId, onClose }) {
             )}
           </Box>
         </Box>
-        ) : null}
-      </QueryStateContent>
+      ) : null}
     </CustomDialog>
   );
 }
-

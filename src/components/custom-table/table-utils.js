@@ -144,6 +144,7 @@ export function normalizePagination(pagination) {
   return {
     enabled: pagination.enabled !== false,
     mode: pagination.mode || 'client',
+    page: pagination.page,
     pageSize: pagination.pageSize || 10,
     pageSizeOptions: pagination.pageSizeOptions || [5, 10, 20, 50, 100],
     rowCount: pagination.rowCount,
@@ -264,7 +265,7 @@ export function normalizeToolbar(toolbar) {
       quickFilter: toolbar.quickFilter === true,
       export: toolbar.export || false,
       columns: toolbar.columns !== false,
-      filter: toolbar.filter !== false,
+      filter: toolbar.filter === true,
       settings: toolbar.settings !== false,
       custom: toolbar.custom,
       customActions: toolbar.customActions,

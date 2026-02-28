@@ -14,37 +14,34 @@ import { getApiErrorMessage } from 'src/utils/api-error-message';
 import { createItemSchema, updateItemSchema } from 'src/schemas';
 import { useGetTenantsDropdownQuery } from 'src/store/api/tenants-api';
 import { useGetCategoriesDropdownQuery } from 'src/store/api/categories-api';
-import { useGetItemsQuery, useCreateItemMutation, useUpdateItemMutation } from 'src/store/api/items-api';
+import { useCreateItemMutation, useUpdateItemMutation } from 'src/store/api/items-api';
 
 import { toast } from 'src/components/snackbar';
 import { Form, Field } from 'src/components/hook-form';
 import { CustomDialog } from 'src/components/custom-dialog';
-import { QueryStateContent } from 'src/components/query-state-content';
 import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
 
 // ----------------------------------------------------------------------
 
 /**
  * Item Form Dialog Component
- * 
- * Single dialog component for both create and edit operations.
- * Handles form state, validation, and API calls.
- * 
- * Note: Since GetById is a placeholder, we use GetAll to find the item by ID.
- * 
- * P2-004 SECURITY NOTE: Tenant context enforcement is handled at the backend API level.
- * Frontend allows selecting any tenant from dropdown; backend must validate user access
- * and enforce multi-tenant isolation. Backend is the source of truth for authorization.
- * 
- * @param {Object} props
- * @param {boolean} props.open - Whether the dialog is open
- * @param {string} props.mode - 'create' or 'edit'
- * @param {string|null} props.itemId - Item ID for edit mode
- * @param {Function} props.onClose - Callback when dialog closes
- * @param {Function} props.onSuccess - Callback when form is successfully submitted
- * @param {Array} props.tenantOptions - Tenant options for dropdown (from list view; fallback: fetch in form when empty)
+ *
+ * Single dialog for create and edit. Edit uses record from list (no getById).
+ *
+ * Dropdown analysis:
+ * - tenantId: API-based (tenantOptions from list or useGetTenantsDropdownQuery fallback).
+ *   Parent of categoryId.
+ * - categoryId: API-based, dependent on tenantId. useGetCategoriesDropdownQuery({ tenantId })
+ *   with skip: !selectedTenantIdRaw || !open. When tenant is cleared, categoryId resets to null
+ *   and Category dropdown is disabled.
+ * - itemType: Static options (1 Direct Sale, 2 Recipe Based, 3 Add On, 4 Deal). Not dependent.
+ *
+ * Dependent dropdown reset: When tenantId is cleared, categoryId is set to null and Category
+ * is disabled (options load only when tenant selected).
+ *
+ * P2-004: Tenant context enforced at backend.
  */
-export function ItemFormDialog({ open, mode, itemId, onClose, onSuccess, tenantOptions = [] }) {
+export function ItemFormDialog({ open, mode, record, onClose, onSuccess, tenantOptions = [] }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
@@ -58,19 +55,6 @@ export function ItemFormDialog({ open, mode, itemId, onClose, onSuccess, tenantO
     return tenantsDropdownFallback.map((item) => ({ id: item.key, label: item.value || item.key }));
   }, [tenantOptions, tenantsDropdownFallback]);
 
-  const { data: itemsResponse, isLoading: isLoadingItem, error: queryError, isError: _isError, refetch: refetchItems } = useGetItemsQuery(
-    { pageSize: 1000 },
-    { skip: !itemId || mode !== 'edit' || !open }
-  );
-
-  // Find the item by ID from the response
-  const itemData = useMemo(() => {
-    if (!itemsResponse || !itemId || mode !== 'edit') return null;
-    const items = itemsResponse.data || [];
-    return items.find((item) => item.id === itemId) || null;
-  }, [itemsResponse, itemId, mode]);
-
-  // Mutations
   const [createItem, { isLoading: isCreating }] = useCreateItemMutation();
   const [updateItem, { isLoading: isUpdating }] = useUpdateItemMutation();
 
@@ -97,11 +81,11 @@ export function ItemFormDialog({ open, mode, itemId, onClose, onSuccess, tenantO
         name: '',
         description: null,
         itemType: null,
-        price: 0,
+        price: null,
         imageUrl: null,
         isActive: true,
         isAvailable: true,
-        stockQuantity: 0,
+        stockQuantity: null,
       }),
       []
     ),
@@ -133,7 +117,14 @@ export function ItemFormDialog({ open, mode, itemId, onClose, onSuccess, tenantO
     return categoriesDropdown.map((item) => ({ id: item.key, label: item.value || item.key }));
   }, [categoriesDropdown]);
 
-  // Load item data for edit mode or reset for create mode
+  // Dependent dropdown reset: when tenant is cleared, reset categoryId
+  useEffect(() => {
+    if (open && !selectedTenantIdRaw) {
+      setValue('categoryId', null, { shouldValidate: false, shouldDirty: false });
+    }
+  }, [open, selectedTenantIdRaw, setValue]);
+
+  // Load item data for edit mode from record or reset for create mode
   useEffect(() => {
     if (!open) {
       reset({
@@ -142,56 +133,60 @@ export function ItemFormDialog({ open, mode, itemId, onClose, onSuccess, tenantO
         name: '',
         description: null,
         itemType: null,
-        price: 0,
+        price: null,
         imageUrl: null,
         isActive: true,
         isAvailable: true,
-        stockQuantity: 0,
+        stockQuantity: null,
       });
       return;
     }
 
-    if (mode === 'edit' && itemData && effectiveTenantOptions.length > 0) {
-      const matchingTenant = effectiveTenantOptions.find((t) => t.id === itemData.tenantId);
-      const matchingCategory = categoryOptions.find((cat) => cat.id === itemData.categoryId);
-      const matchingItemType = itemTypeOptions.find((opt) => opt.id === itemData.itemType);
+    if (mode === 'edit' && record) {
+      const matchingTenant = effectiveTenantOptions.find((t) => t.id === record.tenantId);
+      const matchingCategory = categoryOptions.find((cat) => cat.id === record.categoryId);
+      const matchingItemType = itemTypeOptions.find((opt) => opt.id === record.itemType);
+      const tenantValue = matchingTenant ?? (record.tenantId ? { id: record.tenantId, label: record.tenantName || record.tenantId } : null);
+      const categoryValue = matchingCategory ?? (record.categoryId ? { id: record.categoryId, label: record.categoryName || record.categoryId } : null);
 
       reset({
-        tenantId: matchingTenant || null,
-        categoryId: matchingCategory || null,
-        name: itemData.name || '',
-        description: itemData.description || null,
-        itemType: matchingItemType || null,
-        price: itemData.price || 0,
-        imageUrl: itemData.imageUrl || null,
-        isActive: itemData.isActive ?? true,
-        isAvailable: itemData.isAvailable ?? true,
-        stockQuantity: itemData.stockQuantity ?? 0,
+        tenantId: tenantValue,
+        categoryId: categoryValue,
+        name: record.name || '',
+        description: record.description || null,
+        itemType: matchingItemType ?? null,
+        price: record.price ?? null,
+        imageUrl: record.imageUrl || null,
+        isActive: record.isActive ?? true,
+        isAvailable: record.isAvailable ?? true,
+        stockQuantity: record.stockQuantity ?? null,
       });
-    } else if (mode === 'create') {
+    } else {
+      // create, or edit with no record (e.g. row no longer in list)
       reset({
         tenantId: null,
         categoryId: null,
         name: '',
         description: null,
         itemType: null,
-        price: 0,
+        price: null,
         imageUrl: null,
         isActive: true,
         isAvailable: true,
-        stockQuantity: 0,
+        stockQuantity: null,
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, mode, itemData?.id, itemData?.tenantId, itemData?.categoryId, itemData?.name, itemData?.description, itemData?.itemType, itemData?.price, itemData?.imageUrl, itemData?.isActive, itemData?.isAvailable, itemData?.stockQuantity, effectiveTenantOptions, categoryOptions, reset]);
+  }, [open, mode, record?.id, record?.tenantId, record?.categoryId, record?.name, record?.description, record?.itemType, record?.price, record?.imageUrl, record?.isActive, record?.isAvailable, record?.stockQuantity, effectiveTenantOptions, categoryOptions, reset]);
 
+  // Edit mode: set categoryId when category options load after tenant is set
   useEffect(() => {
-    if (!open || mode !== 'edit' || !itemData?.categoryId || categoryOptions.length === 0) return;
-    const matching = categoryOptions.find((c) => c.id === itemData.categoryId);
+    if (!open || mode !== 'edit' || !record?.categoryId || categoryOptions.length === 0) return;
+    const matching = categoryOptions.find((c) => c.id === record.categoryId);
     if (matching) {
       setValue('categoryId', matching, { shouldValidate: false, shouldDirty: false });
     }
-  }, [open, mode, itemData?.categoryId, categoryOptions, setValue]);
+  }, [open, mode, record?.categoryId, categoryOptions, setValue]);
 
   // Handle form submit
   const onSubmit = handleSubmit(async (data) => {
@@ -200,7 +195,9 @@ export function ItemFormDialog({ open, mode, itemId, onClose, onSuccess, tenantO
     isSubmittingRef.current = true;
 
     try {
-      // Convert empty strings to null for optional fields
+      const tenantIdValue = data.tenantId?.id ?? data.tenantId;
+      const categoryIdValue = data.categoryId?.id ?? data.categoryId;
+      const itemTypeValue = Number(data.itemType?.id ?? data.itemType);
       const descriptionValue = data.description === '' ? null : data.description;
       const imageUrlValue = data.imageUrl === '' ? null : data.imageUrl;
 
@@ -214,59 +211,59 @@ export function ItemFormDialog({ open, mode, itemId, onClose, onSuccess, tenantO
 
       if (mode === 'create') {
         const createData = {
-          tenantId: typeof data.tenantId === 'object' && data.tenantId !== null
-            ? data.tenantId.id
-            : data.tenantId,
-          categoryId: typeof data.categoryId === 'object' && data.categoryId !== null
-            ? data.categoryId.id
-            : data.categoryId,
+          tenantId: tenantIdValue,
+          categoryId: categoryIdValue,
           name: data.name,
           description: descriptionValue,
-          itemType: typeof data.itemType === 'object' && data.itemType !== null
-            ? data.itemType.id
-            : Number(data.itemType),
+          itemType: itemTypeValue,
           price: Number(data.price),
           imageUrl: imageUrlValue,
           isActive: data.isActive ?? true,
-          isAvailable: data.isAvailable ?? true, // P1-005: Send isAvailable on create
+          isAvailable: data.isAvailable ?? true,
           stockQuantity: Number(stockQuantityValue) || 0,
         };
         const result = await createItem(createData).unwrap();
         if (onSuccess) {
-          onSuccess(result, 'created');
+          onSuccess(result?.id ?? result, 'created', result);
         }
       } else {
         const updateData = {
-          tenantId: typeof data.tenantId === 'object' && data.tenantId !== null
-            ? data.tenantId.id
-            : data.tenantId,
-          categoryId: typeof data.categoryId === 'object' && data.categoryId !== null
-            ? data.categoryId.id
-            : data.categoryId,
+          tenantId: tenantIdValue,
+          categoryId: categoryIdValue,
           name: data.name,
           description: descriptionValue,
-          itemType: typeof data.itemType === 'object' && data.itemType !== null
-            ? data.itemType.id
-            : Number(data.itemType),
+          itemType: itemTypeValue,
           price: Number(data.price),
           imageUrl: imageUrlValue,
           isActive: data.isActive,
           isAvailable: data.isAvailable,
           stockQuantity: stockQuantityValue === null ? null : Number(stockQuantityValue),
         };
-        await updateItem({ id: itemId, ...updateData }).unwrap();
+        await updateItem({ id: record.id, ...updateData }).unwrap();
         if (onSuccess) {
-          onSuccess(itemId, 'updated');
+          onSuccess(record.id, 'updated');
         }
       }
       reset();
       onClose();
     } catch (error) {
-      console.error('Failed to save item:', error);
-      const { message } = getApiErrorMessage(error, {
+      const { message, isRetryable } = getApiErrorMessage(error, {
         defaultMessage: `Failed to ${mode === 'create' ? 'create' : 'update'} item`,
       });
-      toast.error(message);
+      if (isRetryable) {
+        toast.error(message, {
+          action: {
+            label: 'Retry',
+            onClick: () => {
+              setTimeout(() => {
+                onSubmit({ preventDefault: () => {}, target: { checkValidity: () => true } });
+              }, 100);
+            },
+          },
+        });
+      } else {
+        toast.error(message);
+      }
     } finally {
       isSubmittingRef.current = false;
     }
@@ -320,14 +317,10 @@ export function ItemFormDialog({ open, mode, itemId, onClose, onSuccess, tenantO
         startIcon="solar:check-circle-bold"
         sx={{ minHeight: 44 }}
       >
-        Save
+        {mode === 'create' ? 'Save' : 'Update'}
       </Field.Button>
     </Box>
   );
-
-  // Loading state for edit mode
-  const isLoading = mode === 'edit' && isLoadingItem;
-  const hasError = mode === 'edit' && !itemData && itemsResponse && itemId && open;
 
   return (
     <>
@@ -338,23 +331,11 @@ export function ItemFormDialog({ open, mode, itemId, onClose, onSuccess, tenantO
         maxWidth="md"
         fullWidth
         fullScreen={isMobile}
-        loading={isSubmitting || isLoading}
+        loading={isSubmitting}
         disableClose={isSubmitting}
         actions={renderActions()}
       >
-        <QueryStateContent
-          isLoading={isLoading}
-          isError={hasError}
-          error={queryError}
-          onRetry={refetchItems}
-          loadingMessage="Loading item data..."
-          errorTitle="Failed to load item data"
-          errorMessageOptions={{
-            defaultMessage: 'Failed to load item data',
-            notFoundMessage: 'Item not found or an error occurred.',
-          }}
-        >
-          <Form methods={methods} onSubmit={onSubmit}>
+        <Form methods={methods} onSubmit={onSubmit}>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1 }}>
               {/* Basic Information Section */}
               <Box>
@@ -391,10 +372,10 @@ export function ItemFormDialog({ open, mode, itemId, onClose, onSuccess, tenantO
                       return option.id === value.id;
                     }}
                     required
-                    disabled={!watchedTenantId}
+                    disabled={!selectedTenantIdRaw}
                     slotProps={{
                       textField: {
-                        helperText: !watchedTenantId ? 'Please select a tenant first' : undefined,
+                        helperText: !selectedTenantIdRaw ? 'Select a tenant first' : undefined,
                       },
                     }}
                     sx={{ flex: 1 }}
@@ -514,7 +495,6 @@ export function ItemFormDialog({ open, mode, itemId, onClose, onSuccess, tenantO
               </Box>
             </Box>
           </Form>
-        </QueryStateContent>
       </CustomDialog>
 
       {/* Unsaved Changes Confirmation Dialog */}

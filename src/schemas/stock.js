@@ -9,7 +9,7 @@ import {
 // ----------------------------------------------------------------------
 
 export const updateStockSchema = zod.object({
-  stockQuantity: numberFromInput({ nonnegative: true }),
+  stockQuantity: numberFromInput({ nonnegative: true, emptyAs: 0 }),
 });
 
 export const adjustStockSchema = zod.object({

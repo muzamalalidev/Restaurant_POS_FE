@@ -7,49 +7,32 @@ import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
 import { useTheme, useMediaQuery } from '@mui/material';
 
-import { useGetOrderByIdQuery } from 'src/store/api/orders-api';
+import { fCurrency } from 'src/utils/format-number';
 
 import { Label } from 'src/components/label';
 import { CustomTable } from 'src/components/custom-table';
 import { CustomDialog } from 'src/components/custom-dialog';
-import { QueryStateContent } from 'src/components/query-state-content';
 
 import { getOrderStatusLabel, getOrderStatusColor } from '../utils/order-status';
 
 // ----------------------------------------------------------------------
 
-/**
- * Format amount as currency
- */
-const formatCurrency = (amount) => {
-  if (amount === null || amount === undefined) return '-';
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amount);
-};
+const formatCurrency = (amount) =>
+  amount == null ? '-' : fCurrency(amount, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 // ----------------------------------------------------------------------
 
 /**
  * Order Details Dialog Component
- * 
- * Read-only view of order details.
- * No action buttons - purely informational.
- * 
- * Uses GetById endpoint (fully implemented).
+ *
+ * Read-only view of order details. Uses the passed record from the list (no getById).
+ * List is requested with includeItems: true so record includes items and full details.
  */
-export function OrderDetailsDialog({ open, orderId, onClose }) {
+export function OrderDetailsDialog({ open, record, onClose }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
-  // Fetch order data (P1-006: refetch for Retry on error)
-  const { data: orderData, isLoading, error: queryError, isError, refetch } = useGetOrderByIdQuery(
-    { id: orderId, includeItems: true },
-    { skip: !orderId || !open }
-  );
+  const orderData = record;
 
   return (
     <CustomDialog
@@ -59,23 +42,8 @@ export function OrderDetailsDialog({ open, orderId, onClose }) {
       maxWidth="md"
       fullWidth
       fullScreen={isMobile}
-      loading={isLoading}
     >
-      <QueryStateContent
-        isLoading={isLoading}
-        isError={isError}
-        error={queryError}
-        onRetry={refetch}
-        loadingMessage="Loading order details..."
-        errorTitle="Failed to load order details"
-        errorMessageOptions={{
-          defaultMessage: 'Failed to load order details',
-          notFoundMessage: 'Order not found or an error occurred.',
-        }}
-        isEmpty={!orderData && !isLoading && !isError}
-        emptyMessage="Order not found"
-      >
-        {orderData ? (
+      {orderData ? (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1, pb: 3 }}>
           {/* Basic Information */}
           <Box>
@@ -101,46 +69,52 @@ export function OrderDetailsDialog({ open, orderId, onClose }) {
               </Box>
               <Box>
                 <Typography variant="caption" color="text.secondary">
-                  Branch ID
+                  Branch
                 </Typography>
-                <Typography variant="body1">{orderData.branchId || '-'}</Typography>
+                <Typography variant="body1">{orderData.branchName ?? orderData.branchId ?? '-'}</Typography>
               </Box>
               <Box>
                 <Typography variant="caption" color="text.secondary">
-                  Order Type ID
+                  Order Type
                 </Typography>
-                <Typography variant="body1">{orderData.orderTypeId || '-'}</Typography>
+                <Typography variant="body1">{orderData.orderTypeName ?? orderData.orderTypeId ?? '-'}</Typography>
               </Box>
-              {orderData.paymentMode && (
+              <Box>
+                <Typography variant="caption" color="text.secondary">
+                  Payment Mode
+                </Typography>
+                <Typography variant="body1">{orderData.paymentMode?.name ?? orderData.paymentModeId ?? '-'}</Typography>
+              </Box>
+              {(orderData.staffName != null || orderData.staffId) && (
                 <Box>
                   <Typography variant="caption" color="text.secondary">
-                    Payment Mode
+                    Staff
                   </Typography>
-                  <Typography variant="body1">{orderData.paymentMode.name || '-'}</Typography>
+                  <Typography variant="body1">{orderData.staffName ?? orderData.staffId ?? '-'}</Typography>
                 </Box>
               )}
-              {orderData.staffId && (
+              {(orderData.tableName != null || orderData.tableId) && (
                 <Box>
                   <Typography variant="caption" color="text.secondary">
-                    Staff ID
+                    Table
                   </Typography>
-                  <Typography variant="body1">{orderData.staffId || '-'}</Typography>
+                  <Typography variant="body1">{orderData.tableName ?? orderData.tableId ?? '-'}</Typography>
                 </Box>
               )}
-              {orderData.tableId && (
+              {(orderData.kitchenName != null || orderData.kitchenId) && (
                 <Box>
                   <Typography variant="caption" color="text.secondary">
-                    Table ID
+                    Kitchen
                   </Typography>
-                  <Typography variant="body1">{orderData.tableId || '-'}</Typography>
+                  <Typography variant="body1">{orderData.kitchenName ?? orderData.kitchenId ?? '-'}</Typography>
                 </Box>
               )}
-              {orderData.kitchenId && (
+              {(orderData.customerName != null || orderData.customerId) && (
                 <Box>
                   <Typography variant="caption" color="text.secondary">
-                    Kitchen ID
+                    Customer
                   </Typography>
-                  <Typography variant="body1">{orderData.kitchenId || '-'}</Typography>
+                  <Typography variant="body1">{orderData.customerName ?? orderData.customerId ?? '-'}</Typography>
                 </Box>
               )}
             </Stack>
@@ -170,7 +144,6 @@ export function OrderDetailsDialog({ open, orderId, onClose }) {
                         field: 'itemName',
                         headerName: 'Item Name',
                         flex: 1,
-                        sortable: false,
                         renderCell: (params) => (
                           <Typography variant="body2">
                             {params.value}
@@ -181,7 +154,6 @@ export function OrderDetailsDialog({ open, orderId, onClose }) {
                         field: 'quantity',
                         headerName: 'Quantity',
                         flex: 1,
-                        sortable: false,
                         renderCell: (params) => (
                           <Typography variant="body2" align="right" sx={{ width: '100%', textAlign: 'right' }}>
                             {params.value}
@@ -192,7 +164,6 @@ export function OrderDetailsDialog({ open, orderId, onClose }) {
                         field: 'unitPrice',
                         headerName: 'Unit Price',
                         flex: 1,
-                        sortable: false,
                         renderCell: (params) => (
                           <Typography variant="body2" align="right" sx={{ width: '100%', textAlign: 'right' }}>
                             {params.value}
@@ -203,7 +174,6 @@ export function OrderDetailsDialog({ open, orderId, onClose }) {
                         field: 'subTotal',
                         headerName: 'Subtotal',
                         flex: 1,
-                        sortable: false,
                         renderCell: (params) => (
                           <Typography variant="body2" align="right" sx={{ width: '100%', textAlign: 'right', fontWeight: 600 }}>
                             {params.value}
@@ -214,7 +184,6 @@ export function OrderDetailsDialog({ open, orderId, onClose }) {
                         field: 'notes',
                         headerName: 'Notes',
                         flex: 1,
-                        sortable: false,
                         renderCell: (params) => (
                           <Typography variant="body2">
                             {params.value}
@@ -222,7 +191,9 @@ export function OrderDetailsDialog({ open, orderId, onClose }) {
                         ),
                       }] : []),
                     ]}
-                    pagination={{ enabled: false }}
+                    pagination={false}
+                    toolbar={false}
+                    hideFooter
                     getRowId={(row) => row.id}
                   />
                 </Card>
@@ -360,8 +331,7 @@ export function OrderDetailsDialog({ open, orderId, onClose }) {
             </>
           )}
         </Box>
-        ) : null}
-      </QueryStateContent>
+      ) : null}
     </CustomDialog>
   );
 }

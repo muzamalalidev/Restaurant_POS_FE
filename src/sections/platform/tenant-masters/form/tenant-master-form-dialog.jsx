@@ -11,7 +11,6 @@ import { getApiErrorMessage } from 'src/utils/api-error-message';
 
 import { createTenantMasterSchema, updateTenantMasterSchema } from 'src/schemas';
 import {
-  useGetTenantMasterByIdQuery,
   useCreateTenantMasterMutation,
   useUpdateTenantMasterMutation,
 } from 'src/store/api/tenant-masters-api';
@@ -19,7 +18,6 @@ import {
 import { toast } from 'src/components/snackbar';
 import { Form, Field } from 'src/components/hook-form';
 import { CustomDialog } from 'src/components/custom-dialog';
-import { QueryStateContent } from 'src/components/query-state-content';
 import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
 
 // ----------------------------------------------------------------------
@@ -27,18 +25,22 @@ import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
 /**
  * Tenant Master Form Dialog
  * Single dialog for create and edit. Create returns 201 with raw Guid.
+ * Edit/Detail: uses record from list (no getById).
+ *
+ * Dropdown analysis:
+ * - ownerId: API-based (options placeholder until owner/user API). Single select.
+ *   Not dependent on any other field. Edit maps record.ownerId to { id, label }
+ *   for Autocomplete; submit extracts id via data.ownerId?.id ?? data.ownerId.
+ * - No dependent dropdowns (no parent -> child chain). When Owner API is
+ *   integrated: load options when dialog opens; in edit, map selected value to
+ *   option in list by id so the value is in options (or keep freeSolo-style
+ *   display for existing GUIDs not in options).
  */
-export function TenantMasterFormDialog({ open, mode, tenantMasterId, onClose, onSuccess }) {
+export function TenantMasterFormDialog({ open, mode, record, onClose, onSuccess }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] = useState(false);
-
-  // P2-003: skip when dialog closed to avoid unnecessary requests
-  const { data: tenantMasterData, isLoading: isLoadingTenantMaster, error: queryError, isError, refetch: refetchTenantMaster } = useGetTenantMasterByIdQuery(
-    tenantMasterId,
-    { skip: !tenantMasterId || mode !== 'edit' || !open }
-  );
 
   const [createTenantMaster, { isLoading: isCreating }] = useCreateTenantMasterMutation();
   const [updateTenantMaster, { isLoading: isUpdating }] = useUpdateTenantMasterMutation();
@@ -78,16 +80,17 @@ export function TenantMasterFormDialog({ open, mode, tenantMasterId, onClose, on
       return;
     }
 
-    if (mode === 'edit' && tenantMasterData) {
+    if (mode === 'edit' && record) {
       reset({
-        name: tenantMasterData.name ?? '',
-        description: tenantMasterData.description ?? '',
-        ownerId: tenantMasterData.ownerId
-          ? { id: tenantMasterData.ownerId, label: tenantMasterData.ownerId }
+        name: record.name ?? '',
+        description: record.description ?? '',
+        ownerId: record.ownerId
+          ? { id: record.ownerId, label: record.ownerId }
           : null,
-        isActive: tenantMasterData.isActive ?? true,
+        isActive: record.isActive ?? true,
       });
-    } else if (mode === 'create') {
+    } else {
+      // create, or edit with no record (e.g. row no longer in list)
       reset({
         name: '',
         description: '',
@@ -95,7 +98,7 @@ export function TenantMasterFormDialog({ open, mode, tenantMasterId, onClose, on
         isActive: true,
       });
     }
-  }, [open, mode, tenantMasterData, reset]);
+  }, [open, mode, record, reset]);
 
   // P0-002: ref guard blocks rapid double-submit
   const onSubmit = handleSubmit(async (data) => {
@@ -119,8 +122,8 @@ export function TenantMasterFormDialog({ open, mode, tenantMasterId, onClose, on
           ownerId: ownerIdValue || null,
           isActive: data.isActive,
         };
-        await updateTenantMaster({ id: tenantMasterId, ...updateData }).unwrap();
-        if (onSuccess) onSuccess(tenantMasterId, 'updated');
+        await updateTenantMaster({ id: record.id, ...updateData }).unwrap();
+        if (onSuccess) onSuccess(record.id, 'updated');
       }
       reset();
       onClose();
@@ -173,9 +176,6 @@ export function TenantMasterFormDialog({ open, mode, tenantMasterId, onClose, on
     </Box>
   );
 
-  const isLoading = mode === 'edit' && isLoadingTenantMaster;
-  const hasError = mode === 'edit' && isError;
-
   return (
     <>
       <CustomDialog
@@ -185,61 +185,48 @@ export function TenantMasterFormDialog({ open, mode, tenantMasterId, onClose, on
         maxWidth="sm"
         fullWidth
         fullScreen={isMobile}
-        loading={isSubmitting || isLoading}
+        loading={isSubmitting}
         disableClose={isSubmitting}
         actions={renderActions()}
       >
-        <QueryStateContent
-          isLoading={isLoading}
-          isError={hasError}
-          error={queryError}
-          onRetry={refetchTenantMaster}
-          loadingMessage="Loading tenant master..."
-          errorTitle="Failed to load tenant master"
-          errorMessageOptions={{
-            defaultMessage: 'Failed to load tenant master',
-            notFoundMessage: 'Tenant master not found',
-          }}
-        >
-          <Form methods={methods} onSubmit={onSubmit}>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1 }}>
-              <Box>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  <Field.Text
-                    name="name"
-                    label="Name"
-                    placeholder="Enter tenant master name"
-                    required
-                    inputProps={{ maxLength: 200 }}
-                    characterCounter
-                  />
-                  <Field.Text
-                    name="description"
-                    label="Description"
-                    placeholder="Enter description (optional)"
-                    multiline
-                    rows={3}
-                    inputProps={{ maxLength: 1000 }}
-                    characterCounter
-                  />
-                  <Field.Autocomplete
-                    name="ownerId"
-                    label="Owner"
-                    options={ownerOptions}
-                    getOptionLabel={(option) => (option ? (option.label ?? option.name ?? option.id ?? '') : '')}
-                    isOptionEqualToValue={(a, b) => (a?.id ?? a) === (b?.id ?? b)}
-                    slotProps={{
-                      textField: {
-                        placeholder: 'None (assign later)',
-                      },
-                    }}
-                  />
-                  {mode === 'edit' && <Field.Switch name="isActive" label="Active" />}
-                </Box>
+        <Form methods={methods} onSubmit={onSubmit}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1 }}>
+            <Box>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <Field.Text
+                  name="name"
+                  label="Name"
+                  placeholder="Enter tenant master name"
+                  required
+                  inputProps={{ maxLength: 200 }}
+                  characterCounter
+                />
+                <Field.Text
+                  name="description"
+                  label="Description"
+                  placeholder="Enter description (optional)"
+                  multiline
+                  rows={3}
+                  inputProps={{ maxLength: 1000 }}
+                  characterCounter
+                />
+                <Field.Autocomplete
+                  name="ownerId"
+                  label="Owner"
+                  options={ownerOptions}
+                  getOptionLabel={(option) => (option ? (option.label ?? option.name ?? option.id ?? '') : '')}
+                  isOptionEqualToValue={(a, b) => (a?.id ?? a) === (b?.id ?? b)}
+                  slotProps={{
+                    textField: {
+                      placeholder: 'None (assign later)',
+                    },
+                  }}
+                />
+                {mode === 'edit' && <Field.Switch name="isActive" label="Active" />}
               </Box>
             </Box>
-          </Form>
-        </QueryStateContent>
+          </Box>
+        </Form>
       </CustomDialog>
 
       <ConfirmDialog

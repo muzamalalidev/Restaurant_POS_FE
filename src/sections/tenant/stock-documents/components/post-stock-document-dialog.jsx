@@ -10,14 +10,16 @@ import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
 import { useTheme, useMediaQuery } from '@mui/material';
 
-import { useGetStockDocumentQuery, usePostStockDocumentMutation } from 'src/store/api/stock-documents-api';
+import { fCurrency } from 'src/utils/format-number';
+import { getApiErrorMessage } from 'src/utils/api-error-message';
+
+import { usePostStockDocumentMutation } from 'src/store/api/stock-documents-api';
 
 import { Label } from 'src/components/label';
 import { toast } from 'src/components/snackbar';
 import { Field } from 'src/components/hook-form';
 import { CustomTable } from 'src/components/custom-table';
 import { CustomDialog } from 'src/components/custom-dialog';
-import { QueryStateContent } from 'src/components/query-state-content';
 
 import {
   getDocumentTypeLabel,
@@ -26,58 +28,39 @@ import {
 
 // ----------------------------------------------------------------------
 
-/**
- * Format amount as currency
- */
-const _formatCurrency = (amount) => {
-  if (amount === null || amount === undefined) return '-';
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amount);
-};
+const _formatCurrency = (amount) =>
+  amount == null ? '-' : fCurrency(amount, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 // ----------------------------------------------------------------------
 
 /**
  * Post Stock Document Dialog Component
- * 
- * Confirmation dialog before posting a stock document.
- * Shows document summary, items, stock impact preview, and warnings.
- * 
+ *
+ * Confirmation dialog before posting. Uses the full row object passed from the list
+ * (no getStockDocument API call). Shows document summary, items, and stock impact preview.
+ *
  * @param {Object} props
  * @param {boolean} props.open - Whether the dialog is open
- * @param {string|null} props.documentId - Document ID
+ * @param {Object|null} props.record - Full stock document from list
  * @param {Function} props.onClose - Callback when dialog closes
- * @param {Function} props.onSuccess - Callback when posting is successful
+ * @param {Function} props.onSuccess - Callback when posting is successful (receives document id)
  */
-export function PostStockDocumentDialog({ open, documentId, onClose, onSuccess }) {
+export function PostStockDocumentDialog({ open, record, onClose, onSuccess }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
-  // Fetch document data
-  const { data: documentData, isLoading, error: queryError, isError, refetch } = useGetStockDocumentQuery(documentId, {
-    skip: !documentId || !open,
-  });
-
-  // Post mutation
   const [postStockDocument, { isLoading: isPosting }] = usePostStockDocumentMutation();
-  // P0-002: Ref guard to prevent double-submit on Post
   const isPostingRef = useRef(false);
 
-  // Calculate stock impact preview
   const stockImpactPreview = useMemo(() => {
-    if (!documentData || !documentData.items || documentData.items.length === 0) {
+    if (!record || !record.items || record.items.length === 0) {
       return null;
     }
 
-    const documentType = documentData.documentType;
-    const items = documentData.items;
+    const documentType = record.documentType;
+    const items = record.items;
 
     if (documentType === 1) {
-      // Purchase - increases stock
       return {
         type: 'increase',
         message: `Will increase stock by the following quantities for each item:`,
@@ -87,8 +70,8 @@ export function PostStockDocumentDialog({ open, documentId, onClose, onSuccess }
           impact: `+${item.quantity || 0}`,
         })),
       };
-    } else if (documentType === 3) {
-      // Wastage - decreases stock
+    }
+    if (documentType === 3) {
       return {
         type: 'decrease',
         message: `Will decrease stock by the following quantities for each item:`,
@@ -98,8 +81,8 @@ export function PostStockDocumentDialog({ open, documentId, onClose, onSuccess }
           impact: `-${item.quantity || 0}`,
         })),
       };
-    } else if (documentType === 2) {
-      // Adjustment - can increase or decrease
+    }
+    if (documentType === 2) {
       return {
         type: 'adjust',
         message: `Will adjust stock by the following quantities for each item (can result in negative stock):`,
@@ -112,30 +95,41 @@ export function PostStockDocumentDialog({ open, documentId, onClose, onSuccess }
     }
 
     return null;
-  }, [documentData]);
+  }, [record]);
 
-  // Handle post (P0-002: ref guard; P1-002: show error toast on failure)
   const handlePost = async () => {
-    if (!documentId) return;
+    if (!record?.id) return;
     if (isPostingRef.current) return;
     isPostingRef.current = true;
     try {
-      await postStockDocument(documentId).unwrap();
+      await postStockDocument(record.id).unwrap();
       if (onSuccess) {
-        onSuccess(documentId);
+        onSuccess(record.id);
       }
       onClose();
     } catch (error) {
       console.error('Failed to post stock document:', error);
-      const errorMessage = error?.data?.message || error?.data || error?.message || 'Failed to post stock document';
-      toast.error(errorMessage);
+      const { message, isRetryable } = getApiErrorMessage(error, {
+        defaultMessage: 'Failed to post stock document',
+      });
+      if (isRetryable) {
+        toast.error(message, {
+          action: {
+            label: 'Retry',
+            onClick: () => {
+              setTimeout(() => handlePost(), 100);
+            },
+          },
+        });
+      } else {
+        toast.error(message);
+      }
     } finally {
       isPostingRef.current = false;
     }
   };
 
-  // Check if document has items
-  const hasItems = documentData?.items && documentData.items.length > 0;
+  const hasItems = record?.items && record.items.length > 0;
 
   // Render actions
   const renderActions = () => (
@@ -171,32 +165,18 @@ export function PostStockDocumentDialog({ open, documentId, onClose, onSuccess }
       maxWidth="md"
       fullWidth
       fullScreen={isMobile}
-      loading={isLoading || isPosting}
+      loading={isPosting}
       disableClose={isPosting}
       actions={renderActions()}
     >
-      <QueryStateContent
-        isLoading={isLoading}
-        isError={isError}
-        error={queryError}
-        onRetry={refetch}
-        loadingMessage="Loading document information..."
-        errorTitle="Failed to load document"
-        errorMessageOptions={{
-          defaultMessage: 'Failed to load document',
-          notFoundMessage: 'Document not found',
-        }}
-        isEmpty={!documentData && !isLoading && !isError}
-        emptyMessage="Document not found"
-      >
-        {documentData ? (
+      {record ? (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1, pb: 3 }}>
           {/* Warnings */}
           <Stack spacing={2}>
             <Alert severity="warning">
               This action cannot be undone. Posting will create stock transactions and update stock balances permanently.
             </Alert>
-            {documentData.documentType === 1 || documentData.documentType === 3 ? (
+            {record.documentType === 1 || record.documentType === 3 ? (
               <Alert severity="info">
                 Stock availability will be validated. Insufficient stock will prevent posting.
               </Alert>
@@ -220,7 +200,7 @@ export function PostStockDocumentDialog({ open, documentId, onClose, onSuccess }
                   Document ID
                 </Typography>
                 <Typography variant="body1" sx={{ fontFamily: 'monospace', fontSize: '0.875rem' }}>
-                  {documentData.id || '-'}
+                  {record.id || '-'}
                 </Typography>
               </Box>
               <Box>
@@ -228,8 +208,8 @@ export function PostStockDocumentDialog({ open, documentId, onClose, onSuccess }
                   Document Type
                 </Typography>
                 <Stack direction="row" spacing={1} sx={{ mt: 0.5 }}>
-                  <Label color={getDocumentTypeColor(documentData.documentType)} variant="soft">
-                    {getDocumentTypeLabel(documentData.documentType)}
+                  <Label color={getDocumentTypeColor(record.documentType)} variant="soft">
+                    {getDocumentTypeLabel(record.documentType)}
                   </Label>
                 </Stack>
               </Box>
@@ -237,7 +217,7 @@ export function PostStockDocumentDialog({ open, documentId, onClose, onSuccess }
                 <Typography variant="caption" color="text.secondary">
                   Items Count
                 </Typography>
-                <Typography variant="body1">{documentData.items?.length || 0} items</Typography>
+                <Typography variant="body1">{record.items?.length || 0} items</Typography>
               </Box>
             </Stack>
           </Box>
@@ -253,7 +233,7 @@ export function PostStockDocumentDialog({ open, documentId, onClose, onSuccess }
                 <Alert severity={stockImpactPreview.type === 'adjust' ? 'warning' : 'info'} sx={{ mb: 2 }}>
                   {stockImpactPreview.message}
                 </Alert>
-                <Card>
+                <Card sx={{ mb: 3 }}>
                   <CustomTable
                     rows={stockImpactPreview.items.map((item, index) => ({
                       id: index,
@@ -266,7 +246,6 @@ export function PostStockDocumentDialog({ open, documentId, onClose, onSuccess }
                         field: 'itemName',
                         headerName: 'Item Name',
                         flex: 1,
-                        sortable: false,
                         renderCell: (params) => (
                           <Typography variant="body2">
                             {params.value}
@@ -277,7 +256,6 @@ export function PostStockDocumentDialog({ open, documentId, onClose, onSuccess }
                         field: 'quantity',
                         headerName: 'Quantity',
                         width: 120,
-                        sortable: false,
                         renderCell: (params) => (
                           <Typography variant="body2" align="right" sx={{ width: '100%', textAlign: 'right' }}>
                             {params.value}
@@ -288,7 +266,6 @@ export function PostStockDocumentDialog({ open, documentId, onClose, onSuccess }
                         field: 'impact',
                         headerName: 'Stock Impact',
                         width: 120,
-                        sortable: false,
                         renderCell: (params) => (
                           <Typography
                             variant="body2"
@@ -305,7 +282,9 @@ export function PostStockDocumentDialog({ open, documentId, onClose, onSuccess }
                         ),
                       },
                     ]}
-                    pagination={{ enabled: false }}
+                    pagination={false}
+                    toolbar={false}
+                    hideFooter
                     getRowId={(row) => row.id}
                   />
                 </Card>
@@ -318,8 +297,7 @@ export function PostStockDocumentDialog({ open, documentId, onClose, onSuccess }
             </Alert>
           )}
         </Box>
-        ) : null}
-      </QueryStateContent>
+      ) : null}
     </CustomDialog>
   );
 }

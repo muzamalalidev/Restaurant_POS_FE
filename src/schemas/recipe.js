@@ -23,8 +23,8 @@ export const createRecipeSchema = zod.object({
   description: optionalString(1000),
   instructions: optionalString(5000),
   servings: numberFromInput({ positive: true, int: true, emptyAs: 1 }).optional().default(1),
-  preparationTimeMinutes: numberFromInput({ min: 0 }),
-  cookingTimeMinutes: numberFromInput({ min: 0 }),
+  preparationTimeMinutes: numberFromInput({ min: 0, emptyAs: 0 }),
+  cookingTimeMinutes: numberFromInput({ min: 0, emptyAs: 0 }),
   ingredients: zod.array(recipeIngredientSchema).optional().default([]),
 });
 
@@ -33,7 +33,7 @@ export const updateRecipeSchema = zod.object({
   description: optionalString(1000),
   instructions: optionalString(5000),
   servings: numberFromInput({ positive: true, int: true, emptyAs: 1 }).optional().default(1),
-  preparationTimeMinutes: numberFromInput({ min: 0 }),
-  cookingTimeMinutes: numberFromInput({ min: 0 }),
+  preparationTimeMinutes: numberFromInput({ min: 0, emptyAs: 0 }),
+  cookingTimeMinutes: numberFromInput({ min: 0, emptyAs: 0 }),
   ingredients: zod.array(recipeIngredientSchema).optional().default([]),
 });

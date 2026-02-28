@@ -13,7 +13,6 @@ import { getApiErrorMessage } from 'src/utils/api-error-message';
 import { useGetTenantsDropdownQuery } from 'src/store/api/tenants-api';
 import { createCategorySchema, updateCategorySchema } from 'src/schemas';
 import {
-  useGetCategoryByIdQuery,
   useCreateCategoryMutation,
   useUpdateCategoryMutation,
   useGetCategoriesDropdownQuery,
@@ -22,56 +21,35 @@ import {
 import { toast } from 'src/components/snackbar';
 import { Form, Field } from 'src/components/hook-form';
 import { CustomDialog } from 'src/components/custom-dialog';
-import { QueryStateContent } from 'src/components/query-state-content';
 import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
 
 // ----------------------------------------------------------------------
 
 /**
  * Category Form Dialog Component
- * 
- * Single dialog component for both create and edit operations.
- * Handles form state, validation, and API calls.
- * 
- * P0-034 SECURITY NOTE: Tenant context enforcement is handled at the backend API level.
- * Frontend allows selecting any tenant from dropdown, but backend must validate:
- * - User has access to selected tenant
- * - User has permission to create/edit categories for that tenant
- * - Multi-tenant isolation is enforced in API layer
- * This is a defense-in-depth approach - backend is the source of truth for authorization.
- * 
- * P0-038 DATA INTEGRITY NOTE: Optimistic locking for concurrent edits requires backend support.
- * Current implementation does not check LastUpdatedAt timestamp before update.
- * If backend implements optimistic locking, frontend should:
- * - Store LastUpdatedAt when loading category for edit
- * - Send LastUpdatedAt in update request
- * - Handle 409 Conflict response if category was modified since load
- * - Show conflict resolution UI to user
- * 
- * @param {Object} props
- * @param {boolean} props.open - Whether the dialog is open
- * @param {string} props.mode - 'create' or 'edit'
- * @param {string|null} props.categoryId - Category ID for edit mode
- * @param {Function} props.onClose - Callback when dialog closes
- * @param {Function} props.onSuccess - Callback when form is successfully submitted
- * @param {Array} props.tenantOptions - Tenant options for dropdown (from list view; fallback: fetch in form when empty)
+ *
+ * Single dialog for create and edit. Edit uses record from list (no getById).
+ *
+ * Dropdown analysis:
+ * - tenantId: API-based (tenantOptions from list or useGetTenantsDropdownQuery fallback).
+ *   Single select; parent of parentId.
+ * - parentId: API-based, dependent on tenantId. useGetCategoriesDropdownQuery({ tenantId })
+ *   with skip: !selectedTenantIdRaw || !open. Options include "None (Root Category)" (id: null).
+ *   In edit mode current category is excluded from options. When tenant is cleared, parentId
+ *   resets to null and Parent Category dropdown is disabled.
+ *
+ * Dependent dropdown reset: When tenantId is cleared, parentId is set to null and Parent
+ * Category is disabled (options show only "None (Root Category)" when no tenant).
+ *
+ * P0-034: Tenant context enforced at backend. P0-038: Optimistic locking not yet implemented.
  */
-export function CategoryFormDialog({ open, mode, categoryId, onClose, onSuccess, tenantOptions = [] }) {
+export function CategoryFormDialog({ open, mode, record, onClose, onSuccess, tenantOptions = [] }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
-  // State for unsaved changes confirmation
   const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] = useState(false);
-
-  // Ref to prevent double-submit (P0-003)
   const isSubmittingRef = useRef(false);
 
-  // Fetch category data for edit mode (GetCategoryById is fully implemented)
-  const { data: categoryData, isLoading: isLoadingCategory, error: queryError, isError, refetch: refetchCategory } = useGetCategoryByIdQuery(categoryId, {
-    skip: !categoryId || mode !== 'edit' || !open,
-  });
-
-  // Tenant options: use props when provided; otherwise fetch via dropdown (e.g. when dialog opened without list)
   const { data: tenantsDropdownFallback } = useGetTenantsDropdownQuery(undefined, { skip: tenantOptions.length > 0 });
   const effectiveTenantOptions = useMemo(() => {
     if (tenantOptions.length > 0) return tenantOptions;
@@ -79,7 +57,6 @@ export function CategoryFormDialog({ open, mode, categoryId, onClose, onSuccess,
     return tenantsDropdownFallback.map((item) => ({ id: item.key, label: item.value || item.key }));
   }, [tenantOptions, tenantsDropdownFallback]);
 
-  // Mutations
   const [createCategory, { isLoading: isCreating }] = useCreateCategoryMutation();
   const [updateCategory, { isLoading: isUpdating }] = useUpdateCategoryMutation();
 
@@ -130,13 +107,29 @@ export function CategoryFormDialog({ open, mode, categoryId, onClose, onSuccess,
     const options = [{ id: null, label: 'None (Root Category)' }];
     if (!categoriesDropdown || !Array.isArray(categoriesDropdown)) return options;
     categoriesDropdown.forEach((item) => {
-      if (mode === 'edit' && categoryId && item.key === categoryId) return;
+      if (mode === 'edit' && record?.id != null && item.key === record.id) return;
       options.push({ id: item.key, label: item.value || item.key });
     });
     return options;
-  }, [categoriesDropdown, mode, categoryId]);
+  }, [categoriesDropdown, mode, record?.id]);
 
-  // Load category data for edit mode or reset for create mode
+  // Resolve parent option for edit mode (compare by string to handle API key type)
+  const resolvedParentOption = useMemo(() => {
+    if (!record?.parentId || parentCategoryOptions.length <= 1) return null;
+    return parentCategoryOptions.find(
+      (opt) => opt.id != null && String(opt.id) === String(record.parentId)
+    ) ?? null;
+  }, [record?.parentId, parentCategoryOptions]);
+
+  // Dependent dropdown reset: when tenant is cleared, reset parentId and disable parent dropdown
+  useEffect(() => {
+    if (open && !selectedTenantIdRaw) {
+      setValue('parentId', null, { shouldValidate: false, shouldDirty: false });
+    }
+  }, [open, selectedTenantIdRaw, setValue]);
+
+  // Load category data for edit mode from record or reset for create mode.
+  // parentId is set from resolvedParentOption when parent options have loaded (edit mode), or synthetic option when not yet loaded.
   useEffect(() => {
     if (!open) {
       reset({
@@ -149,18 +142,22 @@ export function CategoryFormDialog({ open, mode, categoryId, onClose, onSuccess,
       return;
     }
 
-    if (mode === 'edit' && categoryData && effectiveTenantOptions.length > 0) {
-      const matchingTenant = categoryData.tenantId
-        ? effectiveTenantOptions.find((t) => t.id === categoryData.tenantId)
+    if (mode === 'edit' && record) {
+      const matchingTenant = effectiveTenantOptions.find((t) => t.id === record.tenantId);
+      const tenantValue = matchingTenant ?? (record.tenantId ? { id: record.tenantId, label: record.tenantName || record.tenantId } : null);
+      const parentValue = record.parentId != null
+        ? (resolvedParentOption ?? { id: record.parentId, label: record.parentName || record.parentId })
         : null;
+
       reset({
-        tenantId: matchingTenant || null,
-        parentId: null,
-        name: categoryData.name || '',
-        description: categoryData.description || null,
-        isActive: categoryData.isActive ?? true,
+        tenantId: tenantValue,
+        parentId: parentValue,
+        name: record.name || '',
+        description: record.description || null,
+        isActive: record.isActive ?? true,
       });
-    } else if (mode === 'create') {
+    } else {
+      // create, or edit with no record (e.g. row no longer in list)
       reset({
         tenantId: null,
         parentId: null,
@@ -169,16 +166,7 @@ export function CategoryFormDialog({ open, mode, categoryId, onClose, onSuccess,
         isActive: true,
       });
     }
-  }, [open, mode, categoryData, categoryData?.id, categoryData?.tenantId, categoryData?.name, categoryData?.description, categoryData?.isActive, effectiveTenantOptions, reset]);
-
-  // Edit mode: set parentId when parent options have loaded (dependent on tenant selection)
-  useEffect(() => {
-    if (!open || mode !== 'edit' || !categoryData?.parentId || parentCategoryOptions.length <= 1) return;
-    const matchingParent = parentCategoryOptions.find((opt) => opt.id === categoryData.parentId);
-    if (matchingParent) {
-      setValue('parentId', matchingParent, { shouldValidate: false, shouldDirty: false });
-    }
-  }, [open, mode, categoryData?.parentId, parentCategoryOptions, setValue]);
+  }, [open, mode, record, record?.id, record?.tenantId, record?.parentId, record?.name, record?.description, record?.isActive, effectiveTenantOptions, resolvedParentOption, reset]);
 
   // Handle form submit
   const onSubmit = handleSubmit(async (data) => {
@@ -190,10 +178,10 @@ export function CategoryFormDialog({ open, mode, categoryId, onClose, onSuccess,
     isSubmittingRef.current = true;
 
     try {
-      // Convert empty strings to null for optional fields
+      const tenantIdValue = data.tenantId?.id ?? data.tenantId;
       const descriptionValue = data.description === '' ? null : data.description;
 
-      // Convert parentId: if it's the "None (Root Category)" option, send null
+      // parentId: "None (Root Category)" option has id null -> send null to API
       const parentIdValue = data.parentId === null || (typeof data.parentId === 'object' && data.parentId !== null && data.parentId.id === null)
         ? null
         : (typeof data.parentId === 'object' && data.parentId !== null
@@ -202,9 +190,7 @@ export function CategoryFormDialog({ open, mode, categoryId, onClose, onSuccess,
 
       if (mode === 'create') {
         const createData = {
-          tenantId: typeof data.tenantId === 'object' && data.tenantId !== null
-            ? data.tenantId.id
-            : data.tenantId,
+          tenantId: tenantIdValue,
           parentId: parentIdValue,
           name: data.name,
           description: descriptionValue,
@@ -212,31 +198,41 @@ export function CategoryFormDialog({ open, mode, categoryId, onClose, onSuccess,
         };
         const result = await createCategory(createData).unwrap();
         if (onSuccess) {
-          onSuccess(result, 'created');
+          onSuccess(result?.id ?? result, 'created', result);
         }
       } else {
         const updateData = {
-          tenantId: typeof data.tenantId === 'object' && data.tenantId !== null
-            ? data.tenantId.id
-            : data.tenantId,
+          tenantId: tenantIdValue,
           parentId: parentIdValue,
           name: data.name,
           description: descriptionValue,
           isActive: data.isActive,
         };
-        await updateCategory({ id: categoryId, ...updateData }).unwrap();
+        await updateCategory({ id: record.id, ...updateData }).unwrap();
         if (onSuccess) {
-          onSuccess(categoryId, 'updated');
+          onSuccess(record.id, 'updated');
         }
       }
       reset();
       onClose();
     } catch (error) {
-      console.error('Failed to save category:', error);
-      const { message } = getApiErrorMessage(error, {
+      const { message, isRetryable } = getApiErrorMessage(error, {
         defaultMessage: `Failed to ${mode === 'create' ? 'create' : 'update'} category`,
       });
-      toast.error(message);
+      if (isRetryable) {
+        toast.error(message, {
+          action: {
+            label: 'Retry',
+            onClick: () => {
+              setTimeout(() => {
+                onSubmit({ preventDefault: () => {}, target: { checkValidity: () => true } });
+              }, 100);
+            },
+          },
+        });
+      } else {
+        toast.error(message);
+      }
     } finally {
       isSubmittingRef.current = false;
     }
@@ -290,14 +286,10 @@ export function CategoryFormDialog({ open, mode, categoryId, onClose, onSuccess,
         startIcon="solar:check-circle-bold"
         sx={{ minHeight: 44 }}
       >
-        Save
+        {mode === 'create' ? 'Save' : 'Update'}
       </Field.Button>
     </Box>
   );
-
-  // Loading state for edit mode
-  const isLoading = mode === 'edit' && isLoadingCategory;
-  const hasError = mode === 'edit' && isError && open;
 
   return (
     <>
@@ -308,23 +300,11 @@ export function CategoryFormDialog({ open, mode, categoryId, onClose, onSuccess,
         maxWidth="sm"
         fullWidth
         fullScreen={isMobile}
-        loading={isSubmitting || isLoading}
+        loading={isSubmitting}
         disableClose={isSubmitting}
         actions={renderActions()}
       >
-        <QueryStateContent
-          isLoading={isLoading}
-          isError={hasError}
-          error={queryError}
-          onRetry={refetchCategory}
-          loadingMessage="Loading category data..."
-          errorTitle="Failed to load category data"
-          errorMessageOptions={{
-            defaultMessage: 'Failed to load category data',
-            notFoundMessage: 'Category not found or an error occurred.',
-          }}
-        >
-          <Form methods={methods} onSubmit={onSubmit}>
+        <Form methods={methods} onSubmit={onSubmit}>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1 }}>
               {/* Basic Information Section */}
               <Box>
@@ -360,9 +340,10 @@ export function CategoryFormDialog({ open, mode, categoryId, onClose, onSuccess,
                       if (option.id === null && value.id === null) return true;
                       return option.id === value.id;
                     }}
+                    disabled={!selectedTenantIdRaw}
                     slotProps={{
                       textField: {
-                        helperText: 'Leave empty to create a root category',
+                        helperText: selectedTenantIdRaw ? 'Leave empty to create a root category' : 'Select a tenant first',
                       },
                     }}
                   />
@@ -386,7 +367,6 @@ export function CategoryFormDialog({ open, mode, categoryId, onClose, onSuccess,
               </Box>
             </Box>
           </Form>
-        </QueryStateContent>
       </CustomDialog>
 
       {/* Unsaved Changes Confirmation Dialog */}

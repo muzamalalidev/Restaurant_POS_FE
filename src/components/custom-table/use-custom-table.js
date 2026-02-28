@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 
 import { DEFAULT_SORTING, DEFAULT_FILTERING, DEFAULT_SELECTION, DEFAULT_PAGINATION } from './table-defaults';
 import {
@@ -16,6 +16,7 @@ import {
 
 /**
  * Custom hook for managing CustomTable internal state
+ * For server-side pagination, pass pagination.page (0-based) to keep table in sync when list resets page (e.g. on filter change).
  * @param {object} props - Component props
  * @returns {object} - State and handlers
  */
@@ -50,14 +51,26 @@ export function useCustomTable({
     [selectionProp]
   );
 
-  // Pagination state
+  const isServerPaginationWithControlledPage =
+    paginationConfig.mode === 'server' && paginationConfig.page !== undefined && paginationConfig.page !== null;
+
+  const initialPage = isServerPaginationWithControlledPage
+    ? Math.max(0, Number(paginationConfig.page))
+    : 0;
+
   const [paginationModel, setPaginationModel] = useState(() => {
     const initialPageSize = paginationConfig.pageSize || DEFAULT_PAGINATION.pageSize;
     return {
-      page: 0,
+      page: initialPage,
       pageSize: initialPageSize,
     };
   });
+
+  useEffect(() => {
+    if (!isServerPaginationWithControlledPage) return;
+    const controlledPage = Math.max(0, Number(paginationConfig.page));
+    setPaginationModel((prev) => (prev.page === controlledPage ? prev : { ...prev, page: controlledPage }));
+  }, [isServerPaginationWithControlledPage, paginationConfig.page]);
 
   // Sorting state
   const [sortModel, setSortModel] = useState(sortingConfig.sortModel || []);

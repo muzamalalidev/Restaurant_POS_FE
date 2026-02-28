@@ -14,6 +14,7 @@ import InputAdornment from '@mui/material/InputAdornment';
 
 import { paths } from 'src/routes/paths';
 
+import { fCurrency } from 'src/utils/format-number';
 import { getApiErrorMessage } from 'src/utils/api-error-message';
 
 import { useGetStaffDropdownQuery } from 'src/store/api/staff-api';
@@ -35,18 +36,8 @@ import { getOrderStatusLabel, getOrderStatusColor, ORDER_STATUS_OPTIONS } from '
 
 // ----------------------------------------------------------------------
 
-/**
- * Format amount as currency
- */
-const formatCurrency = (amount) => {
-  if (amount === null || amount === undefined) return '-';
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(amount);
-};
+const formatCurrency = (amount) =>
+  amount == null ? '-' : fCurrency(amount, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 // ----------------------------------------------------------------------
 
@@ -65,11 +56,11 @@ export function OrderListView() {
   const [formDialogOpen, setFormDialogOpen] = useState(false);
   
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
-  const [updateDialogOrderId, setUpdateDialogOrderId] = useState(null);
-  
+  const [updateDialogRecord, setUpdateDialogRecord] = useState(null);
+
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
-  const [detailsDialogOrderId, setDetailsDialogOrderId] = useState(null);
-  
+  const [detailsDialogRecord, setDetailsDialogRecord] = useState(null);
+
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteOrderId, setDeleteOrderId] = useState(null);
   const [deleteOrderIdDisplay, setDeleteOrderIdDisplay] = useState(null);
@@ -327,7 +318,7 @@ export function OrderListView() {
         staffId: staffIdValue || undefined,
         customerId: customerIdValue || undefined,
         status: statusValue || undefined,
-        includeItems: false, // Don't need items in list view
+        includeItems: true, // Full row for View/Update without getById
       };
     },
     [pageNumber, pageSize, debouncedSearchTerm, branchId, staffId, customerId, status]
@@ -360,24 +351,28 @@ export function OrderListView() {
   }, [ordersResponse]);
 
   // Mutations
-  const [deleteOrder] = useDeleteOrderMutation();
+  const [deleteOrder, { isLoading: isDeleting }] = useDeleteOrderMutation();
 
   // Handle create
   const handleCreate = useCallback(() => {
     setFormDialogOpen(true);
   }, []);
 
-  // Handle update
-  const handleUpdate = useCallback((orderId) => {
-    setUpdateDialogOrderId(orderId);
+  // Handle update (pass full row; resolve record from orders)
+  const handleUpdate = useCallback((row) => {
+    const record = orders.find((o) => o.id === row.id) ?? null;
+    if (!record) return;
+    setUpdateDialogRecord(record);
     setUpdateDialogOpen(true);
-  }, []);
+  }, [orders]);
 
   // Handle view
-  const handleView = useCallback((orderId) => {
-    setDetailsDialogOrderId(orderId);
+  const handleView = useCallback((row) => {
+    const record = orders.find((o) => o.id === row.id) ?? null;
+    if (!record) return;
+    setDetailsDialogRecord(record);
     setDetailsDialogOpen(true);
-  }, []);
+  }, [orders]);
 
   // Handle delete confirmation
   const handleDeleteClick = useCallback((row) => {
@@ -389,27 +384,37 @@ export function OrderListView() {
   // Handle delete confirm
   const handleDeleteConfirm = useCallback(async () => {
     if (!deleteOrderId) return;
-    
+
     try {
       await deleteOrder(deleteOrderId).unwrap();
       toast.success('Order deleted successfully');
       setDeleteConfirmOpen(false);
       setDeleteOrderId(null);
       setDeleteOrderIdDisplay(null);
+      if (orders.length === 1 && pageNumber > 1) {
+        setPageNumber((p) => p - 1);
+      }
     } catch (err) {
-      const { message } = getApiErrorMessage(err, {
+      const { message, isRetryable } = getApiErrorMessage(err, {
         defaultMessage: 'Failed to delete order',
+        notFoundMessage: 'Order not found or already deleted',
       });
-      toast.error(message);
-      console.error('Failed to delete order:', err);
+      if (isRetryable) {
+        toast.error(message, {
+          action: { label: 'Retry', onClick: () => handleDeleteConfirm() },
+        });
+      } else {
+        toast.error(message);
+      }
     }
-  }, [deleteOrderId, deleteOrder]);
+  }, [deleteOrderId, deleteOrder, orders.length, pageNumber]);
 
   // Handle form dialog success
   const handleFormSuccess = useCallback((id, action) => {
     setFormDialogOpen(false);
+    refetch();
     toast.success(`Order ${action} successfully`);
-  }, []);
+  }, [refetch]);
 
   // Handle form dialog close
   const handleFormClose = useCallback(() => {
@@ -419,20 +424,21 @@ export function OrderListView() {
   // Handle update dialog success
   const handleUpdateSuccess = useCallback((id, action) => {
     setUpdateDialogOpen(false);
-    setUpdateDialogOrderId(null);
+    setUpdateDialogRecord(null);
+    refetch();
     toast.success(`Order ${action} successfully`);
-  }, []);
+  }, [refetch]);
 
   // Handle update dialog close
   const handleUpdateClose = useCallback(() => {
     setUpdateDialogOpen(false);
-    setUpdateDialogOrderId(null);
+    setUpdateDialogRecord(null);
   }, []);
 
   // Handle details dialog close
   const handleDetailsClose = useCallback(() => {
     setDetailsDialogOpen(false);
-    setDetailsDialogOrderId(null);
+    setDetailsDialogRecord(null);
   }, []);
 
   // Handle pagination change
@@ -449,13 +455,17 @@ export function OrderListView() {
   const handleSearchClear = useCallback(() => {
     searchForm.setValue('searchTerm', '');
     setSearchTerm('');
+    setPageNumber(1); // Reset to first page when clearing search
   }, [searchForm]);
 
-  // Prepare table rows
+  // Prepare table rows (use API response keys: branchName, orderTypeName, paymentMode, staffName, tableName, etc.)
   const rows = useMemo(() => orders.map((order) => ({
       id: order.id,
       branchId: order.branchId,
+      branchName: order.branchName ?? '-',
       orderTypeId: order.orderTypeId,
+      orderTypeName: order.orderTypeName ?? '-',
+      paymentModeName: order.paymentMode?.name ?? order.orderTypeName ?? '-',
       status: order.status,
       statusLabel: getOrderStatusLabel(order.status),
       totalAmount: order.totalAmount,
@@ -464,8 +474,13 @@ export function OrderListView() {
       taxAmount: order.taxAmount,
       discountAmount: order.discountAmount,
       staffId: order.staffId,
+      staffName: order.staffName ?? '-',
       tableId: order.tableId,
+      tableName: order.tableName ?? '-',
       customerId: order.customerId,
+      customerName: order.customerName ?? '-',
+      kitchenId: order.kitchenId,
+      kitchenName: order.kitchenName ?? '-',
       notes: order.notes || '-',
     })), [orders]);
 
@@ -476,8 +491,6 @@ export function OrderListView() {
         field: 'id',
         headerName: 'Order ID',
         flex: 1,
-        sortable: false,
-        filterable: true,
         renderCell: (params) => (
           <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.875rem' }}>
             {params.value?.substring(0, 8) + '...' || '-'}
@@ -485,14 +498,12 @@ export function OrderListView() {
         ),
       },
       {
-        field: 'branchId',
-        headerName: 'Branch ID',
+        field: 'branchName',
+        headerName: 'Branch',
         flex: 1,
-        sortable: false,
-        filterable: true,
         renderCell: (params) => (
-          <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'monospace', fontSize: '0.875rem' }}>
-            {params.value?.substring(0, 8) + '...' || '-'}
+          <Typography variant="body2" color="text.secondary">
+            {params.value === '-' ? '-' : params.value}
           </Typography>
         ),
       },
@@ -500,8 +511,6 @@ export function OrderListView() {
         field: 'statusLabel',
         headerName: 'Status',
         flex: 1,
-        sortable: false,
-        filterable: true,
         renderCell: (params) => (
           <Label color={getOrderStatusColor(params.row.status)} variant="soft" sx={{ fontSize: '0.75rem' }}>
             {params.value}
@@ -512,8 +521,6 @@ export function OrderListView() {
         field: 'totalAmountFormatted',
         headerName: 'Total Amount',
         flex: 1,
-        sortable: false,
-        filterable: true,
         renderCell: (params) => (
           <Typography variant="body2" sx={{ fontWeight: 600 }}>
             {params.value}
@@ -524,8 +531,6 @@ export function OrderListView() {
         field: 'notes',
         headerName: 'Notes',
         flex: 1,
-        sortable: false,
-        filterable: false,
         renderCell: (params) => (
           <Typography variant="body2" color="text.secondary" sx={{ 
             overflow: 'hidden',
@@ -548,14 +553,14 @@ export function OrderListView() {
         id: 'view',
         label: 'View',
         icon: 'solar:eye-bold',
-        onClick: (row) => handleView(row.id),
+        onClick: (row) => handleView(row),
         order: 1,
       },
       {
         id: 'update',
         label: 'Update',
         icon: 'solar:pen-bold',
-        onClick: (row) => handleUpdate(row.id),
+        onClick: (row) => handleUpdate(row),
         order: 2,
       },
       {
@@ -721,7 +726,6 @@ export function OrderListView() {
             POS
           </Button>
         </Stack>
-      </Card>
 
       {/* Data Grid - P0-005: show error in table area so filters/Create remain; P0-001: sorting disabled with server pagination; P1-005: no initialState */}
       <CustomTable
@@ -735,6 +739,7 @@ export function OrderListView() {
         pagination={{
           ...DEFAULT_PAGINATION,
           mode: 'server',
+          page: pageNumber - 1,
           pageSize,
           rowCount: paginationMeta.totalCount,
           onPageChange: handlePageChange,
@@ -757,6 +762,8 @@ export function OrderListView() {
           />
         }
       />
+      </Card>
+
 
       {/* Create Order Dialog */}
       <OrderFormDialog
@@ -770,7 +777,7 @@ export function OrderListView() {
       {/* Update Order Dialog */}
       <OrderUpdateDialog
         open={updateDialogOpen}
-        orderId={updateDialogOrderId}
+        record={updateDialogRecord}
         onClose={handleUpdateClose}
         onSuccess={handleUpdateSuccess}
       />
@@ -778,7 +785,7 @@ export function OrderListView() {
       {/* Order Details Dialog */}
       <OrderDetailsDialog
         open={detailsDialogOpen}
-        orderId={detailsDialogOrderId}
+        record={detailsDialogRecord}
         onClose={handleDetailsClose}
       />
 
@@ -788,7 +795,13 @@ export function OrderListView() {
         title="Delete Order?"
         content={`Are you sure you want to delete order ${deleteOrderIdDisplay || ''}? This action cannot be undone.`}
         action={
-          <Field.Button variant="contained" color="error" onClick={handleDeleteConfirm}>
+          <Field.Button
+            variant="contained"
+            color="error"
+            onClick={handleDeleteConfirm}
+            disabled={isDeleting}
+            loading={isDeleting}
+          >
             Delete
           </Field.Button>
         }
@@ -797,6 +810,8 @@ export function OrderListView() {
           setDeleteOrderId(null);
           setDeleteOrderIdDisplay(null);
         }}
+        loading={isDeleting}
+        disableClose={isDeleting}
       />
     </Box>
   );

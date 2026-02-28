@@ -12,12 +12,11 @@ import { useTheme, useMediaQuery } from '@mui/material';
 import { getApiErrorMessage } from 'src/utils/api-error-message';
 
 import { createBranchSchema, updateBranchSchema } from 'src/schemas';
-import { useGetBranchByIdQuery, useCreateBranchMutation, useUpdateBranchMutation } from 'src/store/api/branches-api';
+import { useCreateBranchMutation, useUpdateBranchMutation } from 'src/store/api/branches-api';
 
 import { toast } from 'src/components/snackbar';
 import { Form, Field } from 'src/components/hook-form';
 import { CustomDialog } from 'src/components/custom-dialog';
-import { QueryStateContent } from 'src/components/query-state-content';
 import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
 
 import { PhoneNumbersField } from './components/phone-numbers-field';
@@ -37,45 +36,39 @@ const normalizePhoneNumber = (phoneNumber) => {
 
 /**
  * Branch Form Dialog Component
- * 
- * Single dialog component for both create and edit operations.
- * Handles form state, validation, and API calls.
- * 
- * P0-024 SECURITY NOTE: Tenant context enforcement is handled at the backend API level.
- * Frontend allows selecting any tenant from dropdown, but backend must validate:
- * - User has access to selected tenant
- * - User has permission to create/edit branches for that tenant
- * - Multi-tenant isolation is enforced in API layer
- * This is a defense-in-depth approach - backend is the source of truth for authorization.
- * 
- * @param {Object} props
- * @param {boolean} props.open - Whether the dialog is open
- * @param {string} props.mode - 'create' or 'edit'
- * @param {string|null} props.branchId - Branch ID for edit mode
- * @param {Function} props.onClose - Callback when dialog closes
- * @param {Function} props.onSuccess - Callback when form is successfully submitted
- * @param {Array} props.tenantOptions - Tenant options for dropdown (from list view)
+ *
+ * Single dialog for create and edit. Edit uses record from list (no getById).
+ *
+ * Dropdown analysis:
+ * - tenantId: API-based (tenantOptions from list view via useGetTenantsDropdownQuery).
+ *   Single select; not dependent on another form field. When options load after dialog
+ *   open (edit), a second effect maps record.tenantId to the option object.
+ * - phoneNumbers: array field; each item has PhoneLabelSelect (static options: Main,
+ *   Delivery, Reservations). No dependent dropdowns in form (no parent -> child chain).
+ *
+ * Dependent dropdown reset: N/A (Tenant is the only top-level dropdown; no child to
+ * reset when Tenant is cleared). If a child dropdown is added later, clear its value
+ * and options when parent is cleared.
+ *
+ * P0-024: Tenant context enforcement is at the backend; frontend sends tenantId,
+ * backend validates access and multi-tenant isolation.
  */
-export function BranchFormDialog({ open, mode, branchId, onClose, onSuccess, tenantOptions = [] }) {
+export function BranchFormDialog({ open, mode, record, onClose, onSuccess, tenantOptions = [] }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   // State for unsaved changes confirmation
   const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] = useState(false);
-  
+
   // Track original phoneNumbers state to distinguish null (no change) from [] (soft delete)
   const [originalPhoneNumbers, setOriginalPhoneNumbers] = useState(null);
-
-  // Fetch branch data for edit mode
-  const { data: branchData, isLoading: isLoadingBranch, error: queryError, isError, refetch: refetchBranch } = useGetBranchByIdQuery(branchId, {
-    skip: !branchId || mode !== 'edit',
-  });
 
   // Mutations
   const [createBranch, { isLoading: isCreating }] = useCreateBranchMutation();
   const [updateBranch, { isLoading: isUpdating }] = useUpdateBranchMutation();
 
   const isSubmitting = isCreating || isUpdating;
+  const isSubmittingRef = useRef(false);
 
   // Determine schema based on mode
   const schema = mode === 'create' ? createBranchSchema : updateBranchSchema;
@@ -101,24 +94,16 @@ export function BranchFormDialog({ open, mode, branchId, onClose, onSuccess, ten
     handleSubmit,
     getValues,
     setValue,
-    watch,
     formState: { isDirty },
   } = methods;
-  
-  // P2-007, P2-008 FIX: Watch field values for character counters
-  const nameValue = watch('name');
-  const addressValue = watch('address');
-  const nameLength = nameValue?.length || 0;
-  const addressLength = addressValue?.length || 0;
 
   // P1-028 FIX: Track if form has been initialized to prevent multiple resets
   const formInitializedRef = useRef(false);
   const previousBranchIdRef = useRef(null);
   
-  // Load branch data for edit mode or reset for create mode
+  // Load branch data for edit mode from record or reset for create mode
   useEffect(() => {
     if (!open) {
-      // Reset form when dialog closes
       setOriginalPhoneNumbers(null);
       formInitializedRef.current = false;
       previousBranchIdRef.current = null;
@@ -132,18 +117,16 @@ export function BranchFormDialog({ open, mode, branchId, onClose, onSuccess, ten
       return;
     }
 
-    // P1-028 FIX: Only reset when branch ID changes or form hasn't been initialized
-    const currentBranchId = mode === 'edit' ? branchData?.id : 'create';
+    const currentBranchId = mode === 'edit' ? record?.id : 'create';
     const shouldInitialize = !formInitializedRef.current || previousBranchIdRef.current !== currentBranchId;
 
     if (shouldInitialize) {
-      if (mode === 'edit' && branchData) {
-        // Find matching tenant object from tenantOptions (only if options are available)
-        const matchingTenant = branchData.tenantId && tenantOptions.length > 0
-          ? tenantOptions.find((t) => t.id === branchData.tenantId)
+      if (mode === 'edit' && record) {
+        const matchingTenant = record.tenantId && tenantOptions.length > 0
+          ? tenantOptions.find((t) => t.id === record.tenantId)
           : null;
-        
-        const phoneNumbersData = branchData.phoneNumbers?.map((phone) => ({
+
+        const phoneNumbersData = record.phoneNumbers?.map((phone) => ({
           id: phone.id,
           branchId: phone.branchId,
           phoneNumber: phone.phoneNumber,
@@ -151,18 +134,17 @@ export function BranchFormDialog({ open, mode, branchId, onClose, onSuccess, ten
           phoneLabel: phone.phoneLabel || null,
           isActive: phone.isActive,
         })) || null;
-        
-        // Track original phoneNumbers state for update logic
+
         setOriginalPhoneNumbers(phoneNumbersData);
-        
+
         reset({
           tenantId: matchingTenant || null,
-          name: branchData.name || '',
-          address: branchData.address || null,
-          isActive: branchData.isActive ?? true,
+          name: record.name || '',
+          address: record.address || null,
+          isActive: record.isActive ?? true,
           phoneNumbers: phoneNumbersData,
         });
-        
+
         formInitializedRef.current = true;
         previousBranchIdRef.current = currentBranchId;
       } else if (mode === 'create') {
@@ -174,20 +156,31 @@ export function BranchFormDialog({ open, mode, branchId, onClose, onSuccess, ten
           isActive: true,
           phoneNumbers: null,
         });
-        
+
+        formInitializedRef.current = true;
+        previousBranchIdRef.current = currentBranchId;
+      } else {
+        // edit with no record (e.g. row no longer in list)
+        setOriginalPhoneNumbers(null);
+        reset({
+          tenantId: null,
+          name: '',
+          address: null,
+          isActive: true,
+          phoneNumbers: null,
+        });
         formInitializedRef.current = true;
         previousBranchIdRef.current = currentBranchId;
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, mode, branchData?.id, reset]);
-  
-  // Separate effect to update tenantId when tenantOptions become available in edit mode
+  }, [open, mode, record?.id, reset]);
+
+  // Update tenantId when tenantOptions become available in edit mode
   useEffect(() => {
-    if (open && mode === 'edit' && branchData?.tenantId && tenantOptions.length > 0) {
-      const matchingTenant = tenantOptions.find((t) => t.id === branchData.tenantId);
+    if (open && mode === 'edit' && record?.tenantId && tenantOptions.length > 0) {
+      const matchingTenant = tenantOptions.find((t) => t.id === record.tenantId);
       if (matchingTenant) {
-        // Only update if the current value doesn't match
         const currentValue = getValues('tenantId');
         const currentId = typeof currentValue === 'object' && currentValue !== null ? currentValue.id : currentValue;
         if (currentId !== matchingTenant.id) {
@@ -195,17 +188,13 @@ export function BranchFormDialog({ open, mode, branchId, onClose, onSuccess, ten
         }
       }
     }
-    // Only run when tenantOptions data actually changes (use length as proxy for data availability)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, mode, branchData?.tenantId, tenantOptions.length]);
+  }, [open, mode, record?.tenantId, tenantOptions.length]);
 
-  // Handle form submit
+  // Handle form submit (ref guard prevents double-submit)
   const onSubmit = handleSubmit(async (data) => {
-    // P1-004 FIX: Prevent double submit - early return if already submitting
-    if (isSubmitting) {
-      return;
-    }
-    
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
     try {
       // Extract tenantId: if it's an object, get the id; if it's a string, use it directly
       const tenantIdValue = typeof data.tenantId === 'object' && data.tenantId !== null
@@ -251,23 +240,20 @@ export function BranchFormDialog({ open, mode, branchId, onClose, onSuccess, ten
         const isPhoneNumbersEmpty = !data.phoneNumbers || data.phoneNumbers.length === 0 || validPhones.length === 0;
         
         if (wasPhoneNumbersNull && isPhoneNumbersEmpty) {
-          // Original was null and still null/empty - don't modify existing phones
           phoneNumbersValue = null;
         } else if (validPhones.length > 0) {
-          // User has valid phones - send full replacement
           phoneNumbersValue = validPhones.map((phone) => ({
-            id: phone.id || '', // Empty string for new phones, UUID for existing
-            branchId, // Must match path parameter (all phones belong to this branch)
-            phoneNumber: normalizePhoneNumber(phone.phoneNumber), // P0-003 FIX: Normalize before sending
+            id: phone.id || '',
+            branchId: record.id,
+            phoneNumber: normalizePhoneNumber(phone.phoneNumber),
             isPrimary: phone.isPrimary || false,
             phoneLabel: phone.phoneLabel || null,
             isActive: phone.isActive !== undefined ? phone.isActive : true,
           }));
         } else {
-          // Original had phones but now empty - soft delete all phones
           phoneNumbersValue = [];
         }
-        
+
         const updateData = {
           tenantId: tenantIdValue,
           name: data.name,
@@ -275,21 +261,22 @@ export function BranchFormDialog({ open, mode, branchId, onClose, onSuccess, ten
           isActive: data.isActive,
           phoneNumbers: phoneNumbersValue,
         };
-        await updateBranch({ id: branchId, ...updateData }).unwrap();
+        await updateBranch({ id: record.id, ...updateData }).unwrap();
         if (onSuccess) {
-          onSuccess(branchId, 'updated');
+          onSuccess(record.id, 'updated');
         }
       }
       reset();
       onClose();
     } catch (error) {
-      console.error('Failed to save branch:', error);
       const { message } = getApiErrorMessage(error, {
         defaultMessage: `Failed to ${mode === 'create' ? 'create' : 'update'} branch`,
         notFoundMessage: 'Branch or tenant not found',
         validationMessage: 'Validation failed. Please check your input.',
       });
       toast.error(message);
+    } finally {
+      isSubmittingRef.current = false;
     }
   });
 
@@ -341,14 +328,10 @@ export function BranchFormDialog({ open, mode, branchId, onClose, onSuccess, ten
         startIcon="solar:check-circle-bold"
         sx={{ minHeight: 44 }}
       >
-        Save
+        {mode === 'create' ? 'Save' : 'Update'}
       </Field.Button>
     </Box>
   );
-
-  // Loading state for edit mode
-  const isLoading = mode === 'edit' && isLoadingBranch;
-  const hasError = mode === 'edit' && isError;
 
   return (
     <>
@@ -359,10 +342,9 @@ export function BranchFormDialog({ open, mode, branchId, onClose, onSuccess, ten
         maxWidth="md"
         fullWidth
         fullScreen={isMobile}
-        loading={isSubmitting || isLoading}
+        loading={isSubmitting}
         disableClose={isSubmitting}
         actions={renderActions()}
-        // P1-014 FIX: Constrain dialog height to 80% viewport on tablet/desktop via slotProps
         slotProps={{
           paper: {
             sx: {
@@ -373,36 +355,23 @@ export function BranchFormDialog({ open, mode, branchId, onClose, onSuccess, ten
           },
         }}
       >
-        <QueryStateContent
-          isLoading={isLoading}
-          isError={hasError}
-          error={queryError}
-          onRetry={refetchBranch}
-          loadingMessage="Loading branch data..."
-          errorTitle="Failed to load branch data"
-          errorMessageOptions={{
-            defaultMessage: 'Failed to load branch data',
-            notFoundMessage: 'Branch not found',
-          }}
-        >
-          <Form methods={methods} onSubmit={onSubmit}>
-            <Box 
-              sx={{ 
-                display: 'flex', 
-                flexDirection: 'column', 
-                gap: 3, 
-                pt: 1,
-                // P1-014 FIX: Make content scrollable if it exceeds dialog height
-                overflowY: 'auto',
-                flex: 1,
-              }}
-            >
-              {/* Branch Information Section */}
-              <Box>
-                <Typography variant="subtitle2" sx={{ mb: 2 }}>
-                  Branch Information
-                </Typography>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <Form methods={methods} onSubmit={onSubmit}>
+          <Box
+            sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 3,
+              pt: 1,
+              overflowY: 'auto',
+              flex: 1,
+            }}
+          >
+            {/* Branch Information Section */}
+            <Box>
+              <Typography variant="subtitle2" sx={{ mb: 2 }}>
+                Branch Information
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <Box sx={{ display: 'flex', gap: 2 }}>
                   <Field.Autocomplete
                     name="tenantId"
@@ -430,64 +399,39 @@ export function BranchFormDialog({ open, mode, branchId, onClose, onSuccess, ten
                     placeholder="Enter branch name"
                     required
                     slotProps={{
-                      // P2-008 FIX: Add character counter for name field (max 200)
                       input: {
                         maxLength: 200,
                       },
-                      helperText: {
-                        sx: {
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                        },
-                      },
                     }}
-                    helperText={
-                      nameLength > 0
-                        ? `${nameLength} / 200 characters`
-                        : undefined
-                    }
                     sx={{ flex: 1 }}
                   />
-                  </Box>
-                  <Field.Text
-                    name="address"
-                    label="Address"
-                    placeholder="Enter address (optional)"
-                    multiline
-                    rows={3}
-                    slotProps={{
-                      // P2-007 FIX: Add character counter for address field (max 1000)
-                      input: {
-                        maxLength: 1000,
-                      },
-                      helperText: {
-                        sx: {
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                        },
-                      },
-                    }}
-                    helperText={
-                      addressLength > 0
-                        ? `${addressLength} / 1000 characters${addressLength >= 900 ? ' (approaching limit)' : ''}`
-                        : undefined
-                    }
-                  />
-                  {mode === 'edit' && (
-                    <Field.Switch name="isActive" label="Active" />
-                  )}
                 </Box>
-              </Box>
-
-              <Divider />
-
-              {/* Phone Numbers Section */}
-              <Box>
-                <PhoneNumbersField name="phoneNumbers" mode={mode} />
+                <Field.Text
+                  name="address"
+                  label="Address"
+                  placeholder="Enter address (optional)"
+                  multiline
+                  rows={3}
+                  slotProps={{
+                    input: {
+                      maxLength: 1000,
+                    },
+                  }}
+                />
+                {mode === 'edit' && (
+                  <Field.Switch name="isActive" label="Active" />
+                )}
               </Box>
             </Box>
-          </Form>
-        </QueryStateContent>
+
+            <Divider />
+
+            {/* Phone Numbers Section */}
+            <Box>
+              <PhoneNumbersField name="phoneNumbers" mode={mode} />
+            </Box>
+          </Box>
+        </Form>
       </CustomDialog>
 
       {/* Unsaved Changes Confirmation Dialog */}

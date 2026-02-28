@@ -42,9 +42,9 @@ export const allLangs = [
   {
     value: 'en',
     label: 'English',
-    countryCode: 'GB',
+    countryCode: 'PK',
     adapterLocale: 'en',
-    numberFormat: { code: 'en-US', currency: 'USD' },
+    numberFormat: { code: 'en-PK', currency: 'PKR' },
     systemValue: {
       components: { ...enUSDate.components, ...enUSDataGrid.components },
     },

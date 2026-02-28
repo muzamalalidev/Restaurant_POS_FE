@@ -117,7 +117,13 @@ export function RHFTextField({ name, helperText, slotProps, type = 'text', ...ot
         <TextField
           {...field}
           fullWidth
-          value={isNumberType ? transformValue(field.value) : field.value ?? ''}
+          value={
+            isNumberType
+              ? (field.value === null || field.value === undefined
+                  ? ''
+                  : transformValue(field.value))
+              : field.value ?? ''
+          }
           onChange={(event) => {
             let transformedValue = event.target.value;
 

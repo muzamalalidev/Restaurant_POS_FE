@@ -44,11 +44,11 @@ export function CategoryListView() {
   // Dialog state management
   const [formDialogOpen, setFormDialogOpen] = useState(false);
   const [formDialogMode, setFormDialogMode] = useState('create');
-  const [formDialogCategoryId, setFormDialogCategoryId] = useState(null);
-  
+  const [formDialogRecord, setFormDialogRecord] = useState(null);
+
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
-  const [detailsDialogCategoryId, setDetailsDialogCategoryId] = useState(null);
-  
+  const [detailsDialogRecord, setDetailsDialogRecord] = useState(null);
+
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteCategoryId, setDeleteCategoryId] = useState(null);
   const [deleteCategoryName, setDeleteCategoryName] = useState(null);
@@ -249,7 +249,7 @@ export function CategoryListView() {
   }, [categoriesResponse]);
 
   // Mutations
-  const [deleteCategory] = useDeleteCategoryMutation();
+  const [deleteCategory, { isLoading: isDeleting }] = useDeleteCategoryMutation();
   const [toggleCategoryActive, { isLoading: _isTogglingActive }] = useToggleCategoryActiveMutation();
 
   // Track which category is being toggled
@@ -261,22 +261,24 @@ export function CategoryListView() {
   // Handle create
   const handleCreate = useCallback(() => {
     setFormDialogMode('create');
-    setFormDialogCategoryId(null);
+    setFormDialogRecord(null);
     setFormDialogOpen(true);
   }, []);
 
-  // Handle edit
-  const handleEdit = useCallback((categoryId) => {
+  // Handle edit (pass full row from list; no getById)
+  const handleEdit = useCallback((row) => {
+    const record = categories.find((c) => c.id === row.id) ?? null;
     setFormDialogMode('edit');
-    setFormDialogCategoryId(categoryId);
+    setFormDialogRecord(record);
     setFormDialogOpen(true);
-  }, []);
+  }, [categories]);
 
-  // Handle view
-  const handleView = useCallback((categoryId) => {
-    setDetailsDialogCategoryId(categoryId);
+  // Handle view (pass full row from list; API includes parentName, tenantName)
+  const handleView = useCallback((row) => {
+    const record = categories.find((c) => c.id === row.id) ?? null;
+    setDetailsDialogRecord(record);
     setDetailsDialogOpen(true);
-  }, []);
+  }, [categories]);
 
   // Handle delete confirmation
   const handleDeleteClick = useCallback((row) => {
@@ -288,21 +290,23 @@ export function CategoryListView() {
   // Handle delete confirm
   const handleDeleteConfirm = useCallback(async () => {
     if (!deleteCategoryId) return;
-    
+
     try {
       await deleteCategory(deleteCategoryId).unwrap();
       toast.success('Category deleted successfully');
       setDeleteConfirmOpen(false);
       setDeleteCategoryId(null);
       setDeleteCategoryName(null);
+      if (categories.length === 1 && pageNumber > 1) {
+        setPageNumber((p) => p - 1);
+      }
     } catch (err) {
       const { message } = getApiErrorMessage(err, {
         defaultMessage: 'Failed to delete category',
       });
       toast.error(message);
-      console.error('Failed to delete category:', err);
     }
-  }, [deleteCategoryId, deleteCategory]);
+  }, [deleteCategoryId, deleteCategory, categories.length, pageNumber]);
 
   // Handle toggle active
   const handleToggleActive = useCallback(async (categoryId) => {
@@ -322,7 +326,6 @@ export function CategoryListView() {
         defaultMessage: 'Failed to update category status',
       });
       toast.error(message);
-      console.error('Failed to toggle category active status:', err);
     } finally {
       setTogglingCategoryId(null);
       togglingCategoryIdsRef.current.delete(categoryId);
@@ -330,18 +333,24 @@ export function CategoryListView() {
   }, [toggleCategoryActive]);
 
   // Handle form dialog success
-  const handleFormSuccess = useCallback((id, action) => {
+  // Contract: onSuccess(id, action, payload?). For create, payload is API result (optional display name).
+  const handleFormSuccess = useCallback((id, action, payload) => {
     setFormDialogOpen(false);
     setFormDialogMode('create');
-    setFormDialogCategoryId(null);
-    toast.success(`Category ${action} successfully`);
-  }, []);
+    setFormDialogRecord(null);
+    refetch();
+    const displayName = action === 'created' && payload?.name != null ? payload.name : null;
+    const message = displayName
+      ? `Category "${displayName}" ${action} successfully`
+      : `Category ${action} successfully`;
+    toast.success(message);
+  }, [refetch]);
 
   // Handle form dialog close
   const handleFormClose = useCallback(() => {
     setFormDialogOpen(false);
     setFormDialogMode('create');
-    setFormDialogCategoryId(null);
+    setFormDialogRecord(null);
   }, []);
 
   // Handle pagination change
@@ -358,31 +367,23 @@ export function CategoryListView() {
   const handleSearchClear = useCallback(() => {
     searchForm.setValue('searchTerm', '');
     setSearchTerm('');
+    setPageNumber(1); // Reset to first page when clearing search
   }, [searchForm]);
 
-  // Find parent category name by ID
-  const getParentName = useCallback((parentIdParam, allCategories) => {
-    if (!parentIdParam || !allCategories) return 'Root';
-    const parent = allCategories.find((cat) => cat.id === parentIdParam);
-    return parent?.name || 'Root';
-  }, []);
 
-  const getTenantName = useCallback((tenantIdParam, options) => {
-    if (!tenantIdParam || !options?.length) return null;
-    const opt = options.find((t) => t.id === tenantIdParam);
-    return opt?.label ?? null;
-  }, []);
 
+
+  // Rows use API response keys (tenantName, parentName); no lookup from tenant/parent options
   const rows = useMemo(() => categories.map((category) => ({
       id: category.id,
       name: category.name,
       parentId: category.parentId,
-      parentName: getParentName(category.parentId, categories),
+      parentName: category.parentName ?? 'Root',
       tenantId: category.tenantId,
-      tenantName: getTenantName(category.tenantId, tenantOptions),
+      tenantName: category.tenantName ?? '-',
       description: category.description || '-',
       isActive: category.isActive,
-    })), [categories, tenantOptions, getParentName, getTenantName]);
+    })), [categories]);
 
   // Define columns
   const columns = useMemo(
@@ -391,15 +392,11 @@ export function CategoryListView() {
         field: 'name',
         headerName: 'Name',
         flex: 1,
-        sortable: true,
-        filterable: true,
       },
       {
         field: 'parentName',
         headerName: 'Parent Category',
         flex: 1,
-        sortable: true,
-        filterable: true,
         renderCell: (params) => (
           <Typography variant="body2" color="text.secondary">
             {params.value}
@@ -410,8 +407,6 @@ export function CategoryListView() {
         field: 'tenantName',
         headerName: 'Tenant',
         flex: 1,
-        sortable: true,
-        filterable: true,
         renderCell: (params) => (
           <Typography variant="body2" color="text.secondary">
             {params.value || params.row.tenantId || '-'}
@@ -422,8 +417,6 @@ export function CategoryListView() {
         field: 'description',
         headerName: 'Description',
         flex: 1,
-        sortable: true,
-        filterable: true,
         renderCell: (params) => (
           <Typography 
             variant="body2" 
@@ -442,8 +435,6 @@ export function CategoryListView() {
         field: 'isActive',
         headerName: 'Status',
         flex: 1,
-        sortable: true,
-        filterable: true,
         renderCell: (params) => (
           <Label color={params.value ? 'success' : 'default'} variant="soft">
             {params.value ? 'Active' : 'Inactive'}
@@ -461,14 +452,14 @@ export function CategoryListView() {
         id: 'view',
         label: 'View',
         icon: 'solar:eye-bold',
-        onClick: (row) => handleView(row.id),
+        onClick: (row) => handleView(row),
         order: 1,
       },
       {
         id: 'edit',
         label: 'Edit',
         icon: 'solar:pen-bold',
-        onClick: (row) => handleEdit(row.id),
+        onClick: (row) => handleEdit(row),
         order: 2,
       },
       {
@@ -595,7 +586,7 @@ export function CategoryListView() {
             variant="contained"
             startIcon="mingcute:add-line"
             onClick={handleCreate}
-            sx={{ ml: 'auto' }}
+            sx={{ ml: 'auto', minHeight: 44 }}
           >
             Create Category
           </Field.Button>
@@ -612,6 +603,7 @@ export function CategoryListView() {
           pagination={{
             ...DEFAULT_PAGINATION,
             mode: 'server',
+            page: pageNumber - 1,
             pageSize,
             rowCount: paginationMeta.totalCount,
             onPageChange: handlePageChange,
@@ -635,7 +627,7 @@ export function CategoryListView() {
       <CategoryFormDialog
         open={formDialogOpen}
         mode={formDialogMode}
-        categoryId={formDialogCategoryId}
+        record={formDialogRecord}
         onClose={handleFormClose}
         onSuccess={handleFormSuccess}
         tenantOptions={tenantOptions}
@@ -644,10 +636,10 @@ export function CategoryListView() {
       {/* Details Dialog */}
       <CategoryDetailsDialog
         open={detailsDialogOpen}
-        categoryId={detailsDialogCategoryId}
+        record={detailsDialogRecord}
         onClose={() => {
           setDetailsDialogOpen(false);
-          setDetailsDialogCategoryId(null);
+          setDetailsDialogRecord(null);
         }}
       />
 
@@ -661,7 +653,13 @@ export function CategoryListView() {
             : 'Are you sure you want to delete this category? This action cannot be undone.'
         }
         action={
-          <Field.Button variant="contained" color="error" onClick={handleDeleteConfirm}>
+          <Field.Button
+            variant="contained"
+            color="error"
+            onClick={handleDeleteConfirm}
+            disabled={isDeleting}
+            loading={isDeleting}
+          >
             Delete
           </Field.Button>
         }
@@ -670,6 +668,8 @@ export function CategoryListView() {
           setDeleteCategoryId(null);
           setDeleteCategoryName(null);
         }}
+        loading={isDeleting}
+        disableClose={isDeleting}
       />
     </Box>
   );

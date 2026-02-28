@@ -5,11 +5,8 @@ import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import { useTheme, useMediaQuery } from '@mui/material';
 
-import { useGetTenantMasterByIdQuery } from 'src/store/api/tenant-masters-api';
-
 import { Label } from 'src/components/label';
 import { CustomDialog } from 'src/components/custom-dialog';
-import { QueryStateContent } from 'src/components/query-state-content';
 
 import { getActiveStatusLabel, getActiveStatusColor } from '../utils/tenant-master-helpers';
 
@@ -17,15 +14,12 @@ import { getActiveStatusLabel, getActiveStatusColor } from '../utils/tenant-mast
 
 /**
  * Tenant Master Details Dialog
- * Read-only view; no actions (use list row actions for Edit/Toggle/Delete).
+ * Read-only view using record from list (no getById).
+ * No actions (use list row actions for Edit/Toggle/Delete).
  */
-export function TenantMasterDetailsDialog({ open, tenantMasterId, onClose }) {
+export function TenantMasterDetailsDialog({ open, record, onClose }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-
-  const { data: tenantMaster, isLoading, error: queryError, isError, refetch } = useGetTenantMasterByIdQuery(tenantMasterId, {
-    skip: !tenantMasterId || !open,
-  });
 
   return (
     <CustomDialog
@@ -35,23 +29,8 @@ export function TenantMasterDetailsDialog({ open, tenantMasterId, onClose }) {
       maxWidth="sm"
       fullWidth
       fullScreen={isMobile}
-      loading={isLoading}
     >
-      <QueryStateContent
-        isLoading={isLoading}
-        isError={isError}
-        error={queryError}
-        onRetry={refetch}
-        loadingMessage="Loading tenant master details..."
-        errorTitle="Failed to load tenant master details"
-        errorMessageOptions={{
-          defaultMessage: 'Failed to load tenant master details',
-          notFoundMessage: 'Tenant master not found',
-        }}
-        isEmpty={!tenantMaster && !isLoading && !isError}
-        emptyMessage="Tenant master not found"
-      >
-        {tenantMaster ? (
+      {record ? (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1, pb: 3 }}>
           <Box>
             <Stack spacing={2}>
@@ -59,35 +38,34 @@ export function TenantMasterDetailsDialog({ open, tenantMasterId, onClose }) {
                 <Typography variant="caption" color="text.secondary">
                   Name
                 </Typography>
-                <Typography variant="body1">{tenantMaster.name}</Typography>
+                <Typography variant="body1">{record.name}</Typography>
               </Box>
               <Box>
                 <Typography variant="caption" color="text.secondary">
                   Description
                 </Typography>
-                <Typography variant="body1">{tenantMaster.description || 'No description'}</Typography>
+                <Typography variant="body1">{record.description || 'No description'}</Typography>
               </Box>
               <Box>
                 <Typography variant="caption" color="text.secondary">
                   Owner
                 </Typography>
-                <Typography variant="body1">{tenantMaster.ownerId ?? 'No owner assigned'}</Typography>
+                <Typography variant="body1">{record.ownerId ?? 'No owner assigned'}</Typography>
               </Box>
               <Box>
                 <Typography variant="caption" color="text.secondary">
                   Status
                 </Typography>
                 <Box sx={{ mt: 0.5 }}>
-                  <Label color={getActiveStatusColor(tenantMaster.isActive)} variant="soft">
-                    {getActiveStatusLabel(tenantMaster.isActive)}
+                  <Label color={getActiveStatusColor(record.isActive)} variant="soft">
+                    {getActiveStatusLabel(record.isActive)}
                   </Label>
                 </Box>
               </Box>
             </Stack>
           </Box>
         </Box>
-        ) : null}
-      </QueryStateContent>
+      ) : null}
     </CustomDialog>
   );
 }

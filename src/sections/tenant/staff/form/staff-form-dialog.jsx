@@ -14,40 +14,39 @@ import { getApiErrorMessage } from 'src/utils/api-error-message';
 import { createStaffSchema, updateStaffSchema } from 'src/schemas';
 import { useGetBranchesDropdownQuery } from 'src/store/api/branches-api';
 import { useGetStaffTypesDropdownQuery } from 'src/store/api/staff-types-api';
-import { useGetStaffByIdQuery, useCreateStaffMutation, useUpdateStaffMutation } from 'src/store/api/staff-api';
+import { useCreateStaffMutation, useUpdateStaffMutation } from 'src/store/api/staff-api';
 
 import { toast } from 'src/components/snackbar';
 import { Form, Field } from 'src/components/hook-form';
 import { CustomDialog } from 'src/components/custom-dialog';
-import { QueryStateContent } from 'src/components/query-state-content';
 import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
 
 // ----------------------------------------------------------------------
 
 /**
  * Staff Form Dialog Component
- * 
- * Single dialog component for both create and edit operations.
- * Handles form state, validation, and API calls.
- * 
- * @param {Object} props
- * @param {boolean} props.open - Whether the dialog is open
- * @param {string} props.mode - 'create' or 'edit'
- * @param {string|null} props.staffId - Staff ID for edit mode
- * @param {Object|null} props.staffData - Staff data from list view (avoids re-fetch)
- * @param {Function} props.onClose - Callback when dialog closes
- * @param {Function} props.onSuccess - Callback when form is successfully submitted
- * @param {Array} props.branchOptions - Branch options for dropdown (from list view)
- * @param {Array} props.staffTypeOptions - Staff type options for dropdown (from list view)
+ *
+ * Single dialog for create and edit. Edit uses record from list (no getById).
+ *
+ * Dropdown analysis:
+ * - branchId: API-based (branchOptions from list or useGetBranchesDropdownQuery fallback).
+ *   Single select; not dependent on another form field.
+ * - staffTypeId: API-based (staffTypeOptions from list or useGetStaffTypesDropdownQuery fallback).
+ *   Single select; not dependent on branchId in this form (both are independent).
+ * - No dependent dropdowns in form (Branch and Staff Type are independent).
+ *
+ * Edit mapping: When options are not yet loaded, branchId/staffTypeId are set to synthetic
+ * options { id: record.branchId, label: record.branchName || record.branchId } so the
+ * Autocomplete displays correctly; when options load, effect re-runs and maps to real options.
  */
-export function StaffFormDialog({ open, mode, staffId, staffData: providedStaffData, onClose, onSuccess, branchOptions = [], staffTypeOptions = [] }) {
+export function StaffFormDialog({ open, mode, record, onClose, onSuccess, branchOptions = [], staffTypeOptions = [] }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] = useState(false);
   const isSubmittingRef = useRef(false);
 
-  // Fallback: fetch dropdowns when options not provided (e.g. dialog opened without list)
+  // Fallback: fetch dropdowns when options not provided
   const { data: branchesDropdownFallback } = useGetBranchesDropdownQuery(undefined, { skip: branchOptions.length > 0 });
   const { data: staffTypesDropdownFallback } = useGetStaffTypesDropdownQuery(undefined, { skip: staffTypeOptions.length > 0 });
   const effectiveBranchOptions = useMemo(() => {
@@ -60,16 +59,6 @@ export function StaffFormDialog({ open, mode, staffId, staffData: providedStaffD
     if (!staffTypesDropdownFallback || !Array.isArray(staffTypesDropdownFallback)) return [];
     return staffTypesDropdownFallback.map((item) => ({ id: item.key, label: item.value || item.key }));
   }, [staffTypeOptions, staffTypesDropdownFallback]);
-
-  const { data: fetchedStaff, isLoading: isLoadingStaff, error: queryError, isError: _isError, refetch: _refetchStaff } = useGetStaffByIdQuery(staffId, {
-    skip: !staffId || mode !== 'edit' || !open,
-  });
-
-  const staffData = useMemo(() => {
-    if (fetchedStaff) return fetchedStaff;
-    if (providedStaffData) return providedStaffData;
-    return null;
-  }, [fetchedStaff, providedStaffData]);
 
   // Mutations
   const [createStaff, { isLoading: isCreating }] = useCreateStaffMutation();
@@ -107,10 +96,9 @@ export function StaffFormDialog({ open, mode, staffId, staffData: providedStaffD
     formState: { isDirty },
   } = methods;
 
-  // Load staff data for edit mode or reset for create mode
+  // Load staff data for edit mode from record or reset for create mode
   useEffect(() => {
     if (!open) {
-      // Reset form when dialog closes
       reset({
         branchId: null,
         staffTypeId: null,
@@ -123,45 +111,38 @@ export function StaffFormDialog({ open, mode, staffId, staffData: providedStaffD
         hireDate: null,
         isActive: true,
       });
-      return () => {};
+      return;
     }
 
-    // If staff not found in edit mode, close dialog after a short delay
-    if (mode === 'edit' && !staffData && !isLoadingStaff && open && staffId) {
-      const timer = setTimeout(() => {
-        reset();
-        onClose();
-      }, 3000); // Close after 3 seconds
-      return () => clearTimeout(timer);
-    }
+    if (mode === 'edit' && record) {
+      const matchingBranch = effectiveBranchOptions.find((b) => b.id === record.branchId);
+      const matchingStaffType = effectiveStaffTypeOptions.find((st) => st.id === record.staffTypeId);
+      const branchValue = matchingBranch ?? (record.branchId ? { id: record.branchId, label: record.branchName || record.branchId } : null);
+      const staffTypeValue = matchingStaffType ?? (record.staffTypeId ? { id: record.staffTypeId, label: record.staffTypeName || record.staffTypeId } : null);
 
-    if (mode === 'edit' && staffData && effectiveBranchOptions.length > 0 && effectiveStaffTypeOptions.length > 0) {
-      const matchingBranch = effectiveBranchOptions.find((b) => b.id === staffData.branchId);
-      const matchingStaffType = effectiveStaffTypeOptions.find((st) => st.id === staffData.staffTypeId);
-
-      // Convert hireDate string to Date object if present
       let hireDateValue = null;
-      if (staffData.hireDate) {
+      if (record.hireDate) {
         try {
-          hireDateValue = new Date(staffData.hireDate);
+          hireDateValue = new Date(record.hireDate);
         } catch {
           hireDateValue = null;
         }
       }
 
       reset({
-        branchId: matchingBranch || null,
-        staffTypeId: matchingStaffType || null,
-        userId: staffData.userId || null,
-        firstName: staffData.firstName || '',
-        lastName: staffData.lastName || '',
-        email: staffData.email || null,
-        phone: staffData.phone || null,
-        address: staffData.address || null,
+        branchId: branchValue,
+        staffTypeId: staffTypeValue,
+        userId: record.userId || null,
+        firstName: record.firstName || '',
+        lastName: record.lastName || '',
+        email: record.email || null,
+        phone: record.phone || null,
+        address: record.address || null,
         hireDate: hireDateValue,
-        isActive: staffData.isActive ?? true,
+        isActive: record.isActive ?? true,
       });
-    } else if (mode === 'create') {
+    } else {
+      // create, or edit with no record (e.g. row no longer in list)
       reset({
         branchId: null,
         staffTypeId: null,
@@ -175,9 +156,8 @@ export function StaffFormDialog({ open, mode, staffId, staffData: providedStaffD
         isActive: true,
       });
     }
-    return () => {};
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, mode, staffData?.id, staffData?.branchId, staffData?.staffTypeId, staffData?.firstName, staffData?.lastName, staffData?.email, staffData?.phone, staffData?.address, staffData?.hireDate, staffData?.isActive, effectiveBranchOptions, effectiveStaffTypeOptions, reset]);
+  }, [open, mode, record?.id, record?.branchId, record?.staffTypeId, record?.firstName, record?.lastName, record?.email, record?.phone, record?.address, record?.hireDate, record?.isActive, effectiveBranchOptions, effectiveStaffTypeOptions, reset]);
 
   // Handle form submit
   const onSubmit = handleSubmit(async (data) => {
@@ -188,12 +168,12 @@ export function StaffFormDialog({ open, mode, staffId, staffData: providedStaffD
 
     isSubmittingRef.current = true;
     try {
-      // Convert empty strings to null for optional fields
+      const branchIdValue = data.branchId?.id ?? data.branchId;
+      const staffTypeIdValue = data.staffTypeId?.id ?? data.staffTypeId;
       const emailValue = data.email === '' ? null : data.email;
       const phoneValue = data.phone === '' ? null : data.phone;
       const addressValue = data.address === '' ? null : data.address;
 
-      // Convert Date object to ISO string for hireDate
       let hireDateValue = null;
       if (data.hireDate) {
         if (data.hireDate instanceof Date) {
@@ -205,8 +185,8 @@ export function StaffFormDialog({ open, mode, staffId, staffData: providedStaffD
 
       if (mode === 'create') {
         const createData = {
-          branchId: data.branchId,
-          staffTypeId: data.staffTypeId,
+          branchId: branchIdValue,
+          staffTypeId: staffTypeIdValue,
           userId: data.userId || null,
           firstName: data.firstName,
           lastName: data.lastName,
@@ -218,12 +198,12 @@ export function StaffFormDialog({ open, mode, staffId, staffData: providedStaffD
         };
         const result = await createStaff(createData).unwrap();
         if (onSuccess) {
-          onSuccess(result, 'created');
+          onSuccess(result?.id ?? result, 'created', result);
         }
       } else {
         const updateData = {
-          branchId: data.branchId,
-          staffTypeId: data.staffTypeId,
+          branchId: branchIdValue,
+          staffTypeId: staffTypeIdValue,
           userId: data.userId || null,
           firstName: data.firstName,
           lastName: data.lastName,
@@ -233,15 +213,14 @@ export function StaffFormDialog({ open, mode, staffId, staffData: providedStaffD
           hireDate: hireDateValue,
           isActive: data.isActive,
         };
-        await updateStaff({ id: staffId, ...updateData }).unwrap();
+        await updateStaff({ id: record.id, ...updateData }).unwrap();
         if (onSuccess) {
-          onSuccess(staffId, 'updated');
+          onSuccess(record.id, 'updated');
         }
       }
       reset();
       onClose();
     } catch (error) {
-      console.error('Failed to save staff member:', error);
       const { message, isRetryable } = getApiErrorMessage(error, {
         defaultMessage: `Failed to ${mode === 'create' ? 'create' : 'update'} staff member`,
         notFoundMessage: 'Staff member or branch not found',
@@ -314,15 +293,10 @@ export function StaffFormDialog({ open, mode, staffId, staffData: providedStaffD
         startIcon="solar:check-circle-bold"
         sx={{ minHeight: 44 }}
       >
-        Save
+        {mode === 'create' ? 'Save' : 'Update'}
       </Field.Button>
     </Box>
   );
-
-  // Loading state for edit mode
-  const isLoading = mode === 'edit' && isLoadingStaff && !providedStaffData;
-  // If in edit mode, and no data found after loading (staff may have been deleted)
-  const hasError = mode === 'edit' && !staffData && !isLoadingStaff && open && staffId;
 
   return (
     <>
@@ -333,23 +307,11 @@ export function StaffFormDialog({ open, mode, staffId, staffData: providedStaffD
         maxWidth="md"
         fullWidth
         fullScreen={isMobile}
-        loading={isSubmitting || isLoading}
+        loading={isSubmitting}
         disableClose={isSubmitting}
         actions={renderActions()}
       >
-        <QueryStateContent
-          isLoading={isLoading}
-          isError={hasError}
-          error={queryError}
-          onRetry={() => { reset(); onClose(); }}
-          loadingMessage="Loading staff member data..."
-          errorTitle="Staff Member Not Found"
-          errorMessageOptions={{
-            defaultMessage: 'This staff member may have been deleted. The dialog will close automatically.',
-            notFoundMessage: 'This staff member may have been deleted. The dialog will close automatically.',
-          }}
-        >
-          <Form methods={methods} onSubmit={onSubmit}>
+        <Form methods={methods} onSubmit={onSubmit}>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1 }}>
               {/* Basic Information Section */}
               <Box>
@@ -465,7 +427,6 @@ export function StaffFormDialog({ open, mode, staffId, staffData: providedStaffD
               </Box>
             </Box>
           </Form>
-        </QueryStateContent>
       </CustomDialog>
 
       {/* Unsaved Changes Confirmation Dialog */}

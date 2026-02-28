@@ -19,7 +19,6 @@ import { useGetAllRecipesQuery, useCreateRecipeMutation, useUpdateRecipeMutation
 import { toast } from 'src/components/snackbar';
 import { Form, Field } from 'src/components/hook-form';
 import { CustomDialog } from 'src/components/custom-dialog';
-import { QueryStateContent } from 'src/components/query-state-content';
 import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
 
 import { RecipeIngredientsField } from './components/recipe-ingredients-field';
@@ -41,51 +40,37 @@ const _getId = (value) => {
 
 /**
  * Recipe Form Dialog Component
- * 
- * Single dialog component for both create and edit operations.
- * Handles form state, validation, and API calls.
- * 
- * Note: GetById endpoint is a placeholder, so we use getAllRecipes with large pageSize
- * and client-side filtering by ID to get recipe data for edit mode.
- * 
+ *
+ * Single dialog for create and edit. Edit mode uses record from list (no getById).
+ *
+ * Dropdown analysis:
+ * - itemId (create only): API (useGetItemsQuery, RecipeBased items excluding those with recipes). Not shown in edit.
+ * - ingredients[].itemId: API (useGetItemsQuery, all active/available items). Synthetic options used in edit when ingredient item not yet in options.
+ *
  * @param {Object} props
  * @param {boolean} props.open - Whether the dialog is open
  * @param {string} props.mode - 'create' or 'edit'
- * @param {string|null} props.recipeId - Recipe ID for edit mode
+ * @param {Object|null} props.record - Full recipe object for edit mode (from list)
  * @param {Function} props.onClose - Callback when dialog closes
  * @param {Function} props.onSuccess - Callback when form is successfully submitted
  */
-export function RecipeFormDialog({ open, mode, recipeId, onClose, onSuccess }) {
+export function RecipeFormDialog({ open, mode, record, onClose, onSuccess }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
-  // State for unsaved changes confirmation
   const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] = useState(false);
 
-  // P0-003/P1-001: pageSize 200; getRecipeById is placeholder – find by ID may miss recipe if total > pageSize
-  const { data: recipesResponse, isLoading: isLoadingRecipe, error: queryError, isError: _isError, refetch: refetchRecipe } = useGetAllRecipesQuery(
-    { pageSize: 200 },
-    { skip: !recipeId || mode !== 'edit' || !open }
-  );
-
-  // Fetch items for item selector (P0-003: limit 200)
+  // Fetch items for item selector and ingredients (P0-003: limit 200)
   const { data: itemsResponse, isLoading: isLoadingItems } = useGetItemsQuery(
     { pageSize: 200 },
     { skip: !open }
   );
 
-  // Recipes to check which items already have recipes (create mode) (P0-003: limit 200)
+  // Recipes to check which items already have recipes (create mode only)
   const { data: allRecipesResponse } = useGetAllRecipesQuery(
     { pageSize: 200 },
     { skip: mode !== 'create' || !open }
   );
-
-  // Find the recipe by ID from the response
-  const recipeData = useMemo(() => {
-    if (!recipesResponse || !recipeId) return null;
-    const recipes = recipesResponse.data || [];
-    return recipes.find((recipe) => recipe.id === recipeId) || null;
-  }, [recipesResponse, recipeId]);
 
   // Get items that are RecipeBased (itemType = 2)
   const recipeBasedItems = useMemo(() => {
@@ -117,6 +102,22 @@ export function RecipeFormDialog({ open, mode, recipeId, onClose, onSuccess }) {
     return items.filter((item) => item.isActive && item.isAvailable);
   }, [itemsResponse]);
 
+  // Effective item options for ingredients: include synthetics for record.ingredients not yet in allItemOptions (edit mode)
+  const effectiveAllItemOptions = useMemo(() => {
+    if (mode !== 'edit' || !record?.ingredients?.length) return allItemOptions;
+    const idsInOptions = new Set(allItemOptions.map((o) => o.id));
+    const synthetics = record.ingredients
+      .filter((ing) => ing.itemId && !idsInOptions.has(ing.itemId))
+      .map((ing) => ({
+        id: ing.itemId,
+        name: ing.itemName || ing.itemId,
+        isActive: true,
+        isAvailable: true,
+      }));
+    if (synthetics.length === 0) return allItemOptions;
+    return [...allItemOptions, ...synthetics];
+  }, [mode, record?.ingredients, allItemOptions]);
+
   // Mutations
   const [createRecipe, { isLoading: isCreating }] = useCreateRecipeMutation();
   const [updateRecipe, { isLoading: isUpdating }] = useUpdateRecipeMutation();
@@ -138,8 +139,8 @@ export function RecipeFormDialog({ open, mode, recipeId, onClose, onSuccess }) {
         description: null,
         instructions: null,
         servings: 1,
-        preparationTimeMinutes: 0,
-        cookingTimeMinutes: 0,
+        preparationTimeMinutes: null,
+        cookingTimeMinutes: null,
         ingredients: [],
       }),
       []
@@ -161,81 +162,83 @@ export function RecipeFormDialog({ open, mode, recipeId, onClose, onSuccess }) {
   const watchedDescription = watch('description');
   const watchedInstructions = watch('instructions');
 
-  // Track if form has been initialized
-  const formInitializedRef = useRef(false);
-  const previousRecipeIdRef = useRef(null);
-
-  // Load recipe data for edit mode or reset for create mode
+  // Load recipe data for edit mode from record or reset for create/close
   useEffect(() => {
     if (!open) {
-      formInitializedRef.current = false;
-      previousRecipeIdRef.current = null;
       reset({
         itemId: null,
         name: '',
         description: null,
         instructions: null,
         servings: 1,
-        preparationTimeMinutes: 0,
-        cookingTimeMinutes: 0,
+        preparationTimeMinutes: null,
+        cookingTimeMinutes: null,
         ingredients: [],
       });
       return;
     }
 
-    const currentRecipeId = mode === 'edit' ? recipeId : 'create';
-    const shouldInitialize = !formInitializedRef.current || previousRecipeIdRef.current !== currentRecipeId;
-
-    if (shouldInitialize) {
-      if (mode === 'edit' && recipeData) {
-        // Find matching item object from itemOptions
-        const matchingItem = recipeData.itemId && itemOptions.length > 0
-          ? itemOptions.find((item) => item.id === recipeData.itemId)
+    if (mode === 'edit' && record) {
+      const matchingItem =
+        record.itemId && itemOptions.length > 0
+          ? itemOptions.find((item) => item.id === record.itemId)
           : null;
+      const itemIdValue = matchingItem || (record.itemId ? { id: record.itemId, name: record.itemName || record.itemId } : null);
 
-        // Transform ingredients from API format to form format
-        const formIngredients = (recipeData.ingredients || []).map((ingredient) => ({
-          itemId: allItemOptions.find((item) => item.id === ingredient.itemId) || null,
+      const formIngredients = (record.ingredients || []).map((ingredient) => {
+        const matching = effectiveAllItemOptions.find((opt) => opt.id === ingredient.itemId);
+        const itemValue =
+          matching ||
+          (ingredient.itemId
+            ? { id: ingredient.itemId, name: ingredient.itemName || ingredient.itemId, isActive: true, isAvailable: true }
+            : null);
+        return {
+          itemId: itemValue,
           quantity: ingredient.quantity || 1,
           notes: ingredient.notes || null,
-        }));
+        };
+      });
 
-        reset({
-          itemId: matchingItem || null,
-          name: recipeData.name || '',
-          description: recipeData.description || null,
-          instructions: recipeData.instructions || null,
-          servings: recipeData.servings || 1,
-          preparationTimeMinutes: recipeData.preparationTimeMinutes || 0,
-          cookingTimeMinutes: recipeData.cookingTimeMinutes || 0,
-          ingredients: formIngredients,
-        });
-
-        formInitializedRef.current = true;
-        previousRecipeIdRef.current = currentRecipeId;
-      } else if (mode === 'create') {
-        reset({
-          itemId: null,
-          name: '',
-          description: null,
-          instructions: null,
-          servings: 1,
-          preparationTimeMinutes: 0,
-          cookingTimeMinutes: 0,
-          ingredients: [],
-        });
-
-        formInitializedRef.current = true;
-        previousRecipeIdRef.current = currentRecipeId;
-      }
+      reset({
+        itemId: itemIdValue,
+        name: record.name || '',
+        description: record.description || null,
+        instructions: record.instructions || null,
+        servings: record.servings || 1,
+        preparationTimeMinutes: record.preparationTimeMinutes ?? null,
+        cookingTimeMinutes: record.cookingTimeMinutes ?? null,
+        ingredients: formIngredients.length > 0 ? formIngredients : [],
+      });
+    } else if (mode === 'edit' && !record) {
+      reset({
+        itemId: null,
+        name: '',
+        description: null,
+        instructions: null,
+        servings: 1,
+        preparationTimeMinutes: null,
+        cookingTimeMinutes: null,
+        ingredients: [],
+      });
+    } else if (mode === 'create') {
+      reset({
+        itemId: null,
+        name: '',
+        description: null,
+        instructions: null,
+        servings: 1,
+        preparationTimeMinutes: null,
+        cookingTimeMinutes: null,
+        ingredients: [],
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, mode, recipeId, recipeData?.id, reset]);
+  }, [open, mode, record?.id, record?.itemId, record?.name, record?.description, record?.instructions, record?.servings, record?.preparationTimeMinutes, record?.cookingTimeMinutes, record?.ingredients, record?.itemName, itemOptions, effectiveAllItemOptions, reset]);
 
-  // Separate effect to update itemId when itemOptions become available in edit mode
+  // When item options load in edit mode, set itemId to matching option (replaces synthetic; itemId not shown in edit but kept in form state)
   useEffect(() => {
-    if (open && mode === 'edit' && recipeData?.itemId && itemOptions.length > 0) {
-      const matchingItem = itemOptions.find((item) => item.id === recipeData.itemId);
+    if (open && mode === 'edit' && record?.itemId && itemOptions.length > 0) {
+      const matchingItem = itemOptions.find((item) => item.id === record.itemId);
       if (matchingItem) {
         const currentValue = getValues('itemId');
         const currentId = typeof currentValue === 'object' && currentValue !== null ? currentValue.id : currentValue;
@@ -245,7 +248,7 @@ export function RecipeFormDialog({ open, mode, recipeId, onClose, onSuccess }) {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, mode, recipeData?.itemId, itemOptions.length]);
+  }, [open, mode, record?.itemId, itemOptions.length]);
 
   // Handle form submit (P0-002: ref guard blocks rapid double-submit)
   const onSubmit = handleSubmit(async (data) => {
@@ -287,21 +290,31 @@ export function RecipeFormDialog({ open, mode, recipeId, onClose, onSuccess }) {
           onSuccess(result, 'created');
         }
       } else {
-        await updateRecipe({ id: recipeId, ...recipePayload }).unwrap();
+        await updateRecipe({ id: record.id, ...recipePayload }).unwrap();
         if (onSuccess) {
-          onSuccess(recipeId, 'updated');
+          onSuccess(record.id, 'updated');
         }
       }
       reset();
       onClose();
     } catch (error) {
-      console.error('Failed to save recipe:', error);
-      const { message } = getApiErrorMessage(error, {
+      const { message, isRetryable } = getApiErrorMessage(error, {
         defaultMessage: `Failed to ${mode === 'create' ? 'create' : 'update'} recipe`,
         notFoundMessage: 'Recipe or item not found',
         validationMessage: 'Validation failed. Please check your input.',
       });
-      toast.error(message);
+      if (isRetryable) {
+        toast.error(message, {
+          action: {
+            label: 'Retry',
+            onClick: () => {
+              setTimeout(() => onSubmit({ preventDefault: () => {}, target: { checkValidity: () => true } }), 100);
+            },
+          },
+        });
+      } else {
+        toast.error(message);
+      }
     } finally {
       isSubmittingRef.current = false;
     }
@@ -354,14 +367,13 @@ export function RecipeFormDialog({ open, mode, recipeId, onClose, onSuccess }) {
         startIcon="solar:check-circle-bold"
         sx={{ minHeight: 44 }}
       >
-        {mode === 'create' ? 'Create' : 'Update'}
+        {mode === 'create' ? 'Save' : 'Update'}
       </Field.Button>
     </Box>
   );
 
-  // Loading state for edit mode
-  const isLoading = (mode === 'edit' && isLoadingRecipe) || isLoadingItems;
-  const hasError = mode === 'edit' && !recipeData && !isLoadingRecipe && recipeId && open;
+  // Loading state: only items load for form (edit uses record; create may need items)
+  const isLoading = isLoadingItems;
 
   return (
     <>
@@ -385,19 +397,7 @@ export function RecipeFormDialog({ open, mode, recipeId, onClose, onSuccess }) {
           },
         }}
       >
-        <QueryStateContent
-          isLoading={isLoading}
-          isError={hasError}
-          error={queryError}
-          onRetry={refetchRecipe}
-          loadingMessage="Loading recipe data..."
-          errorTitle="Failed to load recipe data"
-          errorMessageOptions={{
-            defaultMessage: 'Failed to load recipe data',
-            notFoundMessage: 'Recipe not found or an error occurred.',
-          }}
-        >
-          <Form methods={methods} onSubmit={onSubmit}>
+        <Form methods={methods} onSubmit={onSubmit}>
             <Box
               sx={{
                 display: 'flex',
@@ -564,13 +564,12 @@ export function RecipeFormDialog({ open, mode, recipeId, onClose, onSuccess }) {
               <Box>
                 <RecipeIngredientsField
                   name="ingredients"
-                  itemOptions={allItemOptions}
+                  itemOptions={effectiveAllItemOptions}
                   mode={mode}
                 />
               </Box>
             </Box>
           </Form>
-        </QueryStateContent>
       </CustomDialog>
 
       {/* Unsaved Changes Confirmation Dialog */}

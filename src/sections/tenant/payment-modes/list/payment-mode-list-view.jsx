@@ -49,15 +49,14 @@ const getTenantId = (tenant) => {
 export function PaymentModeListView() {
   const [formDialogOpen, setFormDialogOpen] = useState(false);
   const [formDialogMode, setFormDialogMode] = useState('create');
-  const [formDialogPaymentModeId, setFormDialogPaymentModeId] = useState(null);
+  const [formDialogRecord, setFormDialogRecord] = useState(null);
 
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
-  const [detailsDialogPaymentModeId, setDetailsDialogPaymentModeId] = useState(null);
+  const [detailsDialogRecord, setDetailsDialogRecord] = useState(null);
 
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deletePaymentModeId, setDeletePaymentModeId] = useState(null);
   const [deletePaymentModeName, setDeletePaymentModeName] = useState(null);
-  const [isDeleting, setIsDeleting] = useState(false);
 
   const [pageNumber, setPageNumber] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGINATION.pageSize);
@@ -151,27 +150,31 @@ export function PaymentModeListView() {
     [response]
   );
 
-  const [deletePaymentMode] = useDeletePaymentModeMutation();
+  const [deletePaymentMode, { isLoading: isDeleting }] = useDeletePaymentModeMutation();
   const [togglePaymentModeActive] = useTogglePaymentModeActiveMutation();
   const [togglingId, setTogglingId] = useState(null);
 
   const handleCreate = useCallback(() => {
     if (!resolvedTenantId) return;
     setFormDialogMode('create');
-    setFormDialogPaymentModeId(null);
+    setFormDialogRecord(null);
     setFormDialogOpen(true);
   }, [resolvedTenantId]);
 
-  const handleEdit = useCallback((id) => {
+  const handleEdit = useCallback((row) => {
+    const record = paymentModes.find((p) => p.id === row.id) ?? null;
+    if (!record) return;
     setFormDialogMode('edit');
-    setFormDialogPaymentModeId(id);
+    setFormDialogRecord(record);
     setFormDialogOpen(true);
-  }, []);
+  }, [paymentModes]);
 
-  const handleView = useCallback((id) => {
-    setDetailsDialogPaymentModeId(id);
+  const handleView = useCallback((row) => {
+    const record = paymentModes.find((p) => p.id === row.id) ?? null;
+    if (!record) return;
+    setDetailsDialogRecord(record);
     setDetailsDialogOpen(true);
-  }, []);
+  }, [paymentModes]);
 
   const handleDeleteClick = useCallback((row) => {
     setDeletePaymentModeId(row.id);
@@ -181,23 +184,33 @@ export function PaymentModeListView() {
 
   const handleDeleteConfirm = useCallback(async () => {
     if (!deletePaymentModeId || !resolvedTenantId || isDeleting) return;
-    setIsDeleting(true);
     try {
       await deletePaymentMode({ tenantId: resolvedTenantId, id: deletePaymentModeId }).unwrap();
       toast.success('Payment mode deleted successfully');
       setDeleteConfirmOpen(false);
       setDeletePaymentModeId(null);
       setDeletePaymentModeName(null);
+      refetch();
+      if (paymentModes.length === 1 && pageNumber > 1) {
+        setPageNumber((p) => p - 1);
+      }
     } catch (err) {
-      const { message } = getApiErrorMessage(err, {
+      const { message, isRetryable } = getApiErrorMessage(err, {
         defaultMessage: 'Failed to delete payment mode',
         notFoundMessage: 'Payment mode not found or already deleted',
       });
-      toast.error(message);
-    } finally {
-      setIsDeleting(false);
+      if (isRetryable) {
+        toast.error(message, {
+          action: {
+            label: 'Retry',
+            onClick: () => handleDeleteConfirm(),
+          },
+        });
+      } else {
+        toast.error(message);
+      }
     }
-  }, [deletePaymentModeId, resolvedTenantId, isDeleting, deletePaymentMode]);
+  }, [deletePaymentModeId, resolvedTenantId, isDeleting, deletePaymentMode, refetch, paymentModes.length, pageNumber]);
 
   const handleToggleActive = useCallback(
     async (id, onRevert) => {
@@ -207,11 +220,20 @@ export function PaymentModeListView() {
         await togglePaymentModeActive({ tenantId: resolvedTenantId, id }).unwrap();
         toast.success('Status updated successfully');
       } catch (err) {
-        const { message } = getApiErrorMessage(err, {
+        const { message, isRetryable } = getApiErrorMessage(err, {
           defaultMessage: 'Failed to update status',
           notFoundMessage: 'Payment mode not found',
         });
-        toast.error(message);
+        if (isRetryable) {
+          toast.error(message, {
+            action: {
+              label: 'Retry',
+              onClick: () => handleToggleActive(id, onRevert),
+            },
+          });
+        } else {
+          toast.error(message);
+        }
         if (onRevert) onRevert();
       } finally {
         setTogglingId(null);
@@ -223,7 +245,7 @@ export function PaymentModeListView() {
   const handleFormSuccess = useCallback((id, action) => {
     setFormDialogOpen(false);
     setFormDialogMode('create');
-    setFormDialogPaymentModeId(null);
+    setFormDialogRecord(null);
     toast.success(`Payment mode ${action} successfully`);
     refetch();
   }, [refetch]);
@@ -231,7 +253,7 @@ export function PaymentModeListView() {
   const handleFormClose = useCallback(() => {
     setFormDialogOpen(false);
     setFormDialogMode('create');
-    setFormDialogPaymentModeId(null);
+    setFormDialogRecord(null);
   }, []);
 
   const handlePageChange = useCallback((newPage) => setPageNumber(newPage + 1), []);
@@ -242,6 +264,7 @@ export function PaymentModeListView() {
   const handleSearchClear = useCallback(() => {
     searchForm.setValue('searchTerm', '');
     setSearchTerm('');
+    setPageNumber(1); // Reset to first page when clearing search
   }, [searchForm]);
 
   const rows = useMemo(
@@ -257,13 +280,11 @@ export function PaymentModeListView() {
 
   const columns = useMemo(
     () => [
-      { field: 'name', headerName: 'Name', flex: 1, sortable: true, filterable: true },
+      { field: 'name', headerName: 'Name', flex: 1 },
       {
         field: 'description',
         headerName: 'Description',
         flex: 1,
-        sortable: true,
-        filterable: true,
         renderCell: (params) => (
           <Typography variant="body2" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {params.value}
@@ -274,8 +295,6 @@ export function PaymentModeListView() {
         field: 'isActive',
         headerName: 'Status',
         flex: 1,
-        sortable: true,
-        filterable: true,
         renderCell: (params) => (
           <Label color={params.value ? 'success' : 'default'} variant="soft">
             {params.value ? 'Active' : 'Inactive'}
@@ -288,8 +307,8 @@ export function PaymentModeListView() {
 
   const actions = useMemo(
     () => [
-      { id: 'view', label: 'View', icon: 'solar:eye-bold', onClick: (row) => handleView(row.id), order: 1 },
-      { id: 'edit', label: 'Edit', icon: 'solar:pen-bold', onClick: (row) => handleEdit(row.id), order: 2 },
+      { id: 'view', label: 'View', icon: 'solar:eye-bold', onClick: (row) => handleView(row), order: 1 },
+      { id: 'edit', label: 'Edit', icon: 'solar:pen-bold', onClick: (row) => handleEdit(row), order: 2 },
       {
         id: 'toggle-active',
         label: (row) => (row.isActive ? 'Deactivate' : 'Activate'),
@@ -372,7 +391,7 @@ export function PaymentModeListView() {
             startIcon="mingcute:add-line"
             onClick={handleCreate}
             disabled={!resolvedTenantId}
-            sx={{ ml: 'auto' }}
+            sx={{ ml: 'auto', minHeight: 44 }}
           >
             Create Payment Mode
           </Field.Button>
@@ -392,6 +411,7 @@ export function PaymentModeListView() {
             pagination={{
               ...DEFAULT_PAGINATION,
               mode: 'server',
+              page: pageNumber - 1,
               pageSize,
               rowCount: paginationMeta.totalCount,
               onPageChange: handlePageChange,
@@ -407,18 +427,17 @@ export function PaymentModeListView() {
           open={formDialogOpen}
           mode={formDialogMode}
           tenantId={resolvedTenantId}
-          paymentModeId={formDialogPaymentModeId}
+          record={formDialogRecord}
           onClose={handleFormClose}
           onSuccess={handleFormSuccess}
         />
 
         <PaymentModeDetailsDialog
           open={detailsDialogOpen}
-          tenantId={resolvedTenantId}
-          paymentModeId={detailsDialogPaymentModeId}
+          record={detailsDialogRecord}
           onClose={() => {
             setDetailsDialogOpen(false);
-            setDetailsDialogPaymentModeId(null);
+            setDetailsDialogRecord(null);
           }}
         />
 
@@ -431,7 +450,7 @@ export function PaymentModeListView() {
               : 'Are you sure you want to delete this payment mode? This action cannot be undone.'
           }
           action={
-            <Field.Button variant="contained" color="error" onClick={handleDeleteConfirm} disabled={isDeleting}>
+            <Field.Button variant="contained" color="error" onClick={handleDeleteConfirm} disabled={isDeleting} loading={isDeleting}>
               Delete
             </Field.Button>
           }
@@ -440,6 +459,8 @@ export function PaymentModeListView() {
             setDeletePaymentModeId(null);
             setDeletePaymentModeName(null);
           }}
+          loading={isDeleting}
+          disableClose={isDeleting}
         />
       </FormProvider>
     </Box>

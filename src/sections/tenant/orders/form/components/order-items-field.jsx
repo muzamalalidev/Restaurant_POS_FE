@@ -9,6 +9,8 @@ import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 
+import { fCurrency } from 'src/utils/format-number';
+
 import { Iconify } from 'src/components/iconify';
 import { Field } from 'src/components/hook-form';
 import { CustomTable } from 'src/components/custom-table';
@@ -50,7 +52,7 @@ export function OrderItemsField({ name = 'items', itemOptions = [] }) {
     const newItem = {
       itemId: null,
       quantity: 1,
-      unitPrice: 0,
+      unitPrice: null,
       notes: null,
     };
     append(newItem);
@@ -101,14 +103,14 @@ export function OrderItemsField({ name = 'items', itemOptions = [] }) {
           </Typography>
         </Card>
       ) : (
-        <Card>
+        <Card sx={{ mb: 3 }}>
           <CustomTable
             rows={fields.map((field, index) => ({
               id: field.id,
               index,
               itemId: items[index]?.itemId || null,
               quantity: items[index]?.quantity || 1,
-              unitPrice: items[index]?.unitPrice || 0,
+              unitPrice: items[index]?.unitPrice ?? null,
               notes: items[index]?.notes || null,
               subtotal: calculateSubtotal(index),
             }))}
@@ -117,7 +119,6 @@ export function OrderItemsField({ name = 'items', itemOptions = [] }) {
                 field: 'itemId',
                 headerName: 'Item',
                 flex: 2,
-                sortable: false,
                 renderCell: (params) => (
                   <Field.Autocomplete
                     name={`${name}.${params.row.index}.itemId`}
@@ -154,7 +155,6 @@ export function OrderItemsField({ name = 'items', itemOptions = [] }) {
                 field: 'quantity',
                 headerName: 'Quantity',
                 width: 120,
-                sortable: false,
                 renderCell: (params) => (
                   <Field.Text
                     name={`${name}.${params.row.index}.quantity`}
@@ -176,7 +176,6 @@ export function OrderItemsField({ name = 'items', itemOptions = [] }) {
                 field: 'unitPrice',
                 headerName: 'Unit Price',
                 width: 120,
-                sortable: false,
                 renderCell: (params) => (
                   <Field.Text
                     name={`${name}.${params.row.index}.unitPrice`}
@@ -198,15 +197,9 @@ export function OrderItemsField({ name = 'items', itemOptions = [] }) {
                 field: 'subtotal',
                 headerName: 'Subtotal',
                 width: 120,
-                sortable: false,
                 renderCell: (params) => (
                   <Typography variant="body2" sx={{ fontWeight: 600, width: '100%', textAlign: 'right' }}>
-                    {new Intl.NumberFormat('en-US', {
-                      style: 'currency',
-                      currency: 'USD',
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    }).format(params.value)}
+                    {fCurrency(params.value, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </Typography>
                 ),
               },
@@ -214,7 +207,6 @@ export function OrderItemsField({ name = 'items', itemOptions = [] }) {
                 field: 'notes',
                 headerName: 'Notes',
                 flex: 1,
-                sortable: false,
                 renderCell: (params) => (
                   <Field.Text
                     name={`${name}.${params.row.index}.notes`}
@@ -232,7 +224,6 @@ export function OrderItemsField({ name = 'items', itemOptions = [] }) {
                 field: 'actions',
                 headerName: '',
                 width: 60,
-                sortable: false,
                 renderCell: (params) => (
                   fields.length > 1 ? (
                     <IconButton
@@ -247,7 +238,9 @@ export function OrderItemsField({ name = 'items', itemOptions = [] }) {
                 ),
               },
             ]}
-            pagination={{ enabled: false }}
+            pagination={false}
+            toolbar={false}
+            hideFooter
             getRowId={(row) => row.id}
           />
 
@@ -255,12 +248,7 @@ export function OrderItemsField({ name = 'items', itemOptions = [] }) {
             <Stack direction="row" justifyContent="flex-end" spacing={2}>
               <Typography variant="subtitle2">Total Subtotal:</Typography>
               <Typography variant="h6" sx={{ fontWeight: 700 }}>
-                {new Intl.NumberFormat('en-US', {
-                  style: 'currency',
-                  currency: 'USD',
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                }).format(totalSubtotal)}
+                {fCurrency(totalSubtotal, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </Typography>
             </Stack>
           </Box>
