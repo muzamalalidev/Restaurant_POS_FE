@@ -90,6 +90,25 @@ function preventLeadingSpaces(newValue, previousValue = '') {
   return trimmed;
 }
 
+/** Sx applied when a field is disabled: no-drop cursor and grey background */
+const disabledFieldSx = { cursor: 'no-drop', backgroundColor: 'grey.200' };
+
+/**
+ * Clamps a numeric value to [min, max] when min/max are provided.
+ * Returns the original value if empty or not a number; otherwise returns clamped number.
+ */
+function clampNumberValue(value, min, max) {
+  if (value === '' || value === null || value === undefined) return value;
+  const num = Number(value);
+  if (Number.isNaN(num)) return value;
+  const minNum = min != null && min !== '' ? Number(min) : null;
+  const maxNum = max != null && max !== '' ? Number(max) : null;
+  let result = num;
+  if (minNum != null) result = Math.max(minNum, result);
+  if (maxNum != null) result = Math.min(maxNum, result);
+  return result;
+}
+
 // ----------------------------------------------------------------------
 // TextField Component
 // ----------------------------------------------------------------------
@@ -108,6 +127,9 @@ export function RHFTextField({ name, helperText, slotProps, type = 'text', ...ot
 
   const isNumberType = type === 'number';
   const isMultiline = other.multiline || other.rows || other.rowsMax || other.rowsMin;
+  const inputMin = slotProps?.input?.inputProps?.min;
+  const inputMax = slotProps?.input?.inputProps?.max;
+  const hasMinMax = isNumberType && (inputMin != null || inputMax != null);
 
   return (
     <Controller
@@ -130,6 +152,9 @@ export function RHFTextField({ name, helperText, slotProps, type = 'text', ...ot
             if (isNumberType) {
               // Number type handling (existing)
               transformedValue = transformValueOnChange(transformedValue);
+              if (hasMinMax) {
+                transformedValue = clampNumberValue(transformedValue, inputMin, inputMax);
+              }
             } else {
               // Prevent leading spaces for text inputs
               // For multiline, only prevent on first line
@@ -152,6 +177,9 @@ export function RHFTextField({ name, helperText, slotProps, type = 'text', ...ot
 
             if (isNumberType) {
               transformedValue = transformValueOnBlur(transformedValue);
+              if (hasMinMax) {
+                transformedValue = clampNumberValue(transformedValue, inputMin, inputMax);
+              }
             } else {
               // Also prevent leading spaces on blur (handles paste operations)
               if (isMultiline) {
@@ -172,6 +200,13 @@ export function RHFTextField({ name, helperText, slotProps, type = 'text', ...ot
           helperText={error?.message ?? helperText}
           slotProps={{
             ...slotProps,
+            input: {
+              ...slotProps?.input,
+              sx: [
+                ...(Array.isArray(slotProps?.input?.sx) ? slotProps.input.sx : [slotProps?.input?.sx].filter(Boolean)),
+                ...(other.disabled ? [disabledFieldSx] : []),
+              ],
+            },
             htmlInput: {
               ...slotProps?.htmlInput,
               ...(isNumberType && {
@@ -216,6 +251,10 @@ export function RHFPhoneInput({ name, helperText, country, defaultCountry, ...ot
           defaultCountry={defaultCountry}
           error={!!error}
           helperText={error?.message ?? helperText}
+          sx={[
+            ...(Array.isArray(other.sx) ? other.sx : [other.sx].filter(Boolean)),
+            ...(other.disabled ? [disabledFieldSx] : []),
+          ]}
           {...other}
         />
       )}
@@ -260,6 +299,7 @@ export function RHFDatePicker({ name, slotProps, ...other }) {
               ...slotProps?.textField,
               error: !!error,
               helperText: error?.message ?? slotProps?.textField?.helperText,
+              ...(other.disabled && { sx: disabledFieldSx }),
             },
           }}
           {...other}
@@ -302,6 +342,7 @@ export function RHFTimePicker({ name, slotProps, ...other }) {
               ...slotProps?.textField,
               error: !!error,
               helperText: error?.message ?? slotProps?.textField?.helperText,
+              ...(other.disabled && { sx: disabledFieldSx }),
             },
           }}
           {...other}
@@ -344,6 +385,7 @@ export function RHFDateTimePicker({ name, slotProps, ...other }) {
               ...slotProps?.textField,
               error: !!error,
               helperText: error?.message ?? slotProps?.textField?.helperText,
+              ...(other.disabled && { sx: disabledFieldSx }),
             },
           }}
           {...other}
@@ -482,6 +524,14 @@ export function RHFMultiSelect({
                       </>
                     ),
                     ...slotProps?.textField?.slotProps?.input,
+                    ...(other.disabled && {
+                      sx: [
+                        ...(Array.isArray(slotProps?.textField?.slotProps?.input?.sx)
+                          ? slotProps.textField.slotProps.input.sx
+                          : [slotProps?.textField?.slotProps?.input?.sx].filter(Boolean)),
+                        disabledFieldSx,
+                      ],
+                    }),
                   },
                   ...slotProps?.textField?.slotProps,
                 }}
@@ -631,6 +681,17 @@ export function RHFAutocomplete({ name, label, slotProps, helperText, placeholde
                     ...textField?.slotProps?.htmlInput,
                     autoComplete: 'new-password', // Disable autocomplete and autofill
                   },
+                  ...(other.disabled && {
+                    input: {
+                      ...textField?.slotProps?.input,
+                      sx: [
+                        ...(Array.isArray(textField?.slotProps?.input?.sx)
+                          ? textField.slotProps.input.sx
+                          : [textField?.slotProps?.input?.sx].filter(Boolean)),
+                        disabledFieldSx,
+                      ],
+                    },
+                  }),
                 }}
               />
             )}
@@ -683,7 +744,11 @@ export function RHFCheckbox({ sx, name, label, slotProps, helperText, ...other }
                 }}
               />
             }
-            sx={[{ mx: 0 }, ...(Array.isArray(sx) ? sx : [sx])]}
+            sx={[
+              { mx: 0 },
+              ...(Array.isArray(sx) ? sx : [sx]),
+              ...(other.disabled ? [disabledFieldSx] : []),
+            ]}
             {...other}
           />
 
@@ -724,7 +789,11 @@ export function RHFMultiCheckbox({ name, label, options, slotProps, helperText, 
         const fieldValue = handleMultiSelectValue(field.value);
 
         return (
-          <FormControl component="fieldset" {...slotProps?.wrapper}>
+          <FormControl
+            component="fieldset"
+            {...slotProps?.wrapper}
+            sx={[...(other.disabled ? [disabledFieldSx] : []), ...(Array.isArray(slotProps?.wrapper?.sx) ? slotProps.wrapper.sx : [slotProps?.wrapper?.sx].filter(Boolean))]}
+          >
             {label && (
               <FormLabel
                 component="legend"
@@ -821,7 +890,11 @@ export function RHFSwitch({ name, helperText, label, slotProps, sx, onChange, ..
                 }}
               />
             }
-            sx={[{ mx: 0 }, ...(Array.isArray(sx) ? sx : [sx])]}
+            sx={[
+              { mx: 0 },
+              ...(Array.isArray(sx) ? sx : [sx]),
+              ...(other.disabled ? [disabledFieldSx] : []),
+            ]}
             {...other}
           />
 
@@ -862,7 +935,11 @@ export function RHFMultiSwitch({ name, label, options, helperText, slotProps, ..
         const fieldValue = handleMultiSelectValue(field.value);
 
         return (
-          <FormControl component="fieldset" {...slotProps?.wrapper}>
+          <FormControl
+            component="fieldset"
+            {...slotProps?.wrapper}
+            sx={[...(other.disabled ? [disabledFieldSx] : []), ...(Array.isArray(slotProps?.wrapper?.sx) ? slotProps.wrapper.sx : [slotProps?.wrapper?.sx].filter(Boolean))]}
+          >
             {label && (
               <FormLabel
                 component="legend"
@@ -942,7 +1019,11 @@ export function RHFRadioGroup({ sx, name, label, options, helperText, slotProps,
       name={name}
       control={control}
       render={({ field, fieldState: { error } }) => (
-        <FormControl component="fieldset" {...slotProps?.wrapper}>
+        <FormControl
+          component="fieldset"
+          {...slotProps?.wrapper}
+          sx={[...(other.disabled ? [disabledFieldSx] : []), ...(Array.isArray(slotProps?.wrapper?.sx) ? slotProps.wrapper.sx : [slotProps?.wrapper?.sx].filter(Boolean))]}
+        >
           {label && (
             <FormLabel
               id={labelledby}
@@ -1019,6 +1100,10 @@ export function RHFNumberInput({ name, helperText, ...other }) {
           {...other}
           error={!!error}
           helperText={error?.message ?? helperText}
+          sx={[
+            ...(Array.isArray(other.sx) ? other.sx : [other.sx].filter(Boolean)),
+            ...(other.disabled ? [disabledFieldSx] : []),
+          ]}
         />
       )}
     />
@@ -1051,6 +1136,10 @@ export function RHFCountrySelect({ name, helperText, ...other }) {
           error={!!error}
           helperText={error?.message ?? helperText}
           {...other}
+          sx={[
+            ...(Array.isArray(other.sx) ? other.sx : [other.sx].filter(Boolean)),
+            ...(other.disabled ? [disabledFieldSx] : []),
+          ]}
         />
       )}
     />
@@ -1092,7 +1181,18 @@ export function RHFUpload({ name, multiple, helperText, ...other }) {
           setValue(name, value, { shouldValidate: true });
         };
 
-        return <Upload {...uploadProps} value={field.value} onDrop={onDrop} {...other} />;
+        return (
+          <Upload
+            {...uploadProps}
+            value={field.value}
+            onDrop={onDrop}
+            {...other}
+            sx={[
+              ...(Array.isArray(other.sx) ? other.sx : [other.sx].filter(Boolean)),
+              ...(other.disabled ? [disabledFieldSx] : []),
+            ]}
+          />
+        );
       }}
     />
   );
@@ -1112,7 +1212,15 @@ export function RHFUploadBox({ name, ...other }) {
       name={name}
       control={control}
       render={({ field, fieldState: { error } }) => (
-        <UploadBox value={field.value} error={!!error} {...other} />
+        <UploadBox
+          value={field.value}
+          error={!!error}
+          {...other}
+          sx={[
+            ...(Array.isArray(other.sx) ? other.sx : [other.sx].filter(Boolean)),
+            ...(other.disabled ? [disabledFieldSx] : []),
+          ]}
+        />
       )}
     />
   );
@@ -1140,7 +1248,13 @@ export function RHFUploadAvatar({ name, slotProps, ...other }) {
         };
 
         return (
-          <Box {...slotProps?.wrapper}>
+          <Box
+            {...slotProps?.wrapper}
+            sx={[
+              ...(other.disabled ? [disabledFieldSx] : []),
+              ...(Array.isArray(slotProps?.wrapper?.sx) ? slotProps.wrapper.sx : [slotProps?.wrapper?.sx].filter(Boolean)),
+            ]}
+          >
             <UploadAvatar value={field.value} error={!!error} onDrop={onDrop} {...other} />
 
             <HelperText errorMessage={error?.message} sx={{ textAlign: 'center' }} />
@@ -1194,6 +1308,7 @@ export function RHFCode({
             ...(Array.isArray(slotProps?.wrapper?.sx)
               ? slotProps.wrapper.sx
               : [slotProps?.wrapper?.sx]),
+            ...(other.disabled ? [disabledFieldSx] : []),
           ]}
         >
           <MuiOtpInput
@@ -1247,6 +1362,7 @@ export function RHFRating({ name, helperText, slotProps, ...other }) {
             ...(Array.isArray(slotProps?.wrapper?.sx)
               ? slotProps.wrapper.sx
               : [slotProps?.wrapper?.sx]),
+            ...(other.disabled ? [disabledFieldSx] : []),
           ]}
         >
           <Rating
@@ -1287,7 +1403,13 @@ export function RHFSlider({ name, helperText, slotProps, ...other }) {
       name={name}
       control={control}
       render={({ field, fieldState: { error } }) => (
-        <Box {...slotProps?.wrapper}>
+        <Box
+          {...slotProps?.wrapper}
+          sx={[
+            ...(other.disabled ? [disabledFieldSx] : []),
+            ...(Array.isArray(slotProps?.wrapper?.sx) ? slotProps.wrapper.sx : [slotProps?.wrapper?.sx].filter(Boolean)),
+          ]}
+        >
           <Slider {...field} valueLabelDisplay="auto" {...other} />
 
           <HelperText
@@ -1395,6 +1517,10 @@ function RHFButtonBase({
         loadingIndicator={loadingIndicator}
         loadingPosition={loadingPosition}
         {...buttonProps}
+        sx={[
+          ...(Array.isArray(buttonProps.sx) ? buttonProps.sx : [buttonProps.sx].filter(Boolean)),
+          ...(disabled ? [disabledFieldSx] : []),
+        ]}
       >
         {icon}
       </Button>
@@ -1416,6 +1542,10 @@ function RHFButtonBase({
       startIcon={finalStartIcon}
       endIcon={finalEndIcon}
       {...buttonProps}
+      sx={[
+        ...(Array.isArray(buttonProps.sx) ? buttonProps.sx : [buttonProps.sx].filter(Boolean)),
+        ...(disabled ? [disabledFieldSx] : []),
+      ]}
     >
       {children}
     </Button>

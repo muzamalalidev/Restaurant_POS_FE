@@ -9,6 +9,7 @@ import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
 import { useTheme, useMediaQuery } from '@mui/material';
 
+import { getCurrencySymbol } from 'src/utils/format-number';
 import { getApiErrorMessage } from 'src/utils/api-error-message';
 
 import { createItemSchema, updateItemSchema } from 'src/schemas';
@@ -443,7 +444,7 @@ export function ItemFormDialog({ open, mode, record, onClose, onSuccess, tenantO
                     slotProps={{
                       input: {
                         inputMode: 'decimal',
-                        startAdornment: <Typography variant="body2" sx={{ mr: 1 }}>$</Typography>,
+                        startAdornment: <Typography variant="body2" sx={{ mr: 1 }}>{getCurrencySymbol()}</Typography>,
                       },
                     }}
                     sx={{ flex: 1 }}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useCallback } from 'react';
-import { useFieldArray, useFormContext } from 'react-hook-form';
+import { useWatch, useFieldArray, useFormContext } from 'react-hook-form';
 
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
@@ -23,13 +23,15 @@ import { CustomTable } from 'src/components/custom-table';
  * Manages an array of stock document items with add/remove, validation, and subtotal calculation.
  */
 export function StockDocumentItemsField({ name = 'items', itemOptions = [] }) {
-  const { control, watch, setValue } = useFormContext();
+  const { control, setValue } = useFormContext();
   const { fields, append, remove } = useFieldArray({
     control,
     name,
   });
 
-  const watchedItems = watch(name);
+  // useWatch subscribes to form state and re-renders on any nested change (quantity, unitPrice, etc.)
+  // so totalSubtotal and row subtotals update in real time as the user types
+  const watchedItems = useWatch({ control, name, defaultValue: [] });
   const items = useMemo(
     () => (watchedItems && Array.isArray(watchedItems) ? watchedItems : []),
     [watchedItems]
@@ -246,7 +248,7 @@ export function StockDocumentItemsField({ name = 'items', itemOptions = [] }) {
           />
 
           <Box sx={{ p: 2, borderTop: 1, borderColor: 'divider' }}>
-            <Stack direction="row" justifyContent="flex-end" spacing={2}>
+            <Stack direction="row" alignItems="center" justifyContent="flex-end" spacing={2}>
               <Typography variant="subtitle2">Total Subtotal:</Typography>
               <Typography variant="h6" sx={{ fontWeight: 700 }}>
                 {fCurrency(totalSubtotal, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}

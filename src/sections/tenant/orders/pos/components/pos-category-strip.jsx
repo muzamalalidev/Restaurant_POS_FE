@@ -2,10 +2,13 @@
 
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
+import Skeleton from '@mui/material/Skeleton';
 
 // ----------------------------------------------------------------------
 
 const MIN_TOUCH_HEIGHT = 44;
+
+const SKELETON_WIDTHS = [72, 96, 88, 64, 80];
 
 /**
  * Horizontal scrollable category strip for POS.
@@ -32,11 +35,13 @@ export function PosCategoryStrip({ categories = [], selectedId, onSelect, loadin
         sx={{ minHeight: MIN_TOUCH_HEIGHT, flexShrink: 0 }}
       />
       {loading
-        ? Array.from({ length: 5 }).map((_, i) => (
-            <Chip
+        ? SKELETON_WIDTHS.map((width, i) => (
+            <Skeleton
               key={i}
-              label="..."
-              sx={{ minHeight: MIN_TOUCH_HEIGHT, flexShrink: 0, opacity: 0.6 }}
+              variant="rounded"
+              width={width}
+              height={MIN_TOUCH_HEIGHT}
+              sx={{ flexShrink: 0 }}
             />
           ))
         : categories.map((cat) => {

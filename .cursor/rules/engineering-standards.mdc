@@ -178,13 +178,14 @@ When a form field is `type="number"`, the **default value must NOT be zero** unl
 
 All currency and numeric display MUST use the shared formatters from:
 
-import { fCurrency, fNumber, fPercent, fShortenNumber } from 'src/utils/format-number';
+import { fCurrency, fNumber, fPercent, fShortenNumber, getCurrencySymbol } from 'src/utils/format-number';
 
 Rules:
 
 - Do NOT use inline `new Intl.NumberFormat('en-US', { style: 'currency', currency: 'PKR', ... })` or hard-coded locale/currency in section or component files.
 - Use **fCurrency(value, options?)** for money (subtotals, prices, tax, discount, totals). Locale and currency come from `formatNumberLocale()` (src/locales); override via options only when needed (e.g. `minimumFractionDigits: 2, maximumFractionDigits: 2`).
 - Use **fNumber(value, options?)** for plain numbers (quantities, counts) when locale-aware formatting is desired.
+- For **currency symbol in form inputs** (e.g. price field startAdornment), use **getCurrencySymbol()** from the same utils so the symbol matches the app locale (e.g. "Rs", "$"). Do NOT hard-code "$" or other symbols in form fields.
 - For null/undefined display where the UI must show a placeholder (e.g. "-"), use: `value == null ? '-' : fCurrency(value, { ... })` or the same with fNumber. Do not duplicate Intl logic in feature code.
 - When replacing existing helpers (e.g. formatPrice, formatAmount), keep the same public behavior (null → "-" if required) and implement by delegating to fCurrency/fNumber.
 - If new formatting needs arise (e.g. compact notation, percent), extend src/utils/format-number; do not add new Intl.NumberFormat usages in features.
@@ -208,6 +209,22 @@ Rules:
 - If new date/time formatting needs arise, extend src/utils/format-time; do not add new Intl or toLocale* usages in features.
 
 Apply to: list views, details dialogs, form dialogs, and any component that displays dates or date-times (e.g. hire date, create date, order date).
+
+### Image and asset URL resolution (MANDATORY)
+
+All product/item/image URLs used in `src` attributes (e.g. item images, avatars, thumbnails) MUST use the shared resolver so absolute vs relative URLs and edge cases are handled in one place.
+
+import { getResolvedImageSrc } from 'src/utils/resolve-image-url';
+
+Rules:
+
+- Do NOT build image `src` inline (e.g. `imageUrl.startsWith('http') ? imageUrl : \`${CONFIG.assetsDir}${imageUrl}\``) in section or component files.
+- Use **getResolvedImageSrc(imageUrl)** to get a display URL: it returns `null` for null/undefined/empty/non-string; returns the string as-is for absolute URLs (`http://`, `https://`, `//`); for relative paths, joins with `CONFIG.assetsDir` and normalizes slashes (no double slash).
+- Only render an `<img>` when the resolved URL is non-null; otherwise show a placeholder (e.g. Iconify or Skeleton).
+- For **broken or failing images** (404, CORS, invalid URL): use `onError` on the image and track failed URLs (e.g. in component state) so the UI falls back to the placeholder and does not retry the same bad URL on every render.
+- If new URL resolution behavior is needed (e.g. different base, query params), extend src/utils/resolve-image-url.js; do not duplicate resolution logic in features.
+
+Apply to: POS product grid, item list/detail thumbnails, any component that displays user- or API-supplied image URLs.
 
 ---
 

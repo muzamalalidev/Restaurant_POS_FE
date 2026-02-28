@@ -2,14 +2,15 @@
 
 import Link from 'next/link';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm, FormProvider, useFormContext } from 'react-hook-form';
 import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
+import { useForm, useWatch, FormProvider, useFormContext } from 'react-hook-form';
 
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
 import Stack from '@mui/material/Stack';
-import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
+import IconButton from '@mui/material/IconButton';
+import InputAdornment from '@mui/material/InputAdornment';
 
 import { paths } from 'src/routes/paths';
 
@@ -24,8 +25,10 @@ import { useGetTablesDropdownQuery } from 'src/store/api/tables-api';
 import { useGetCategoriesQuery } from 'src/store/api/categories-api';
 import { useGetBranchesDropdownQuery } from 'src/store/api/branches-api';
 import { useGetOrderTypesDropdownQuery } from 'src/store/api/order-types-api';
+import { useGetPaymentModesDropdownQuery } from 'src/store/api/payment-modes-api';
 
 import { toast } from 'src/components/snackbar';
+import { Iconify } from 'src/components/iconify';
 import { Form, Field } from 'src/components/hook-form';
 
 import { PosCartList } from './components/pos-cart-list';
@@ -36,6 +39,7 @@ import { PosCategoryStrip } from './components/pos-category-strip';
 // ----------------------------------------------------------------------
 
 const defaultValues = {
+  searchTerm: '',
   branchId: null,
   orderTypeId: null,
   paymentModeId: null,
@@ -57,14 +61,14 @@ function PosOrderContent({
   branchOptions = [],
   orderTypeOptions = [],
   staffOptions = [],
-  searchTerm = '',
 }) {
-  const { watch, setValue } = useFormContext();
+  const { control, watch, setValue } = useFormContext();
   const [categoryId, setCategoryId] = useState(null);
   const [debouncedSearch, setDebouncedSearch] = useState('');
 
   const branchId = watch('branchId');
-  const watchedItems = watch('items');
+  const searchTerm = useWatch({ control, name: 'searchTerm', defaultValue: '' }) ?? '';
+  const watchedItems = useWatch({ control, name: 'items', defaultValue: [] });
   const items = useMemo(
     () => (watchedItems && Array.isArray(watchedItems) ? watchedItems : []),
     [watchedItems]
@@ -119,6 +123,14 @@ function PosOrderContent({
     { branchId: selectedBranchId || undefined },
     { skip: !selectedBranchId }
   );
+
+  const { data: paymentModesDropdown } = useGetPaymentModesDropdownQuery(selectedBranchId ?? undefined, {
+    skip: !selectedBranchId,
+  });
+  const paymentModeOptions = useMemo(() => {
+    if (!paymentModesDropdown || !Array.isArray(paymentModesDropdown)) return [];
+    return paymentModesDropdown.map((item) => ({ id: item.key, label: item.value || item.key }));
+  }, [paymentModesDropdown]);
   const tableOptions = useMemo(() => {
     if (!tablesDropdown || !Array.isArray(tablesDropdown)) return [];
     return tablesDropdown.map((item) => ({ id: item.key, label: item.value || item.key }));
@@ -146,12 +158,39 @@ function PosOrderContent({
   const grandTotal = subtotal + calculatedTax - calculatedDiscount;
   const itemCount = items.reduce((acc, row) => acc + (Number(row.quantity) || 0), 0);
 
-  const appendItem = useCallback(
-    (item) => {
-      setValue('items', [...items, { itemId: item.id, quantity: 1, unitPrice: item.price ?? null, notes: null }], {
-        shouldValidate: true,
-        shouldDirty: true,
+  const selectedItemIds = useMemo(
+    () =>
+      items
+        .map((row) => {
+          const id = row?.itemId;
+          return typeof id === 'object' && id !== null ? id.id : id;
+        })
+        .filter(Boolean),
+    [items]
+  );
+
+  const addOrToggleItem = useCallback(
+    (product) => {
+      const productId = product.id;
+      const alreadyInCart = items.some((row) => {
+        const id = row?.itemId;
+        const resolved = typeof id === 'object' && id !== null ? id.id : id;
+        return resolved === productId;
       });
+      if (alreadyInCart) {
+        const nextItems = items.filter((row) => {
+          const id = row?.itemId;
+          const resolved = typeof id === 'object' && id !== null ? id.id : id;
+          return resolved !== productId;
+        });
+        setValue('items', nextItems, { shouldValidate: true, shouldDirty: true });
+      } else {
+        setValue(
+          'items',
+          [...items, { itemId: product.id, quantity: 1, unitPrice: product.price ?? null, notes: null }],
+          { shouldValidate: true, shouldDirty: true }
+        );
+      }
     },
     [items, setValue]
   );
@@ -190,8 +229,9 @@ function PosOrderContent({
             <PosProductGrid
               items={products}
               loading={itemsLoading}
-              onSelectItem={appendItem}
+              onSelectItem={addOrToggleItem}
               searchTerm={debouncedSearch}
+              selectedItemIds={selectedItemIds}
             />
           </Box>
         </Card>
@@ -212,7 +252,7 @@ function PosOrderContent({
               orderTypeOptions={orderTypeOptions}
               tableOptions={tableOptions}
               staffOptions={staffOptions}
-              paymentModeOptions={[]}
+              paymentModeOptions={paymentModeOptions}
               branchSelected={!!selectedBranchId}
             />
             <Box sx={{ borderTop: 1, borderColor: 'divider', pt: 2, mt: 0 }}>
@@ -221,6 +261,26 @@ function PosOrderContent({
               </Typography>
               <PosCartList name="items" itemOptions={itemOptions} />
             </Box>
+            <Stack direction="row" spacing={1}>
+              <Field.Text
+                name="taxPercentage"
+                placeholder="Tax %"
+                type="number"
+                slotProps={{
+                  input: { inputProps: { min: 0, max: 100, step: 0.5 } },
+                }}
+                size="small"
+              />
+              <Field.Text
+                name="discountPercentage"
+                placeholder="Disc %"
+                type="number"
+                slotProps={{
+                  input: { inputProps: { min: 0, max: 100, step: 0.5 } },
+                }}
+                size="small"
+              />
+            </Stack>
             <Box sx={{ borderTop: 1, borderColor: 'divider', pt: 2 }}>
               <Stack spacing={0.5}>
                 <Stack direction="row" justifyContent="space-between">
@@ -261,26 +321,7 @@ function PosOrderContent({
                 </Stack>
               </Stack>
             </Box>
-            <Stack direction="row" spacing={1}>
-              <Field.Text
-                name="taxPercentage"
-                placeholder="Tax %"
-                type="number"
-                slotProps={{
-                  input: { inputProps: { min: 0, max: 100, step: 0.5 } },
-                  textField: { size: 'small', fullWidth: true },
-                }}
-              />
-              <Field.Text
-                name="discountPercentage"
-                placeholder="Disc %"
-                type="number"
-                slotProps={{
-                  input: { inputProps: { min: 0, max: 100, step: 0.5 } },
-                  textField: { size: 'small', fullWidth: true },
-                }}
-              />
-            </Stack>
+         
             <Field.Text
               name="notes"
               placeholder="Order notes (optional)"
@@ -297,7 +338,6 @@ function PosOrderContent({
 
 export function PosOrderView() {
   const [createOrder, { isLoading: isCreating }] = useCreateOrderMutation();
-  const [searchTerm, setSearchTerm] = useState('');
   const isSubmittingRef = useRef(false);
 
   const { data: branchesDropdown } = useGetBranchesDropdownQuery();
@@ -324,6 +364,9 @@ export function PosOrderView() {
     defaultValues,
     mode: 'onChange',
   });
+
+  const watchedItemsForSubmit = useWatch({ control: methods.control, name: 'items', defaultValue: [] });
+  const hasCartItems = (watchedItemsForSubmit?.length ?? 0) > 0;
 
   const onSubmit = methods.handleSubmit(async (data) => {
     if (isSubmittingRef.current) return;
@@ -384,55 +427,72 @@ export function PosOrderView() {
     }
   });
 
+  const handleSearchClear = useCallback(() => {
+    methods.setValue('searchTerm', '');
+  }, [methods]);
+
   return (
     <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', bgcolor: 'background.default', p: 2 }}>
-      <Card
-        variant="outlined"
-        sx={{
-          borderRadius: 2,
-          mb: 2,
-          flexShrink: 0,
-        }}
-      >
-        <Stack
-          direction="row"
-          alignItems="center"
-          spacing={2}
-          sx={{ p: 2, flexWrap: 'wrap' }}
-        >
-          <Typography variant="h6" component="span">
-            POS
-          </Typography>
-          <Box
-            component="input"
-            placeholder="Search product"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            sx={{
-              border: '1px solid',
-              borderColor: 'divider',
-              borderRadius: 1,
-              px: 1.5,
-              py: 1,
-              minWidth: 220,
-              flex: 1,
-              maxWidth: 400,
-              '&:focus': { outline: 'none', borderColor: 'primary.main' },
-            }}
-          />
-          <Button component={Link} href={paths.tenant.orders.list} variant="outlined" size="small">
-            Order list
-          </Button>
-        </Stack>
-      </Card>
-
       <FormProvider {...methods}>
+        <Card
+          variant="outlined"
+          sx={{
+            borderRadius: 2,
+            mb: 2,
+            flexShrink: 0,
+          }}
+        >
+          <Stack
+            direction="row"
+            alignItems="center"
+            justifyContent="space-between"
+            spacing={2}
+            sx={{ p: 2, flexWrap: 'wrap' }}
+          >
+            <Field.Text
+              name="searchTerm"
+              size="small"
+              placeholder="Search product"
+              slotProps={{
+                input: {
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <Iconify icon="eva:search-fill" sx={{ color: 'text.disabled' }} />
+                    </InputAdornment>
+                  ),
+                  endAdornment:
+                    methods.watch('searchTerm') && (
+                      <InputAdornment position="end">
+                        <IconButton
+                          size="small"
+                          onClick={handleSearchClear}
+                          sx={{ minWidth: 'auto', minHeight: 'auto', p: 0.5 }}
+                          aria-label="Clear search"
+                        >
+                          <Iconify icon="eva:close-fill" />
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                },
+              }}
+              sx={{ minWidth: 220, flex: 1, maxWidth: 400 }}
+            />
+            <Field.Button
+              component={Link}
+              href={paths.tenant.orders.list}
+              variant="outlined"
+              sx={{ ml: 'auto', flexShrink: 0 }}
+            >
+              Order list
+            </Field.Button>
+          </Stack>
+        </Card>
+
         <Form methods={methods} onSubmit={onSubmit}>
           <PosOrderContent
             branchOptions={branchOptions}
             orderTypeOptions={orderTypeOptions}
             staffOptions={staffOptions}
-            searchTerm={searchTerm}
           />
           <Card
             variant="outlined"
@@ -449,7 +509,7 @@ export function PosOrderView() {
               size="large"
               fullWidth
               loading={isCreating}
-              disabled={isCreating || (methods.watch('items')?.length ?? 0) === 0}
+              disabled={isCreating || !hasCartItems}
               startIcon="solar:check-circle-bold"
               sx={{ minHeight: 48 }}
             >

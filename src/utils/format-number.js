@@ -2,6 +2,25 @@ import { formatNumberLocale } from 'src/locales';
 
 const DEFAULT_LOCALE = { code: 'en-PK', currency: 'PKR' };
 
+// ----------------------------------------------------------------------
+
+/**
+ * Returns the currency symbol for the current number-format locale (e.g. "Rs", "$").
+ * Use for input adornments and labels; for full formatted amounts use fCurrency.
+ */
+export function getCurrencySymbol() {
+  const locale = formatNumberLocale() || DEFAULT_LOCALE;
+  const formatter = new Intl.NumberFormat(locale.code, {
+    style: 'currency',
+    currency: locale.currency,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  });
+  const parts = formatter.formatToParts(0);
+  const currencyPart = parts.find((p) => p.type === 'currency');
+  return currencyPart ? currencyPart.value : locale.currency;
+}
+
 function processInput(inputValue) {
   if (inputValue == null || Number.isNaN(inputValue)) return null;
   return Number(inputValue);

@@ -91,7 +91,6 @@ export function StockDocumentFormDialog({ open, mode, record, onClose, onSuccess
 
   const watchedTenantId = watch('tenantId');
   const watchedBranchId = watch('branchId');
-  const _watchedItems = watch('items');
 
   const tenantIdForBranches = (() => {
     if (!watchedTenantId) return undefined;

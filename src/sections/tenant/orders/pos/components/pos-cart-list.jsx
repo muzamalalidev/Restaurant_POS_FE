@@ -1,10 +1,12 @@
 'use client';
 
-import { useMemo, useCallback } from 'react';
+import { varAlpha } from 'minimal-shared/utils';
 import { useFieldArray, useFormContext } from 'react-hook-form';
+import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
 import Stack from '@mui/material/Stack';
+import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 
@@ -15,6 +17,38 @@ import { Iconify } from 'src/components/iconify';
 // ----------------------------------------------------------------------
 
 const MIN_TOUCH = 44;
+
+/**
+ * Shows item name with tooltip only when text overflows (noWrap truncation).
+ */
+function CartItemName({ name }) {
+  const ref = useRef(null);
+  const [overflow, setOverflow] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    const check = () => {
+      setOverflow(el.scrollWidth > el.clientWidth);
+    };
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+    };
+  }, [name]);
+
+  return (
+    <Tooltip title={name} placement="top" enterDelay={300} disableHoverListener={!overflow}>
+      <Typography ref={ref} variant="subtitle2" noWrap>
+        {name}
+      </Typography>
+    </Tooltip>
+  );
+}
+
+// ----------------------------------------------------------------------
 
 /**
  * Lightweight cart list (no DataGrid). Inline qty +/- and remove. 44px targets.
@@ -75,15 +109,14 @@ export function PosCartList({ name = 'items', itemOptions = [] }) {
               py: 1,
               px: 1.5,
               borderRadius: 1,
-              bgcolor: 'background.neutral',
               border: '1px solid',
               borderColor: 'divider',
+              bgcolor: (theme) =>
+                varAlpha(theme.vars.palette.primary.mainChannel, 0.08),
             }}
           >
             <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Typography variant="subtitle2" noWrap>
-                {itemName}
-              </Typography>
+              <CartItemName name={itemName} />
               <Typography variant="caption" color="text.secondary">
                 {fCurrency(unitPrice, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
                 each

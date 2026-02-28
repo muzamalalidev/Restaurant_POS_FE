@@ -1,13 +1,15 @@
 'use client';
 
+import { useState, useCallback } from 'react';
+import { varAlpha } from 'minimal-shared/utils';
+
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
 import Skeleton from '@mui/material/Skeleton';
 import Typography from '@mui/material/Typography';
 
 import { fCurrency } from 'src/utils/format-number';
-
-import { CONFIG } from 'src/global-config';
+import { getResolvedImageSrc } from 'src/utils/resolve-image-url';
 
 import { Iconify } from 'src/components/iconify';
 
@@ -16,9 +18,16 @@ import { Iconify } from 'src/components/iconify';
 const MIN_TOUCH_SIZE = 44;
 
 /**
- * Product grid for POS. One tap adds item. Min 44px touch target.
+ * Product grid for POS. Tap to add item (once per product); tap again to remove. Multiple different items allowed.
+ * Cards show selected (in cart) vs unselected state. Min 44px touch target.
  */
-export function PosProductGrid({ items = [], loading, onSelectItem, searchTerm }) {
+export function PosProductGrid({ items = [], loading, onSelectItem, searchTerm, selectedItemIds = [] }) {
+  const [failedImageUrls, setFailedImageUrls] = useState(() => new Set());
+
+  const handleImageError = useCallback((url) => {
+    setFailedImageUrls((prev) => new Set(prev).add(url));
+  }, []);
+
   if (loading) {
     return (
       <Box
@@ -62,7 +71,11 @@ export function PosProductGrid({ items = [], loading, onSelectItem, searchTerm }
       {list.map((item) => {
         const name = item.name || item.id || '';
         const price = Number(item.price) || 0;
-        const imageUrl = item.imageUrl || null;
+        const rawImageUrl = item.imageUrl ?? null;
+        const imageSrc = getResolvedImageSrc(rawImageUrl);
+        const imageFailed = rawImageUrl != null && failedImageUrls.has(rawImageUrl);
+        const showImage = imageSrc && !imageFailed;
+        const isSelected = Array.isArray(selectedItemIds) && selectedItemIds.includes(item.id);
         return (
           <Card
             key={item.id}
@@ -73,8 +86,21 @@ export function PosProductGrid({ items = [], loading, onSelectItem, searchTerm }
               cursor: 'pointer',
               display: 'flex',
               flexDirection: 'column',
-              '&:hover': { bgcolor: 'action.hover' },
-              '&:active': { bgcolor: 'action.selected' },
+              position: 'relative',
+              borderWidth: isSelected ? 2 : 1,
+              borderStyle: 'solid',
+              borderColor: isSelected ? 'primary.main' : 'divider',
+              bgcolor: isSelected ? (theme) => varAlpha(theme.vars.palette.primary.mainChannel, 0.08) : 'transparent',
+              '&:hover': {
+                bgcolor: isSelected
+                  ? (theme) => varAlpha(theme.vars.palette.primary.mainChannel, 0.12)
+                  : 'action.hover',
+              },
+              '&:active': {
+                bgcolor: isSelected
+                  ? (theme) => varAlpha(theme.vars.palette.primary.mainChannel, 0.16)
+                  : 'action.selected',
+              },
             }}
             onClick={() => onSelectItem && onSelectItem(item)}
             role="button"
@@ -85,8 +111,28 @@ export function PosProductGrid({ items = [], loading, onSelectItem, searchTerm }
                 onSelectItem && onSelectItem(item);
               }
             }}
-            aria-label={`Add ${name}, ${price}`}
+            aria-label={isSelected ? `${name} in cart, tap to remove` : `Add ${name}, ${price}`}
+            aria-pressed={isSelected}
           >
+            {isSelected && (
+              <Box
+                sx={{
+                  position: 'absolute',
+                  top: 8,
+                  right: 8,
+                  width: 24,
+                  height: 24,
+                  borderRadius: '50%',
+                  bgcolor: 'primary.main',
+                  color: 'primary.contrastText',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Iconify icon="solar:check-read-bold" width={14} />
+              </Box>
+            )}
             <Box
               sx={{
                 width: '100%',
@@ -99,13 +145,14 @@ export function PosProductGrid({ items = [], loading, onSelectItem, searchTerm }
                 justifyContent: 'center',
               }}
             >
-              {imageUrl ? (
+              {showImage ? (
                 <Box
                   component="img"
-                  src={imageUrl.startsWith('http') ? imageUrl : `${CONFIG.assetsDir}${imageUrl}`}
+                  src={imageSrc}
                   alt=""
                   sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   loading="lazy"
+                  onError={() => handleImageError(rawImageUrl)}
                 />
               ) : (
                 <Iconify icon="solar:cup-star-bold" sx={{ fontSize: 40, color: 'text.disabled' }} />
