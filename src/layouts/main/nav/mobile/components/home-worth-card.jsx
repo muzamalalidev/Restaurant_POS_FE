@@ -4,6 +4,7 @@ import { useState, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
 
+import { paths } from 'src/routes/paths';
 import { usePathname } from 'src/routes/hooks';
 
 // Animation duration must match CSS --mm-duration-overlay (0.6s)
@@ -41,7 +42,7 @@ function SearchIcon() {
  * Features:
  * - Styled input with search button
  * - Scrolls to top of homepage on submit
- * - If not on homepage, navigates to "/" first
+ * - If not on homepage, navigates to default home (paths.home) first
  * - Light blue gradient background
  *
  * @param {function} onNavigate - Navigate with animation (plays close animation, then navigates)
@@ -55,15 +56,15 @@ export function HomeWorthCard({ onNavigate, onClose }) {
     (e) => {
       e.preventDefault();
 
-      if (pathname === '/') {
-        // Already on homepage - play close animation, then scroll to top
+      if (pathname === '/' || pathname === paths.home) {
+        // Already on home - play close animation, then scroll to top
         onClose();
         setTimeout(() => {
           window.scrollTo({ top: 0, behavior: 'smooth' });
         }, CLOSE_ANIMATION_DURATION);
       } else {
-        // Navigate to homepage with animation
-        onNavigate('/');
+        // Navigate to home with animation
+        onNavigate(paths.home);
       }
     },
     [pathname, onNavigate, onClose]

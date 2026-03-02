@@ -1,7 +1,9 @@
 // ----------------------------------------------------------------------
 
+import { paths } from 'src/routes/paths';
+
 export const demoNavData = [
-  { title: 'Home', path: '/' },
+  { title: 'Home', path: paths.home },
   { title: 'Components', path: '/components' },
   {
     title: 'Pages',

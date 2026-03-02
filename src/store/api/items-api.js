@@ -1,4 +1,5 @@
 import { baseApi } from 'src/store/api/base-api';
+import { buildQueryParams, normalizePaginatedResponse } from 'src/store/api/build-query-params';
 
 // ----------------------------------------------------------------------
 
@@ -15,31 +16,10 @@ export const itemsApi = baseApi.injectEndpoints({
     getItems: builder.query({
       query: (params) => ({
         url: '/api/items',
-        params: {
-          categoryId: params?.categoryId || undefined,
-          tenantId: params?.tenantId || undefined,
-          pageNumber: params?.pageNumber || undefined,
-          pageSize: params?.pageSize || undefined,
-          searchTerm: params?.searchTerm || undefined,
-        },
+        params: buildQueryParams(params ?? {}),
       }),
       providesTags: ['Item'],
-      transformResponse: (response) => {
-        // Handle both old format (array) and new format (PaginatedResponse)
-        if (Array.isArray(response)) {
-          return {
-            data: response,
-            pageNumber: 1,
-            pageSize: response.length,
-            totalCount: response.length,
-            totalPages: 1,
-            hasPreviousPage: false,
-            hasNextPage: false,
-          };
-        }
-        // Already in PaginatedResponse format
-        return response;
-      },
+      transformResponse: normalizePaginatedResponse,
     }),
 
     // Get item by ID (PLACEHOLDER - only returns ID, not used in implementation)

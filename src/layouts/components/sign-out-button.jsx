@@ -1,11 +1,12 @@
-import { useCallback } from 'react';
+'use client';
 
-import Button from '@mui/material/Button';
+import { useState, useCallback } from 'react';
 
 import { paths } from 'src/routes/paths';
 import { useRouter } from 'src/routes/hooks';
 
 import { toast } from 'src/components/snackbar';
+import { Field } from 'src/components/hook-form';
 
 import { useAuthContext } from 'src/auth/hooks';
 import { signOut as jwtSignOut } from 'src/auth/context/jwt/action';
@@ -18,34 +19,38 @@ const signOut = jwtSignOut;
 
 export function SignOutButton({ onClose, sx, ...other }) {
   const router = useRouter();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const { checkUserSession } = useAuthContext();
 
   const handleLogout = useCallback(async () => {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
     try {
       await signOut();
       await checkUserSession?.();
-
       onClose?.();
-
       router.push(paths.auth.signIn);
     } catch (error) {
       console.error(error);
       toast.error('Unable to logout!');
+    } finally {
+      setIsLoggingOut(false);
     }
-  }, [checkUserSession, onClose, router]);
+  }, [checkUserSession, isLoggingOut, onClose, router]);
 
   return (
-    <Button
+    <Field.Button
       fullWidth
       variant="soft"
       size="large"
       color="error"
       onClick={handleLogout}
+      disabled={isLoggingOut}
       sx={sx}
       {...other}
     >
       Logout
-    </Button>
+    </Field.Button>
   );
 }

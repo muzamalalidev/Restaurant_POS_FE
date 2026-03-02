@@ -1,4 +1,5 @@
 import { baseApi } from 'src/store/api/base-api';
+import { buildQueryParams, normalizePaginatedResponse } from 'src/store/api/build-query-params';
 
 // ----------------------------------------------------------------------
 
@@ -15,109 +16,37 @@ export const ordersApi = baseApi.injectEndpoints({
     getOrders: builder.query({
       query: (params) => ({
         url: '/api/orders',
-        params: {
-          branchId: params?.branchId || undefined,
-          staffId: params?.staffId || undefined,
-          customerId: params?.customerId || undefined,
-          status: params?.status || undefined,
-          includeItems: params?.includeItems ?? true,
-          pageNumber: params?.pageNumber || undefined,
-          pageSize: params?.pageSize || undefined,
-          searchTerm: params?.searchTerm || undefined,
-        },
+        params: buildQueryParams({ includeItems: true, ...params }),
       }),
       providesTags: ['Order'],
-      transformResponse: (response) => {
-        // Handle both old format (array) and new format (PaginatedResponse)
-        if (Array.isArray(response)) {
-          return {
-            data: response,
-            pageNumber: 1,
-            pageSize: response.length,
-            totalCount: response.length,
-            totalPages: 1,
-            hasPreviousPage: false,
-            hasNextPage: false,
-          };
-        }
-        // Already in PaginatedResponse format
-        return response;
-      },
+      transformResponse: normalizePaginatedResponse,
     }),
 
     // Get orders by order type
     getOrdersByOrderType: builder.query({
       query: (params) => ({
         url: '/api/orders/by-order-type',
-        params: {
-          orderTypeId: params?.orderTypeId || undefined,
-          orderTypeName: params?.orderTypeName || undefined,
-          status: params?.status || undefined,
-          branchId: params?.branchId || undefined,
-          includeItems: params?.includeItems ?? true,
-          pageNumber: params?.pageNumber || undefined,
-          pageSize: params?.pageSize || undefined,
-          searchTerm: params?.searchTerm || undefined,
-        },
+        params: buildQueryParams({ includeItems: true, ...params }),
       }),
       providesTags: ['Order'],
-      transformResponse: (response) => {
-        // Handle both old format (array) and new format (PaginatedResponse)
-        if (Array.isArray(response)) {
-          return {
-            data: response,
-            pageNumber: 1,
-            pageSize: response.length,
-            totalCount: response.length,
-            totalPages: 1,
-            hasPreviousPage: false,
-            hasNextPage: false,
-          };
-        }
-        // Already in PaginatedResponse format
-        return response;
-      },
+      transformResponse: normalizePaginatedResponse,
     }),
 
     // Get take away orders (convenience endpoint)
     getTakeAwayOrders: builder.query({
       query: (params) => ({
         url: '/api/orders/takeaway',
-        params: {
-          status: params?.status || undefined,
-          branchId: params?.branchId || undefined,
-          includeItems: params?.includeItems ?? true,
-          pageNumber: params?.pageNumber || undefined,
-          pageSize: params?.pageSize || undefined,
-          searchTerm: params?.searchTerm || undefined,
-        },
+        params: buildQueryParams({ includeItems: true, ...params }),
       }),
       providesTags: ['Order'],
-      transformResponse: (response) => {
-        // Handle both old format (array) and new format (PaginatedResponse)
-        if (Array.isArray(response)) {
-          return {
-            data: response,
-            pageNumber: 1,
-            pageSize: response.length,
-            totalCount: response.length,
-            totalPages: 1,
-            hasPreviousPage: false,
-            hasNextPage: false,
-          };
-        }
-        // Already in PaginatedResponse format
-        return response;
-      },
+      transformResponse: normalizePaginatedResponse,
     }),
 
     // Get order by ID (fully implemented, not placeholder)
     getOrderById: builder.query({
       query: ({ id, includeItems = true }) => ({
         url: `/api/orders/${id}`,
-        params: {
-          includeItems,
-        },
+        params: buildQueryParams({ includeItems: includeItems ?? true }),
       }),
       providesTags: (result, error, { id }) => [{ type: 'Order', id }],
     }),

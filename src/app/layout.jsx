@@ -37,6 +37,11 @@ export const metadata = {
     statusBarStyle: 'black-translucent',
     title: CONFIG.appName,
   },
+  title: {
+    default: CONFIG.appName,
+    template: `%s | ${CONFIG.appName}`,
+  },
+  description: CONFIG.appDescription,
   icons: [
     {
       rel: 'icon',

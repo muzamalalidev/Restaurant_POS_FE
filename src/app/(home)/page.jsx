@@ -1,14 +1,13 @@
-import { createLazyView } from 'src/utils/dynamic-imports';
+import { redirect } from 'next/navigation';
+
+import { paths } from 'src/routes/paths';
 
 // ----------------------------------------------------------------------
 
-const HomeView = createLazyView(() => import('src/sections/home/view'), 'HomeView');
-
-export const metadata = {
-  title: 'Minimal UI - Modern Dashboard Theme',
-  description: 'A modern, clean dashboard theme built with Next.js and Material-UI',
-};
-
-export default function Page() {
-  return <HomeView />;
+/**
+ * Root "/" redirects to default website navigation target (paths.home = sign-in).
+ * Keeps single source of truth in paths.js for where users land when opening the app.
+ */
+export default function HomePage() {
+  redirect(paths.home);
 }

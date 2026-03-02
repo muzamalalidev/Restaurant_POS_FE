@@ -30,7 +30,7 @@ export function buildBlogPostSchema(post) {
 
     author: {
       '@type': 'Person',
-      name: post.author?.name || 'Minimal Dashboard Team',
+      name: post.author?.name || `${CONFIG.appName} Team`,
       ...(post.author?.slug?.current && {
         url: `${siteUrl}/author/${post.author.slug.current}`,
       }),
@@ -38,14 +38,14 @@ export function buildBlogPostSchema(post) {
       ...(post.author?.role && { jobTitle: post.author.role }),
       worksFor: {
         '@type': 'Organization',
-        name: 'Minimal Dashboard',
+        name: CONFIG.appName,
         url: siteUrl,
       },
     },
 
     publisher: {
       '@type': 'Organization',
-      name: 'Minimal Dashboard',
+      name: CONFIG.appName,
       url: siteUrl,
       logo: {
         '@type': 'ImageObject',
@@ -81,7 +81,7 @@ export function buildBlogPostSchema(post) {
 
     isPartOf: {
       '@type': 'Blog',
-      name: 'Minimal Dashboard Blog',
+      name: `${CONFIG.appName} Blog`,
       url: `${siteUrl}/blog`,
     },
     inLanguage: 'en-US',

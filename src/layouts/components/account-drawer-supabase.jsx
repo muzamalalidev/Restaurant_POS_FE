@@ -74,7 +74,7 @@ export function AccountDrawerSupabase({ data = [], sx, ...other }) {
     >
       {data.map((option) => {
         const rootLabel = pathname.includes('/dashboard') || pathname.includes('/platform') || pathname.includes('/tenant') ? 'Home' : 'Dashboard';
-        const rootHref = pathname.includes('/dashboard') || pathname.includes('/platform') || pathname.includes('/tenant') ? paths.platform.tenantMasters.root : '/';
+        const rootHref = pathname.includes('/dashboard') || pathname.includes('/platform') || pathname.includes('/tenant') ? paths.platform.tenantMasters.root : paths.home;
 
         const resolvedHref =
           option.label === 'Account settings'
@@ -217,7 +217,7 @@ export function AccountDrawerSupabase({ data = [], sx, ...other }) {
         </Scrollbar>
 
         <Box sx={{ p: 2.5 }}>
-          <SignOutButton onClose={onClose} />
+          <SignOutButton fullWidth onClose={onClose} />
         </Box>
       </Drawer>
     </>

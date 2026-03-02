@@ -1,8 +1,11 @@
-import { paths } from 'src/routes/paths';
-
 import axios from 'src/lib/axios';
 
-import { JWT_STORAGE_KEY } from 'src/auth/context/jwt/constant';
+import {
+  JWT_STORAGE_KEY,
+  USER_STORAGE_KEY,
+  EXPIRES_AT_STORAGE_KEY,
+  REFRESH_TOKEN_STORAGE_KEY,
+} from 'src/auth/context/jwt/constant';
 
 // ----------------------------------------------------------------------
 
@@ -51,41 +54,119 @@ export function isValidToken(accessToken) {
 
 // ----------------------------------------------------------------------
 
-export function tokenExpired(exp) {
-  const currentTime = Date.now();
-  const timeLeft = exp * 1000 - currentTime;
-
-  setTimeout(() => {
-    try {
-      alert('Token expired!');
-      sessionStorage.removeItem(JWT_STORAGE_KEY);
-      window.location.href = paths.auth.signIn;
-    } catch (error) {
-      console.error('Error during token expiration:', error);
-      throw error;
-    }
-  }, timeLeft);
+/**
+ * Get refresh token from storage (for refresh endpoint). Do not expose in URLs or logs.
+ */
+export function getRefreshToken() {
+  if (typeof window === 'undefined') return null;
+  return sessionStorage.getItem(REFRESH_TOKEN_STORAGE_KEY);
 }
 
 // ----------------------------------------------------------------------
 
-export async function setSession(accessToken) {
+/**
+ * Get stored user from storage (from login/refresh response). Returns null if missing or invalid.
+ */
+export function getStoredUser() {
+  if (typeof window === 'undefined') return null;
   try {
-    if (accessToken) {
-      sessionStorage.setItem(JWT_STORAGE_KEY, accessToken);
+    const raw = sessionStorage.getItem(USER_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
 
-      axios.defaults.headers.common.Authorization = `Bearer ${accessToken}`;
+// ----------------------------------------------------------------------
 
-      const decodedToken = jwtDecode(accessToken); // ~3 days by minimals server
+/**
+ * Get access token expiry (ISO string or null). Used for proactive refresh timer.
+ */
+export function getExpiresAt() {
+  if (typeof window === 'undefined') return null;
+  return sessionStorage.getItem(EXPIRES_AT_STORAGE_KEY);
+}
 
-      if (decodedToken && 'exp' in decodedToken) {
-        tokenExpired(decodedToken.exp);
-      } else {
-        throw new Error('Invalid access token!');
-      }
+// ----------------------------------------------------------------------
+
+/**
+ * Clear all auth data from storage and remove Bearer from axios. Call on logout and when refresh returns 401.
+ */
+export function clearSession() {
+  if (typeof window !== 'undefined') {
+    sessionStorage.removeItem(JWT_STORAGE_KEY);
+    sessionStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY);
+    sessionStorage.removeItem(EXPIRES_AT_STORAGE_KEY);
+    sessionStorage.removeItem(USER_STORAGE_KEY);
+  }
+  delete axios.defaults.headers.common.Authorization;
+}
+
+// ----------------------------------------------------------------------
+
+/**
+ * Set session from login/refresh response or from single accessToken (legacy).
+ * @param {string|object} accessTokenOrResponse - Access token string or full LoginResponse { accessToken, refreshToken?, expiresAt?, refreshTokenExpiresAt?, userId, email, userName?, roles?, permissions? }
+ * @param {object} [opts] - If first arg is string: { refreshToken?, expiresAt?, user? }
+ */
+export async function setSession(accessTokenOrResponse, opts = {}) {
+  try {
+    if (!accessTokenOrResponse) {
+      clearSession();
+      return;
+    }
+
+    let accessToken;
+    let refreshToken;
+    let expiresAt;
+    let user;
+
+    if (typeof accessTokenOrResponse === 'string') {
+      accessToken = accessTokenOrResponse;
+      refreshToken = opts.refreshToken ?? null;
+      expiresAt = opts.expiresAt ?? null;
+      user = opts.user ?? null;
     } else {
-      sessionStorage.removeItem(JWT_STORAGE_KEY);
-      delete axios.defaults.headers.common.Authorization;
+      const res = accessTokenOrResponse;
+      accessToken = res.accessToken;
+      refreshToken = res.refreshToken ?? null;
+      expiresAt = res.expiresAt ?? null;
+      user = {
+        id: res.userId,
+        userId: res.userId,
+        email: res.email,
+        displayName: res.userName ?? res.email,
+        userName: res.userName,
+        roles: res.roles ?? [],
+        permissions: res.permissions ?? [],
+      };
+    }
+
+    if (!accessToken) {
+      clearSession();
+      return;
+    }
+
+    sessionStorage.setItem(JWT_STORAGE_KEY, accessToken);
+    axios.defaults.headers.common.Authorization = `Bearer ${accessToken}`;
+
+    if (refreshToken != null) {
+      sessionStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, refreshToken);
+    } else {
+      sessionStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY);
+    }
+
+    if (expiresAt != null) {
+      sessionStorage.setItem(EXPIRES_AT_STORAGE_KEY, expiresAt);
+    } else {
+      sessionStorage.removeItem(EXPIRES_AT_STORAGE_KEY);
+    }
+
+    if (user != null) {
+      sessionStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+    } else {
+      sessionStorage.removeItem(USER_STORAGE_KEY);
     }
   } catch (error) {
     console.error('Error during set session:', error);

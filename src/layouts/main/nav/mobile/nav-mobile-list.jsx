@@ -20,7 +20,7 @@ export function NavList({ data, sx, ...other }) {
   const pathname = usePathname();
   const navItemRef = useRef(null);
 
-  const isNotRootOrDocs = !['/', paths.docs].includes(pathname);
+  const isNotRootOrDocs = !['/', paths.home, paths.docs].includes(pathname);
   const isNotComponentsPath = !pathname.startsWith(paths.components);
   const isOpenPath = !!data.children && isNotRootOrDocs && isNotComponentsPath;
 

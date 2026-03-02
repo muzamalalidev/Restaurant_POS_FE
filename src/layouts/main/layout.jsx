@@ -33,7 +33,7 @@ import { MenuOverlay, HamburgerButton } from './nav/mobile';
 export function MainLayout({ sx, cssVars, children, slotProps, layoutQuery = 'md' }) {
   const pathname = usePathname();
 
-  const isHomePage = pathname === '/';
+  const isHomePage = pathname === '/' || pathname === paths.home;
   const isBlogPage = pathname.startsWith('/blog');
   const { navBack } = useNavBack();
 
@@ -76,7 +76,7 @@ export function MainLayout({ sx, cssVars, children, slotProps, layoutQuery = 'md
         {showText && (
           <Typography
             component={RouterLink}
-            href="/"
+            href={paths.home}
             variant={size === 'sm' ? 'h5' : 'h4'}
             sx={(theme) => ({
               fontFamily: theme.typography.fontSecondaryFamily,
@@ -95,8 +95,8 @@ export function MainLayout({ sx, cssVars, children, slotProps, layoutQuery = 'md
               },
             })}
           >
-            <span className="brand-name">Minimal</span>
-            <span className="brand-extension" />
+            <span className="brand-name">Cloud Mate</span>
+            <span className="brand-extension"> Restaurant POS</span>
           </Typography>
         )}
       </Box>

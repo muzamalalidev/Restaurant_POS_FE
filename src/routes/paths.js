@@ -29,6 +29,8 @@ export const paths = {
     updatePassword: '/update-password',
     verify: '/verify',
   },
+  /** Default website navigation target (root "/" and "Home" links redirect here). Keep in sync with auth.signIn when home should be sign-in. */
+  home: '/sign-in',
   // DASHBOARD
   dashboard: {
     root: ROOTS.DASHBOARD,

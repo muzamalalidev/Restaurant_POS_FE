@@ -19,7 +19,6 @@ export function HeaderSection({
   slotProps,
   className,
   disableOffset,
-  disableElevation,
   layoutQuery = 'md',
   ...other
 }) {
@@ -31,7 +30,6 @@ export function HeaderSection({
       color="transparent"
       isOffset={isOffset}
       disableOffset={disableOffset}
-      disableElevation={disableElevation}
       data-offset={isOffset ? 'true' : 'false'}
       className={mergeClasses([layoutClasses.header, className])}
       sx={[
@@ -65,44 +63,41 @@ export function HeaderSection({
 
 const HeaderRoot = styled(AppBar, {
   shouldForwardProp: (prop) =>
-    !['isOffset', 'disableOffset', 'disableElevation', 'sx'].includes(prop),
-})(({ isOffset, disableOffset, disableElevation, theme }) => {
-  const pauseZindex = { top: -1, bottom: -2 };
+    !['isOffset', 'disableOffset', 'sx'].includes(prop),
+})(({ isOffset, disableOffset, theme }) => {
+  const pauseZindex = { top: -1 };
 
-  const pauseStyles = {
-    opacity: 0,
+  const transition = theme.transitions.create(['opacity', 'visibility'], {
+    easing: theme.transitions.easing.easeInOut,
+    duration: theme.transitions.duration.shorter,
+  });
+
+  const pseudoBase = {
     content: '""',
-    visibility: 'hidden',
     position: 'absolute',
-    transition: theme.transitions.create(['opacity', 'visibility'], {
-      easing: theme.transitions.easing.easeInOut,
-      duration: theme.transitions.duration.shorter,
-    }),
-  };
-
-  const bgStyles = {
-    ...pauseStyles,
     top: 0,
     left: 0,
     width: '100%',
     height: '100%',
-    zIndex: pauseZindex.top,
-    backgroundColor: 'transparent',
-    backdropFilter: 'none',
+    pointerEvents: 'none',
+    transition,
   };
 
-  const shadowStyles = {
-    ...pauseStyles,
-    opacity: 0,
-    visibility: 'hidden',
-    boxShadow: 'none',
-  };
+  const showBg = !disableOffset && isOffset;
 
   return {
     zIndex: 'var(--layout-header-zIndex)',
     backgroundColor: 'transparent',
-    ...(!disableOffset && { '&::before': bgStyles }),
-    ...(!disableElevation && { '&::after': shadowStyles }),
+    ...(!disableOffset && {
+      '&::before': {
+        ...pseudoBase,
+        zIndex: pauseZindex.top,
+        opacity: showBg ? 1 : 0,
+        visibility: showBg ? 'visible' : 'hidden',
+        backgroundColor: showBg ? theme.vars.palette.background.paper : 'transparent',
+        backdropFilter: showBg ? `blur(var(--layout-header-blur, 8px))` : 'none',
+      },
+    }),
   };
 });
 

@@ -51,7 +51,7 @@ export function SidebarMobileHeader() {
             fill="url(#mobileLogoGradient)"
           />
         </svg>
-        <span>Minimal</span>
+        <span>Cloud Mate</span>
       </a>
 
       <div className="mobile-header-avatar">{initials}</div>

@@ -21,7 +21,7 @@ export function SidebarBrand() {
       <div className="logo-icon">
         <Image
           src={`${CONFIG.assetsDir}logo/house-logo.png`}
-          alt="Minimal Dashboard logo"
+          alt="Cloud Mate Restaurant POS logo"
           width={42}
           height={42}
           style={{ objectFit: 'contain' }}
@@ -29,8 +29,8 @@ export function SidebarBrand() {
         />
       </div>
       <div className="brand-text">
-        <span className="brand-name">Minimal</span>
-        <span className="brand-tagline">Dashboard</span>
+        <span className="brand-name">Cloud Mate</span>
+        <span className="brand-tagline">Restaurant POS</span>
       </div>
     </Link>
   );

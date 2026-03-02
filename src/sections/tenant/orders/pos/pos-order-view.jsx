@@ -22,14 +22,20 @@ import { useGetItemsQuery } from 'src/store/api/items-api';
 import { useCreateOrderMutation } from 'src/store/api/orders-api';
 import { useGetStaffDropdownQuery } from 'src/store/api/staff-api';
 import { useGetTablesDropdownQuery } from 'src/store/api/tables-api';
-import { useGetCategoriesQuery } from 'src/store/api/categories-api';
 import { useGetBranchesDropdownQuery } from 'src/store/api/branches-api';
+import { useGetCategoriesDropdownQuery } from 'src/store/api/categories-api';
 import { useGetOrderTypesDropdownQuery } from 'src/store/api/order-types-api';
 import { useGetPaymentModesDropdownQuery } from 'src/store/api/payment-modes-api';
 
 import { toast } from 'src/components/snackbar';
 import { Iconify } from 'src/components/iconify';
 import { Form, Field } from 'src/components/hook-form';
+import { CustomDialog } from 'src/components/custom-dialog';
+import {
+  useInvoicePrint,
+  InvoicePrintLayout,
+  buildInvoicePayload,
+} from 'src/components/invoice-print';
 
 import { PosCartList } from './components/pos-cart-list';
 import { PosProductGrid } from './components/pos-product-grid';
@@ -79,10 +85,13 @@ const defaultDeliveryDetails = {
 function PosOrderContent({
   branchOptions = [],
   orderTypeOptions = [],
+  orderTypeOptionsLoading = false,
   staffOptions = [],
   hasCartItems = false,
   isCreating = false,
   onSaveAndPrintClick,
+  onPreviewInvoiceClick,
+  optionsRef,
 }) {
   const { control, watch, setValue } = useFormContext();
   const [categoryId, setCategoryId] = useState(null);
@@ -126,13 +135,14 @@ function PosOrderContent({
     return () => clearTimeout(t);
   }, [searchTerm]);
 
-  const { data: categoriesResponse, isLoading: categoriesLoading } = useGetCategoriesQuery({
-    pageSize: 200,
-  });
-  const categories = useMemo(
-    () => (categoriesResponse?.data ?? []).filter((c) => c.isActive !== false),
-    [categoriesResponse]
-  );
+  const { data: categoriesDropdown, isLoading: categoriesLoading } = useGetCategoriesDropdownQuery(undefined);
+  const categories = useMemo(() => {
+    if (!categoriesDropdown || !Array.isArray(categoriesDropdown)) return [];
+    return categoriesDropdown.map((item) => ({
+      id: item.id ?? item.key,
+      name: item.name ?? item.value ?? item.key,
+    }));
+  }, [categoriesDropdown]);
 
   const itemsQueryParams = useMemo(
     () => ({
@@ -142,7 +152,7 @@ function PosOrderContent({
     }),
     [categoryId, debouncedSearch]
   );
-  const { data: itemsResponse, isLoading: itemsLoading } = useGetItemsQuery(itemsQueryParams);
+  const { data: itemsResponse, isLoading: itemsLoading, isFetching: itemsFetching } = useGetItemsQuery(itemsQueryParams);
   const products = useMemo(() => itemsResponse?.data ?? [], [itemsResponse]);
   const itemOptions = useMemo(
     () =>
@@ -173,6 +183,19 @@ function PosOrderContent({
     if (!tablesDropdown || !Array.isArray(tablesDropdown)) return [];
     return tablesDropdown.map((item) => ({ id: item.key, label: item.value || item.key }));
   }, [tablesDropdown]);
+
+  useEffect(() => {
+    if (optionsRef?.current) {
+      optionsRef.current = {
+        branchOptions,
+        orderTypeOptions,
+        staffOptions,
+        tableOptions,
+        paymentModeOptions,
+        itemOptions,
+      };
+    }
+  }, [optionsRef, branchOptions, orderTypeOptions, staffOptions, tableOptions, paymentModeOptions, itemOptions]);
 
   const subtotal = useMemo(() => {
     if (!items.length) return 0;
@@ -281,7 +304,7 @@ function PosOrderContent({
           >
             <PosProductGrid
               items={products}
-              loading={itemsLoading}
+              loading={itemsLoading || itemsFetching}
               onSelectItem={addOrToggleItem}
               searchTerm={debouncedSearch}
               selectedItemIds={selectedItemIds}
@@ -303,6 +326,7 @@ function PosOrderContent({
             <PosOrderContext
               branchOptions={branchOptions}
               orderTypeOptions={orderTypeOptions}
+              orderTypeOptionsLoading={orderTypeOptionsLoading}
               tableOptions={tableOptions}
               staffOptions={staffOptions}
               paymentModeOptions={paymentModeOptions}
@@ -423,6 +447,18 @@ function PosOrderContent({
               >
                 Save & print
               </Field.Button>
+              <Field.Button
+                type="button"
+                variant="outlined"
+                size="medium"
+                fullWidth
+                disabled={isCreating || !hasCartItems}
+                startIcon="solar:document-text-bold"
+                onClick={onPreviewInvoiceClick}
+                sx={{ flex: 1, minHeight: 44 }}
+              >
+                Preview invoice
+              </Field.Button>
             </Stack>
         </Card>
       </Box>
@@ -435,10 +471,15 @@ export function PosOrderView() {
   const [createOrder, { isLoading: isCreating }] = useCreateOrderMutation();
   const isSubmittingRef = useRef(false);
   const printAfterRef = useRef(false);
+  const optionsRef = useRef({});
+
+  const { invoicePrintPayload, triggerPrint } = useInvoicePrint();
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewPayload, setPreviewPayload] = useState(null);
 
   const { data: branchesDropdown } = useGetBranchesDropdownQuery();
   const { data: staffDropdown } = useGetStaffDropdownQuery();
-  const { data: orderTypesDropdown } = useGetOrderTypesDropdownQuery();
+  const { data: orderTypesDropdown, isLoading: orderTypesLoading } = useGetOrderTypesDropdownQuery();
 
   const branchOptions = useMemo(() => {
     if (!branchesDropdown || !Array.isArray(branchesDropdown)) return [];
@@ -545,12 +586,14 @@ export function PosOrderView() {
         discountPercentage: discPct ?? null,
         notes: data.notes === '' ? null : data.notes,
       };
-      await createOrder(createData).unwrap();
+      const result = await createOrder(createData).unwrap();
       toast.success('Order saved');
       methods.reset(defaultValues);
       if (printAfterRef.current) {
         printAfterRef.current = false;
-        window.print();
+        const payload = buildInvoicePayload(data, optionsRef.current || {}, result);
+        triggerPrint(payload);
+        toast.info('Print dialog opened. Complete or cancel in the dialog.');
       }
     } catch (err) {
       const { message, isRetryable } = getApiErrorMessage(err, { defaultMessage: 'Failed to save order' });
@@ -573,6 +616,13 @@ export function PosOrderView() {
   const handleSaveAndPrintClick = useCallback(() => {
     printAfterRef.current = true;
   }, []);
+
+  const handlePreviewInvoiceClick = useCallback(() => {
+    const data = methods.getValues();
+    const payload = buildInvoicePayload(data, optionsRef.current || {}, null);
+    setPreviewPayload(payload);
+    setPreviewOpen(true);
+  }, [methods]);
 
   return (
     <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', bgcolor: 'background.default', p: 2 }}>
@@ -635,12 +685,48 @@ export function PosOrderView() {
           <PosOrderContent
             branchOptions={branchOptions}
             orderTypeOptions={orderTypeOptions}
+            orderTypeOptionsLoading={orderTypesLoading}
             staffOptions={staffOptions}
             hasCartItems={hasCartItems}
             isCreating={isCreating}
             onSaveAndPrintClick={handleSaveAndPrintClick}
+            onPreviewInvoiceClick={handlePreviewInvoiceClick}
+            optionsRef={optionsRef}
           />
         </Form>
+
+        {/* Print root: hidden on screen, visible in @media print */}
+        {invoicePrintPayload && (
+          <Box
+            sx={{
+              position: 'absolute',
+              left: -9999,
+              top: 0,
+              width: '80mm',
+              visibility: 'hidden',
+              pointerEvents: 'none',
+              zIndex: -1,
+            }}
+            id="invoice-print-root"
+            className="invoice-print-root"
+          >
+            <InvoicePrintLayout payload={invoicePrintPayload} widthPreset="80mm" />
+          </Box>
+        )}
+
+        <CustomDialog
+          open={previewOpen}
+          onClose={() => setPreviewOpen(false)}
+          title="Invoice preview"
+          maxWidth="xs"
+          fullWidth
+        >
+          <Box sx={{ p: 0 }}>
+            {previewPayload && (
+              <InvoicePrintLayout payload={previewPayload} widthPreset="80mm" />
+            )}
+          </Box>
+        </CustomDialog>
       </FormProvider>
     </Box>
   );

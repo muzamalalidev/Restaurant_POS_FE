@@ -10,9 +10,11 @@ import { useSettingsContext } from 'src/components/settings';
 import { BreadcrumbsPortalProvider } from 'src/components/custom-breadcrumbs';
 
 import { NavHorizontal } from './nav-horizontal';
+import { _account } from '../nav-config-account';
 import { navData } from '../nav-config-dashboard';
 import { MenuButton } from '../components/menu-button';
 import { SettingsButton } from '../components/settings-button';
+import { AccountPopover } from '../components/account-popover';
 import { Sidebar, useSidebar, SidebarProvider } from '../sidebar';
 import { ModeToggleButton } from '../components/mode-toggle-button';
 import { MainSection, HeaderSection, LayoutSection } from '../core';
@@ -80,6 +82,7 @@ function DashboardLayoutInner({ sx, cssVars, children, slotProps, layoutQuery = 
       ),
       rightArea: (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 0, sm: 0.75 } }}>
+          <AccountPopover data={_account} />
           <ModeToggleButton />
           <SettingsButton />
         </Box>
@@ -89,7 +92,6 @@ function DashboardLayoutInner({ sx, cssVars, children, slotProps, layoutQuery = 
     return (
       <HeaderSection
         layoutQuery={layoutQuery}
-        disableElevation
         {...slotProps?.header}
         slots={{ ...headerSlots, ...slotProps?.header?.slots }}
         slotProps={merge(headerSlotProps, slotProps?.header?.slotProps ?? {})}

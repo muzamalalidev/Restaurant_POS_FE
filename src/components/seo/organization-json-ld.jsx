@@ -19,11 +19,10 @@ export function buildOrganizationSchema() {
     '@id': `${siteUrl}/#organization`,
 
     // === Core identity ===
-    name: 'Minimal Dashboard',
-    legalName: 'Minimal Dashboard',
+    name: CONFIG.appName,
+    legalName: CONFIG.appName,
     url: siteUrl,
-    description:
-      'A modern dashboard theme built with Next.js, Material UI, and React.',
+    description: CONFIG.appDescription,
 
     // === Visual identity ===
     logo: {

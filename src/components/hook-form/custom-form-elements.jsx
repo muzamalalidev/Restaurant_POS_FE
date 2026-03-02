@@ -12,6 +12,7 @@ import Rating from '@mui/material/Rating';
 import Slider from '@mui/material/Slider';
 import Button from '@mui/material/Button';
 import Checkbox from '@mui/material/Checkbox';
+import Skeleton from '@mui/material/Skeleton';
 import TextField from '@mui/material/TextField';
 import FormGroup from '@mui/material/FormGroup';
 import FormLabel from '@mui/material/FormLabel';
@@ -25,6 +26,7 @@ import { TimePicker } from '@mui/x-date-pickers/TimePicker';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 
+import { compressImageFile } from 'src/utils/image-compression';
 import { getApiErrorMessage } from 'src/utils/api-error-message';
 import { uploadFileViaPresigned } from 'src/utils/s3-upload-service';
 
@@ -1169,6 +1171,8 @@ export function RHFCountrySelect({ name, helperText, ...other }) {
  * @param {boolean} multiple - Allow multiple file selection
  * @param {boolean} useS3 - Enable S3 upload (default: false, stores File objects locally)
  * @param {'presigned' | 'direct' | 'auto'} s3Mode - S3 upload mode (only used when useS3=true)
+ * @param {boolean} compressImage - Compress images before S3 upload (default: true when useS3)
+ * @param {object} compressImageOptions - Options for compression (e.g. maxSizeKB, maxWidthOrHeight)
  * @param {ReactNode} helperText - Helper text to display
  * @param {object} other - Additional props passed to Upload
  */
@@ -1177,9 +1181,12 @@ export function RHFUpload({
   multiple,
   useS3 = false,
   s3Mode = 'auto',
+  compressImage,
+  compressImageOptions,
   helperText,
   ...other
 }) {
+  const compressImageEnabled = compressImage !== false && useS3;
   const { control, setValue, watch } = useFormContext();
   const [uploading, setUploading] = useState(false);
   const [previewUrls, setPreviewUrls] = useState({});
@@ -1282,6 +1289,9 @@ export function RHFUpload({
             try {
               const uploadPromises = acceptedFiles.map(async (file) => {
                 try {
+                  if (compressImageEnabled) {
+                    file = await compressImageFile(file, compressImageOptions);
+                  }
                   let result;
 
                   if (s3Mode === 'presigned') {
@@ -1432,6 +1442,8 @@ export function RHFUploadBox({ name, ...other }) {
  * @param {string} name - Field name (required)
  * @param {boolean} useS3 - Enable S3 upload (default: false, stores File objects locally)
  * @param {'presigned' | 'direct' | 'auto'} s3Mode - S3 upload mode (only used when useS3=true)
+ * @param {boolean} compressImage - Compress image before S3 upload (default: true when useS3)
+ * @param {object} compressImageOptions - Options for compression (e.g. maxSizeKB, maxWidthOrHeight)
  * @param {object} slotProps - MUI slot props for customization
  * @param {object} other - Additional props passed to UploadAvatar
  */
@@ -1439,12 +1451,15 @@ export function RHFUploadAvatar({
   name,
   useS3 = false,
   s3Mode = 'auto',
+  compressImage,
+  compressImageOptions,
   slotProps,
   ...other
 }) {
   const { control, setValue } = useFormContext();
   const [uploading, setUploading] = useState(false);
   const uploadRef = useRef(false);
+  const compressImageEnabled = compressImage !== false && useS3;
 
   const [getPresignedUrls] = useLazyGetPresignedUrlsQuery();
   const [directUpload, { isLoading: isDirectUploading }] = useDirectUploadMutation();
@@ -1461,7 +1476,7 @@ export function RHFUploadAvatar({
 
           if (acceptedFiles.length === 0) return;
 
-          const file = acceptedFiles[0];
+          let file = acceptedFiles[0];
 
           // S3 upload mode
           if (useS3) {
@@ -1469,6 +1484,9 @@ export function RHFUploadAvatar({
             uploadRef.current = true;
 
             try {
+              if (compressImageEnabled) {
+                file = await compressImageFile(file, compressImageOptions);
+              }
               let result;
 
               if (s3Mode === 'presigned') {
@@ -1905,6 +1923,182 @@ function RHFEditorLazy(props) {
 }
 
 // ----------------------------------------------------------------------
+// ChipStrip Component (presentational + RHF)
+// ----------------------------------------------------------------------
+
+const CHIP_STRIP_MIN_TOUCH_HEIGHT = 44;
+const CHIP_STRIP_SKELETON_WIDTHS = [72, 96, 88, 64, 80];
+
+/**
+ * Normalizes a chip strip option to { id, label }.
+ * Supports object ({ id, name, label }) or primitive (used as id and label).
+ * @param {object|string|number} item - Raw option item
+ * @returns {{ id: string|number, label: string }}
+ */
+function normalizeChipStripOption(item) {
+  if (item === null || item === undefined) {
+    return { id: '', label: '' };
+  }
+  if (typeof item === 'object' && item !== null) {
+    const id = item.id ?? item.value ?? '';
+    const label = [item.name, item.label, item.title].find((v) => v != null && v !== '') ?? String(id);
+    return { id, label };
+  }
+  const v = String(item);
+  return { id: v, label: v };
+}
+
+/**
+ * Presentational horizontal scrollable chip strip (single selection).
+ * Use with value/onChange (controlled) or via RHFChipStrip with name (form).
+ * Min 44px touch targets per spec.
+ *
+ * @param {Array<object|string|number>} categories - List of options (objects with id/name/label or primitives)
+ * @param {string|number|null} selectedId - Currently selected option id (null = "All" selected)
+ * @param {function(string|number|null): void} onSelect - Called when selection changes
+ * @param {boolean} loading - Show skeleton placeholders
+ * @param {string} allOptionLabel - Label for "All" chip (default: "All Products")
+ * @param {boolean} showAllOption - Show the "All" chip (default: true)
+ * @param {function(any): string|number} getOptionId - Custom id getter (optional)
+ * @param {function(any): string} getOptionLabel - Custom label getter (optional)
+ * @param {boolean} disabled - Disabled state (cursor no-drop, grey bg)
+ * @param {object} slotProps - MUI slot props (wrapper sx, etc.)
+ * @param {string} color - Chip color (default: "primary")
+ * @param {string} variant - Chip variant
+ * @param {number} minTouchHeight - Min height for touch targets (default: 44)
+ */
+export function ChipStripUI({
+  categories = [],
+  selectedId,
+  onSelect,
+  loading = false,
+  allOptionLabel = 'All Products',
+  showAllOption = true,
+  getOptionId,
+  getOptionLabel,
+  disabled = false,
+  slotProps,
+  color = 'primary',
+  variant,
+  minTouchHeight = CHIP_STRIP_MIN_TOUCH_HEIGHT,
+  ...other
+}) {
+  const normalizedCategories = Array.isArray(categories) ? categories : [];
+  const getId = getOptionId ?? ((item) => normalizeChipStripOption(item).id);
+  const getLabel = getOptionLabel ?? ((item) => normalizeChipStripOption(item).label);
+
+  return (
+    <Box
+      {...slotProps?.wrapper}
+      sx={[
+        {
+          display: 'flex',
+          gap: 1,
+          overflowX: 'auto',
+          pb: 1,
+          minHeight: minTouchHeight + 8,
+          alignItems: 'center',
+          '&::-webkit-scrollbar': { height: 6 },
+        },
+        ...(Array.isArray(slotProps?.wrapper?.sx)
+          ? slotProps.wrapper.sx
+          : [slotProps?.wrapper?.sx].filter(Boolean)),
+        ...(disabled ? [disabledFieldSx] : []),
+        ...(Array.isArray(other.sx) ? other.sx : [other.sx].filter(Boolean)),
+      ]}
+    >
+      {showAllOption && (
+        <Chip
+          label={allOptionLabel}
+          onClick={() => !disabled && onSelect?.(null)}
+          variant={selectedId === null || selectedId === undefined ? 'filled' : 'outlined'}
+          color={color}
+          disabled={disabled}
+          sx={{ minHeight: minTouchHeight, flexShrink: 0 }}
+        />
+      )}
+      {loading
+        ? CHIP_STRIP_SKELETON_WIDTHS.map((width, i) => (
+            <Skeleton
+              key={`skeleton-${i}`}
+              variant="rounded"
+              width={width}
+              height={minTouchHeight}
+              sx={{ flexShrink: 0 }}
+            />
+          ))
+        : normalizedCategories.map((cat, index) => {
+            const id = getId(cat);
+            const label = getLabel(cat);
+            const isSelected =
+              id === selectedId ||
+              (selectedId != null && String(id) === String(selectedId));
+            return (
+              <Chip
+                key={id != null && id !== '' ? id : `cat-${index}`}
+                label={label != null && label !== '' ? label : String(id)}
+                onClick={() => !disabled && onSelect?.(id)}
+                variant={isSelected ? 'filled' : 'outlined'}
+                color={color}
+                disabled={disabled}
+                sx={{ minHeight: minTouchHeight, flexShrink: 0 }}
+              />
+            );
+          })}
+    </Box>
+  );
+}
+
+/**
+ * React Hook Form ChipStrip component.
+ * Renders a horizontal scrollable chip strip; value is the selected option id (null = "All").
+ *
+ * @param {string} name - Field name (required)
+ * @param {Array<object|string|number>} categories - List of options
+ * @param {boolean} loading - Show loading skeletons
+ * @param {string} allOptionLabel - Label for "All" chip
+ * @param {boolean} showAllOption - Show the "All" chip (default: true)
+ * @param {function(any): string|number} getOptionId - Custom id getter
+ * @param {function(any): string} getOptionLabel - Custom label getter
+ * @param {object} slotProps - Slot props for wrapper
+ * @param {object} other - Additional props passed to ChipStripUI
+ */
+export function RHFChipStrip({
+  name,
+  categories = [],
+  loading = false,
+  allOptionLabel = 'All Products',
+  showAllOption = true,
+  getOptionId,
+  getOptionLabel,
+  slotProps,
+  ...other
+}) {
+  const { control } = useFormContext();
+
+  return (
+    <Controller
+      name={name}
+      control={control}
+      render={({ field }) => (
+        <ChipStripUI
+          categories={categories}
+          selectedId={field.value ?? null}
+          onSelect={field.onChange}
+          loading={loading}
+          allOptionLabel={allOptionLabel}
+          showAllOption={showAllOption}
+          getOptionId={getOptionId}
+          getOptionLabel={getOptionLabel}
+          slotProps={slotProps}
+          {...other}
+        />
+      )}
+    />
+  );
+}
+
+// ----------------------------------------------------------------------
 // Export Field Namespace
 // ----------------------------------------------------------------------
 
@@ -1928,6 +2122,7 @@ export const Field = {
   MultiCheckbox: RHFMultiCheckbox,
   CountrySelect: RHFCountrySelect,
   Button: RHFButton,
+  ChipStrip: RHFChipStrip,
   // Pickers
   DatePicker: RHFDatePicker,
   TimePicker: RHFTimePicker,

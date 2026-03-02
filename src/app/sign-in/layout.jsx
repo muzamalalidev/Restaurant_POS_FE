@@ -1,7 +1,13 @@
 import { AuthCenteredLayout } from 'src/layouts/auth-centered';
 
+import { GuestGuard } from 'src/auth/guard';
+
 // ----------------------------------------------------------------------
 
 export default function Layout({ children }) {
-  return <AuthCenteredLayout>{children}</AuthCenteredLayout>;
+  return (
+    <GuestGuard>
+      <AuthCenteredLayout>{children}</AuthCenteredLayout>
+    </GuestGuard>
+  );
 }

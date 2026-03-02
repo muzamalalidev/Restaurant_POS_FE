@@ -51,7 +51,7 @@ export function IconifyView() {
 
       <CustomBreadcrumbs
         links={[
-          { name: 'Home', href: '/' },
+          { name: 'Home', href: paths.home },
           { name: 'Components', href: paths.components },
           { name: 'Icons', href: '/components/foundation/icons' },
           { name: 'Iconify' },

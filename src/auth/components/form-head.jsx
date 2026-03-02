@@ -20,7 +20,7 @@ export function FormHead({ icon, title, description, sx, ...other }) {
     >
       {icon && <Box sx={{ width: 96, height: 96 }}>{icon}</Box>}
 
-      <Typography variant="h5">{title}</Typography>
+      <Typography variant="h5" sx={{ textAlign: 'center' }}>{title}</Typography>
 
       {description && (
         <Typography variant="body2" sx={{ color: 'text.secondary' }}>

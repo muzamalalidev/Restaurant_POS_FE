@@ -1,4 +1,5 @@
 import { baseApi } from 'src/store/api/base-api';
+import { buildQueryParams, normalizePaginatedResponse } from 'src/store/api/build-query-params';
 
 // ----------------------------------------------------------------------
 
@@ -18,31 +19,10 @@ export const kitchensApi = baseApi.injectEndpoints({
     getAllKitchens: builder.query({
       query: (params) => ({
         url: '/api/kitchens',
-        params: {
-          tenantId: params?.tenantId || undefined,
-          branchId: params?.branchId || undefined,
-          pageNumber: params?.pageNumber || undefined,
-          pageSize: params?.pageSize || undefined,
-          searchTerm: params?.searchTerm || undefined,
-        },
+        params: buildQueryParams(params ?? {}),
       }),
       providesTags: ['Kitchen'],
-      transformResponse: (response) => {
-        // Handle both old format (array) and new format (PaginatedResponse)
-        if (Array.isArray(response)) {
-          return {
-            data: response,
-            pageNumber: 1,
-            pageSize: response.length,
-            totalCount: response.length,
-            totalPages: 1,
-            hasPreviousPage: false,
-            hasNextPage: false,
-          };
-        }
-        // Already in PaginatedResponse format
-        return response;
-      },
+      transformResponse: normalizePaginatedResponse,
     }),
 
     // Get kitchen by ID (FULL IMPLEMENTATION - not a placeholder)
@@ -102,10 +82,7 @@ export const kitchensApi = baseApi.injectEndpoints({
       query: (params) => ({
         url: '/api/kitchens/dropdown',
         method: 'GET',
-        params: {
-          tenantId: params?.tenantId || undefined,
-          branchId: params?.branchId || undefined,
-        },
+        params: buildQueryParams(params ?? {}),
       }),
       providesTags: ['Kitchen'],
     }),

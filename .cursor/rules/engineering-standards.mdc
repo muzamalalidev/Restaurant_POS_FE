@@ -58,6 +58,17 @@ Rules:
 
 Goal: No new linter issues during the task; no follow-up work required to satisfy the linter.
 
+### Import order (MANDATORY)
+
+Imports MUST follow the project's ESLint `perfectionist/sort-imports` rule. When adding or moving imports, keep the following so the linter does not report order or spacing issues:
+
+- **Group order:** style → side-effect → types → builtin/external → `@mui` → `src/routes` → `src/hooks` → `src/utils` → internal (`src/*` not in a custom group) → `src/components` → `src/sections` → `src/auth` → parent/sibling/index.
+- **Within the same group:** Imports are sorted ascending (alphabetically by path/specifier). Example: within `src/routes`, `src/routes/paths` comes before `src/routes/components` (paths before components).
+- **Newlines:** One blank line between groups; no extra blank line between imports in the same group. Do not add a blank line between two imports that belong to the same group (e.g. two `src/routes/*` imports must be adjacent).
+- **Auto-fix:** Run `npm run lint` and fix import order; use the IDE's "Organize Imports" or fix manually so that `paths`-style modules come before `components`-style modules within `src/routes`, and no extra spacing appears within a group.
+
+If you see errors like "Expected X to come before Y" or "Extra spacing between X and Y", reorder so the earlier path/specifier comes first and remove the extra blank line between same-group imports.
+
 ---
 
 1. Restate the business goal briefly
@@ -360,6 +371,25 @@ Rules:
 - Use the returned message for toast or in-dialog error text; use isRetryable when showing a Retry action.
 - If new error scenarios are needed, extend src/utils/api-error-message.js; never duplicate logic in features.
 - **List views:** Do not render list-fetch error UI in the list view; pass `error`, `onRetry`, and `errorEntityLabel` to CustomTable (see TABLE / GRID RULE → List-view error handling). CustomTable uses getApiErrorMessage internally for list errors.
+
+---
+
+## RTK Query API params and paginated response (MANDATORY)
+
+All RTK Query list/dropdown/filter endpoints that accept a **params object** MUST use the shared query-params util so only defined values are sent. Do NOT statically list each param with `params?.key || undefined` in every endpoint.
+
+import { buildQueryParams, normalizePaginatedResponse } from 'src/store/api/build-query-params';
+
+Rules:
+
+- **Query params:** For endpoints whose `query` receives a params object, use `params: buildQueryParams(params ?? {})`. This omits `undefined`, `null`, and empty string so only passed filters/pagination are sent. Callers can pass a single param (e.g. `{ tenantId }`) and only that param is sent.
+- **Paginated list response:** For list endpoints that can receive either an array or a PaginatedResponse from the backend, use `transformResponse: normalizePaginatedResponse`. Do NOT duplicate the array-vs-object normalization logic in each endpoint.
+- **Path-scoped + query:** When the URL includes a path param from the same argument (e.g. tenantId in `/api/tenants/{tenantId}/payment-modes`), extract it and pass only the rest to buildQueryParams: `const { tenantId, ...queryParams } = params ?? {}; return { url: buildBaseUrl(tenantId), params: buildQueryParams(queryParams) };`. Do NOT put the path param into the query string.
+- **Defaults when needed:** If an endpoint must send a default when the caller omits a key (e.g. `includeItems: true` for orders), merge before buildQueryParams: `params: buildQueryParams({ includeItems: true, ...params })`. Do not add defaults inside buildQueryParams; keep the util generic.
+- **Endpoints that take a single id or primitive:** No change (e.g. `getBranchById(id)`, `getPaymentModesDropdown(tenantId)`). buildQueryParams applies only to endpoints that accept an object of query/filter params.
+- Do NOT statically list every possible param in each endpoint; buildQueryParams makes param handling dynamic. Add new query params in the backend/contract; callers pass them in the object and they are sent when defined.
+
+Apply to: all *-api.js slices under src/store/api that have list, dropdown, or filter endpoints with a params object. Mutations and by-id GETs that do not take a params object are unchanged.
 
 ---
 

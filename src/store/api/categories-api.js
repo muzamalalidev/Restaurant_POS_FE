@@ -1,4 +1,5 @@
 import { baseApi } from 'src/store/api/base-api';
+import { buildQueryParams, normalizePaginatedResponse } from 'src/store/api/build-query-params';
 
 // ----------------------------------------------------------------------
 
@@ -15,31 +16,10 @@ export const categoriesApi = baseApi.injectEndpoints({
     getCategories: builder.query({
       query: (params) => ({
         url: '/api/categories',
-        params: {
-          tenantId: params?.tenantId || undefined,
-          parentId: params?.parentId || undefined,
-          pageNumber: params?.pageNumber || undefined,
-          pageSize: params?.pageSize || undefined,
-          searchTerm: params?.searchTerm || undefined,
-        },
+        params: buildQueryParams(params ?? {}),
       }),
       providesTags: ['Category'],
-      transformResponse: (response) => {
-        // Handle both old format (array) and new format (PaginatedResponse)
-        if (Array.isArray(response)) {
-          return {
-            data: response,
-            pageNumber: 1,
-            pageSize: response.length,
-            totalCount: response.length,
-            totalPages: 1,
-            hasPreviousPage: false,
-            hasNextPage: false,
-          };
-        }
-        // Already in PaginatedResponse format
-        return response;
-      },
+      transformResponse: normalizePaginatedResponse,
     }),
 
     // Get category by ID (fully implemented, not placeholder)
@@ -55,30 +35,10 @@ export const categoriesApi = baseApi.injectEndpoints({
     getChildCategories: builder.query({
       query: ({ parentId, ...params }) => ({
         url: `/api/categories/${parentId}/children`,
-        params: {
-          tenantId: params?.tenantId || undefined,
-          pageNumber: params?.pageNumber || undefined,
-          pageSize: params?.pageSize || undefined,
-          searchTerm: params?.searchTerm || undefined,
-        },
+        params: buildQueryParams(params ?? {}),
       }),
       providesTags: ['Category'],
-      transformResponse: (response) => {
-        // Handle both old format (array) and new format (PaginatedResponse)
-        if (Array.isArray(response)) {
-          return {
-            data: response,
-            pageNumber: 1,
-            pageSize: response.length,
-            totalCount: response.length,
-            totalPages: 1,
-            hasPreviousPage: false,
-            hasNextPage: false,
-          };
-        }
-        // Already in PaginatedResponse format
-        return response;
-      },
+      transformResponse: normalizePaginatedResponse,
     }),
 
     // Create category
@@ -129,10 +89,7 @@ export const categoriesApi = baseApi.injectEndpoints({
       query: (params) => ({
         url: '/api/categories/dropdown',
         method: 'GET',
-        params: {
-          tenantId: params?.tenantId || undefined,
-          parentId: params?.parentId || undefined,
-        },
+        params: buildQueryParams(params ?? {}),
       }),
       providesTags: ['Category'],
     }),

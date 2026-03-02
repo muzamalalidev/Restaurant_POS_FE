@@ -21,11 +21,10 @@ export function buildWebSiteSchema() {
     '@id': `${siteUrl}/#website`,
 
     // === Core identity ===
-    name: 'Minimal Dashboard',
-    alternateName: ['Minimal UI', 'Minimal Dashboard'],
+    name: CONFIG.appName,
+    alternateName: ['Cloud Mate', 'Cloud Mate POS'],
     url: siteUrl,
-    description:
-      'A modern dashboard theme built with Next.js, Material UI, and React.',
+    description: CONFIG.appDescription,
 
     // === Publisher reference ===
     publisher: {

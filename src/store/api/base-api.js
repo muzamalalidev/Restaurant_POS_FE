@@ -2,6 +2,8 @@ import { createApi } from '@reduxjs/toolkit/query/react';
 
 import axiosInstance from 'src/lib/axios';
 
+import { JWT_STORAGE_KEY } from 'src/auth/context/jwt/constant';
+
 // ----------------------------------------------------------------------
 
 /**
@@ -13,8 +15,8 @@ import axiosInstance from 'src/lib/axios';
  */
 const axiosBaseQuery = async ({ url, method = 'GET', body, data, params, headers }) => {
   try {
-    const token = typeof window !== 'undefined' 
-      ? sessionStorage.getItem('accessToken') 
+    const token = typeof window !== 'undefined'
+      ? sessionStorage.getItem(JWT_STORAGE_KEY)
       : null;
 
     // Use 'body' from RTK Query or 'data' if provided
@@ -49,8 +51,8 @@ const axiosBaseQuery = async ({ url, method = 'GET', body, data, params, headers
     return { data: result.data };
   } catch (axiosError) {
     const error = {
-      status: axiosError.response?.status,
-      data: axiosError.response?.data || axiosError.message,
+      status: axiosError?.status ?? axiosError?.response?.status,
+      data: axiosError?.data ?? axiosError?.response?.data ?? axiosError?.message,
     };
     return { error };
   }

@@ -1,4 +1,5 @@
 import { baseApi } from 'src/store/api/base-api';
+import { buildQueryParams, normalizePaginatedResponse } from 'src/store/api/build-query-params';
 
 // ----------------------------------------------------------------------
 
@@ -16,32 +17,10 @@ export const stockDocumentsApi = baseApi.injectEndpoints({
     getAllStockDocuments: builder.query({
       query: (params) => ({
         url: '/api/stockdocuments',
-        params: {
-          tenantId: params.tenantId,
-          branchId: params.branchId,
-          status: params.status || undefined,
-          documentType: params.documentType || undefined,
-          pageNumber: params.pageNumber || 1,
-          pageSize: params.pageSize || 25,
-          searchTerm: params.searchTerm || undefined,
-        },
+        params: buildQueryParams(params ?? {}),
       }),
       providesTags: ['StockDocument'],
-      transformResponse: (response) => {
-        // Handle PaginatedResponse format
-        if (Array.isArray(response)) {
-          return {
-            data: response,
-            pageNumber: 1,
-            pageSize: response.length,
-            totalCount: response.length,
-            totalPages: 1,
-            hasPreviousPage: false,
-            hasNextPage: false,
-          };
-        }
-        return response;
-      },
+      transformResponse: normalizePaginatedResponse,
     }),
 
     // Get single stock document

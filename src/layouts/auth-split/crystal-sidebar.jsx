@@ -3,6 +3,7 @@
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 
+import { paths } from 'src/routes/paths';
 import { RouterLink } from 'src/routes/components';
 
 import { CONFIG } from 'src/global-config';
@@ -89,7 +90,7 @@ export function CrystalSidebar({ layoutQuery = 'md' }) {
           />
           <Typography
             component={RouterLink}
-            href="/"
+            href={paths.home}
             sx={(theme) => ({
               fontSize: '1.5rem', // Match variant h4 approximately
               fontWeight: 800,
@@ -102,7 +103,7 @@ export function CrystalSidebar({ layoutQuery = 'md' }) {
               gap: 0.3,
             })}
           >
-            Minimal<Box component="span" sx={{ color: '#3186FF' }}> Dashboard</Box>
+            Cloud Mate<Box component="span" sx={{ color: '#3186FF' }}> Restaurant POS</Box>
           </Typography>
         </Box>
       </Box>
@@ -263,7 +264,7 @@ export function CrystalSidebar({ layoutQuery = 'md' }) {
           <Box
             component="img"
             src={`${CONFIG.assetsDir}assets/mascot/mascot-assistant-transparent.png`}
-            alt="Minimal Dashboard Assistant"
+            alt="Cloud Mate Restaurant POS"
             sx={{
               width: 300,
               height: 300,
@@ -318,9 +319,9 @@ export function CrystalSidebar({ layoutQuery = 'md' }) {
                 }}
               >
                 <Box component="span" sx={{ fontWeight: 700, color: '#0f172a' }}>
-                  Minimal
+                  Cloud Mate
                 </Box>
-                {' '}provides everything you need to build modern web applications with ease.
+                {' '}provides everything you need to run your restaurant with one reliable platform.
               </Typography>
             </Box>
           </Box>

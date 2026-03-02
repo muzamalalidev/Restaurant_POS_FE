@@ -1,4 +1,5 @@
 import { baseApi } from 'src/store/api/base-api';
+import { buildQueryParams } from 'src/store/api/build-query-params';
 
 // ----------------------------------------------------------------------
 
@@ -20,7 +21,7 @@ export const exampleApi = baseApi.injectEndpoints({
     getNotifications: builder.query({
       query: (params) => ({
         url: '/api/notifications',
-        params,
+        params: buildQueryParams(params ?? {}),
       }),
       providesTags: ['Notification'],
     }),

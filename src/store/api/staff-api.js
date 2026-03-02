@@ -1,4 +1,5 @@
 import { baseApi } from 'src/store/api/base-api';
+import { buildQueryParams, normalizePaginatedResponse } from 'src/store/api/build-query-params';
 
 // ----------------------------------------------------------------------
 
@@ -15,31 +16,10 @@ export const staffApi = baseApi.injectEndpoints({
     getStaff: builder.query({
       query: (params) => ({
         url: '/api/staff',
-        params: {
-          branchId: params?.branchId || undefined,
-          staffTypeId: params?.staffTypeId || undefined,
-          pageNumber: params?.pageNumber || undefined,
-          pageSize: params?.pageSize || undefined,
-          searchTerm: params?.searchTerm || undefined,
-        },
+        params: buildQueryParams(params ?? {}),
       }),
       providesTags: ['Staff'],
-      transformResponse: (response) => {
-        // Handle both old format (array) and new format (PaginatedResponse)
-        if (Array.isArray(response)) {
-          return {
-            data: response,
-            pageNumber: 1,
-            pageSize: response.length,
-            totalCount: response.length,
-            totalPages: 1,
-            hasPreviousPage: false,
-            hasNextPage: false,
-          };
-        }
-        // Already in PaginatedResponse format
-        return response;
-      },
+      transformResponse: normalizePaginatedResponse,
     }),
 
     // Get staff by ID (placeholder - only returns ID)
@@ -99,10 +79,7 @@ export const staffApi = baseApi.injectEndpoints({
       query: (params) => ({
         url: '/api/staff/dropdown',
         method: 'GET',
-        params: {
-          branchId: params?.branchId || undefined,
-          staffTypeId: params?.staffTypeId || undefined,
-        },
+        params: buildQueryParams(params ?? {}),
       }),
       providesTags: ['Staff'],
     }),

@@ -1,8 +1,8 @@
 {
-  "name": "@minimal-kit/next-js",
-  "author": "Minimals",
+  "name": "cloud-mate-restaurant-pos",
+  "author": "Cloud Mate",
   "version": "7.2.0",
-  "description": "Next & JavaScript - Minimal Dashboard Theme",
+  "description": "Cloud Mate is a cloud-powered Restaurant POS that helps teams take orders faster, manage operations smarter, and grow revenue — all from one reliable platform.",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3036 --turbopack",
@@ -62,6 +62,7 @@
     "apexcharts": "^4.7.0",
     "autosuggest-highlight": "^3.3.4",
     "axios": "^1.9.0",
+    "browser-image-compression": "^2.0.2",
     "canvas-confetti": "^1.9.4",
     "dayjs": "^1.11.19",
     "embla-carousel": "^8.6.0",

@@ -1,4 +1,5 @@
 import { baseApi } from 'src/store/api/base-api';
+import { buildQueryParams, normalizePaginatedResponse } from 'src/store/api/build-query-params';
 
 // ----------------------------------------------------------------------
 
@@ -14,32 +15,18 @@ const buildBaseUrl = (tenantId) => `/api/tenants/${tenantId}/payment-modes`;
 export const paymentModesApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
     getPaymentModes: builder.query({
-      query: ({ tenantId, pageNumber, pageSize, searchTerm }) => ({
-        url: buildBaseUrl(tenantId),
-        params: {
-          pageNumber: pageNumber ?? undefined,
-          pageSize: pageSize ?? undefined,
-          searchTerm: searchTerm?.trim() || undefined,
-        },
-      }),
-      providesTags: (result, error, { tenantId }) => [
-        { type: 'PaymentMode', id: `LIST-${tenantId}` },
+      query: (params) => {
+        const { tenantId, ...queryParams } = params ?? {};
+        return {
+          url: buildBaseUrl(tenantId),
+          params: buildQueryParams(queryParams),
+        };
+      },
+      providesTags: (result, error, params) => [
+        { type: 'PaymentMode', id: `LIST-${params?.tenantId ?? ''}` },
         'PaymentMode',
       ],
-      transformResponse: (response) => {
-        if (Array.isArray(response)) {
-          return {
-            data: response,
-            pageNumber: 1,
-            pageSize: response.length,
-            totalCount: response.length,
-            totalPages: 1,
-            hasPreviousPage: false,
-            hasNextPage: false,
-          };
-        }
-        return response;
-      },
+      transformResponse: normalizePaginatedResponse,
     }),
 
     getPaymentModeById: builder.query({

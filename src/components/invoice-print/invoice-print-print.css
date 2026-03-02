@@ -1,0 +1,44 @@
+/**
+ * Print-only styles for invoice.
+ * Import this in the component or layout that mounts the invoice print root.
+ * @media print: hide everything except .invoice-print-root; show only invoice; 80mm/58mm width.
+ */
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  #invoice-print-root,
+  #invoice-print-root * {
+    visibility: visible;
+  }
+
+  #invoice-print-root {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 80mm;
+    max-width: 80mm;
+    margin: 0;
+    padding: 8px;
+    font-size: 12px;
+    background: white;
+    color: black;
+    overflow: visible;
+    box-shadow: none;
+  }
+
+  /* 58mm variant when class is applied */
+  #invoice-print-root.invoice-print-58mm {
+    width: 58mm;
+    max-width: 58mm;
+    padding: 6px;
+    font-size: 11px;
+  }
+
+  /* Avoid breaking rows */
+  #invoice-print-root [data-print-no-break] {
+    break-inside: avoid;
+  }
+}

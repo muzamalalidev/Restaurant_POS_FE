@@ -56,17 +56,47 @@ axiosInstance.interceptors.request.use(
 
 /**
  * Response Interceptor
+ * - On 401: try refresh once (unless this was the refresh request), then retry original request.
+ * - Refresh failure: refreshSession() clears and redirects to sign-in.
  */
 axiosInstance.interceptors.response.use(
   (response) => response,
   async (error) => {
+    const status = error?.response?.status;
+    const config = error?.config;
+    const isRefreshRequest =
+      config?.url?.includes('/auth/refresh') || config?.url?.endsWith?.('refresh');
+
+    if (status === 401 && config && !isRefreshRequest && !config._retry) {
+      const { getRefreshToken } = await import('src/auth/context/jwt/utils');
+      const refreshToken = getRefreshToken();
+      if (refreshToken?.trim()) {
+        try {
+          const { refreshSession } = await import('src/auth/context/jwt/action');
+          const data = await refreshSession();
+          if (data?.accessToken) {
+            config._retry = true;
+            config.headers = config.headers || {};
+            config.headers.Authorization = `Bearer ${data.accessToken}`;
+            return axiosInstance(config);
+          }
+        } catch {
+          return Promise.reject(error);
+        }
+      }
+    }
+
     const message =
       error?.response?.data?.error ||
       error?.response?.data?.message ||
+      (typeof error?.response?.data === 'string' ? error.response.data : null) ||
       error?.message ||
       'Something went wrong!';
-    console.error('Axios error:', message);
-    return Promise.reject(new Error(message));
+    const errWithStatus = new Error(message);
+    errWithStatus.status = status;
+    errWithStatus.data = error?.response?.data;
+    errWithStatus.response = error?.response;
+    return Promise.reject(errWithStatus);
   }
 );
 
@@ -95,8 +125,11 @@ export const endpoints = {
   calendar: '/api/calendar',
 
   auth: {
+    login: '/api/auth/login',
     me: '/api/auth/me',
-    signIn: '/api/auth/sign-in',
+    refresh: '/api/auth/refresh',
+    logout: '/api/auth/logout',
+    signIn: '/api/auth/login',
     signUp: '/api/auth/sign-up',
   },
 

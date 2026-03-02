@@ -5,7 +5,9 @@ import packageJson from '../package.json';
 // ----------------------------------------------------------------------
 
 export const CONFIG = {
-  appName: 'Minimal Dashboard',
+  appName: 'Cloud Mate Restaurant POS',
+  appDescription:
+    'Cloud Mate is a cloud-powered Restaurant POS that helps teams take orders faster, manage operations smarter, and grow revenue — all from one reliable platform.',
   appVersion: packageJson.version,
   serverUrl: process.env.NEXT_PUBLIC_SERVER_URL ?? 'https://cloudpartner-latest.onrender.com',
   assetsDir: process.env.NEXT_PUBLIC_ASSETS_DIR ?? '/',

@@ -24,7 +24,7 @@ import { Iconify } from 'src/components/iconify';
 import { Scrollbar } from 'src/components/scrollbar';
 import { AnimateBorder } from 'src/components/animate';
 
-import { useMockedUser } from 'src/auth/hooks';
+import { useAuthContext } from 'src/auth/hooks';
 
 import { UpgradeBlock } from './nav-upgrade';
 import { AccountButton } from './account-button';
@@ -35,7 +35,7 @@ import { SignOutButton } from './sign-out-button';
 export function AccountDrawer({ data = [], sx, ...other }) {
   const pathname = usePathname();
 
-  const { user } = useMockedUser();
+  const { user } = useAuthContext();
 
   const { value: open, onFalse: onClose, onTrue: onOpen } = useBoolean();
 
@@ -46,8 +46,8 @@ export function AccountDrawer({ data = [], sx, ...other }) {
         primaryBorder: { size: 120, sx: { color: 'primary.main' } },
       }}
     >
-      <Avatar src={user?.photoURL} alt={user?.displayName} sx={{ width: 1, height: 1 }}>
-        {user?.displayName?.charAt(0).toUpperCase()}
+      <Avatar src={user?.photoURL} alt={user?.displayName ?? user?.email} sx={{ width: 1, height: 1 }}>
+        {(user?.displayName ?? user?.email ?? '?').charAt(0).toUpperCase()}
       </Avatar>
     </AnimateBorder>
   );
@@ -67,7 +67,7 @@ export function AccountDrawer({ data = [], sx, ...other }) {
     >
       {data.map((option) => {
         const rootLabel = pathname.includes('/dashboard') || pathname.includes('/platform') || pathname.includes('/tenant') ? 'Home' : 'Dashboard';
-        const rootHref = pathname.includes('/dashboard') || pathname.includes('/platform') || pathname.includes('/tenant') ? paths.platform.tenantMasters.root : '/';
+        const rootHref = pathname.includes('/dashboard') || pathname.includes('/platform') || pathname.includes('/tenant') ? paths.platform.tenantMasters.root : paths.home;
 
         return (
           <MenuItem key={option.label}>
@@ -149,7 +149,7 @@ export function AccountDrawer({ data = [], sx, ...other }) {
             {renderAvatar()}
 
             <Typography variant="subtitle1" noWrap sx={{ mt: 2 }}>
-              {user?.displayName}
+              {user?.displayName ?? user?.email}
             </Typography>
 
             <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.5 }} noWrap>
@@ -201,7 +201,7 @@ export function AccountDrawer({ data = [], sx, ...other }) {
         </Scrollbar>
 
         <Box sx={{ p: 2.5 }}>
-          <SignOutButton onClose={onClose} />
+          <SignOutButton fullWidth onClose={onClose} />
         </Box>
       </Drawer>
     </>

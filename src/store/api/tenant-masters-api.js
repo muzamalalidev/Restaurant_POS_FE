@@ -1,4 +1,5 @@
 import { baseApi } from 'src/store/api/base-api';
+import { buildQueryParams, normalizePaginatedResponse } from 'src/store/api/build-query-params';
 
 // ----------------------------------------------------------------------
 
@@ -15,28 +16,10 @@ export const tenantMastersApi = baseApi.injectEndpoints({
     getTenantMasters: builder.query({
       query: (params) => ({
         url: '/api/tenantmasters',
-        params: {
-          ownerId: params?.ownerId || undefined,
-          pageNumber: params?.pageNumber || undefined,
-          pageSize: params?.pageSize || undefined,
-          searchTerm: params?.searchTerm || undefined,
-        },
+        params: buildQueryParams(params ?? {}),
       }),
       providesTags: ['TenantMaster'],
-      transformResponse: (response) => {
-        if (Array.isArray(response)) {
-          return {
-            data: response,
-            pageNumber: 1,
-            pageSize: response.length,
-            totalCount: response.length,
-            totalPages: 1,
-            hasPreviousPage: false,
-            hasNextPage: false,
-          };
-        }
-        return response;
-      },
+      transformResponse: normalizePaginatedResponse,
     }),
 
     getTenantMasterById: builder.query({

@@ -250,15 +250,15 @@ export function MenuOverlay({ isOpen, onClose, navData }) {
         {/* Brand - matches footer styling */}
         <Box
           component="a"
-          href="/"
+          href={paths.home}
           onClick={(e) => {
             e.preventDefault();
-            handleNavigate('/');
+            handleNavigate(paths.home);
           }}
           className="mm-brand"
         >
-          <span className="mm-brand__name">Minimal</span>
-          <span className="mm-brand__ext" />
+          <span className="mm-brand__name">Cloud Mate</span>
+          <span className="mm-brand__ext"> Restaurant POS</span>
         </Box>
 
         {/* Close button (X) - receives initial focus */}

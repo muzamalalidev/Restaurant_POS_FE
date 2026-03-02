@@ -1,7 +1,6 @@
 'use client';
 
 import Stack from '@mui/material/Stack';
-import Typography from '@mui/material/Typography';
 
 import { Field } from 'src/components/hook-form';
 
@@ -14,6 +13,7 @@ import { Field } from 'src/components/hook-form';
 export function PosOrderContext({
   branchOptions = [],
   orderTypeOptions = [],
+  orderTypeOptionsLoading = false,
   tableOptions = [],
   staffOptions = [],
   paymentModeOptions = [],
@@ -22,9 +22,17 @@ export function PosOrderContext({
 }) {
   return (
     <Stack spacing={2}>
-      <Typography variant="subtitle2" color="text.secondary">
-        Order context
-      </Typography>
+    <Stack direction="column" spacing={0.5}>
+        <Field.ChipStrip
+          name="orderTypeId"
+          categories={orderTypeOptions}
+          loading={orderTypeOptionsLoading}
+          getOptionLabel={(opt) => (opt?.label ?? opt?.name ?? String(opt?.id ?? opt ?? ''))}
+          getOptionId={(opt) => opt?.id ?? opt}
+          showAllOption={false}
+          required
+        />
+      </Stack>
       <Field.Autocomplete
         name="branchId"
         label="Branch"
@@ -38,19 +46,7 @@ export function PosOrderContext({
           },
         }}
       />
-      <Field.Autocomplete
-        name="orderTypeId"
-        label="Order type"
-        options={orderTypeOptions}
-        getOptionLabel={(opt) => (opt?.label ?? opt?.name ?? opt?.id ?? '')}
-        isOptionEqualToValue={(a, b) => (a?.id ?? a) === (b?.id ?? b)}
-        required
-        slotProps={{
-          textField: {
-            size: 'small',
-          },
-        }}
-      />
+     
       {showTableField && (
         <Field.Autocomplete
           name="tableId"

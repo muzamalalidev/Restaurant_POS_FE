@@ -60,7 +60,7 @@ export function Footer({ sx, layoutQuery = 'md' }) {
           >
             <Link
               component={RouterLink}
-              href="/"
+              href={paths.home}
               sx={{
                 display: 'inline-flex',
                 mb: 2,
@@ -76,9 +76,9 @@ export function Footer({ sx, layoutQuery = 'md' }) {
                   color: theme.vars.palette.text.primary,
                 })}
               >
-                Minimal
+                Cloud Mate
                 <Box component="span" sx={{ color: 'primary.main' }}>
-                  Dashboard
+                  {' '}Restaurant POS
                 </Box>
               </Box>
             </Link>
@@ -93,7 +93,7 @@ export function Footer({ sx, layoutQuery = 'md' }) {
                 m: 0,
               })}
             >
-              Modernizing the selling process with AI-driven tools and absolute transparency.
+              Cloud-powered Restaurant POS for faster orders, smarter operations, and growth.
             </Box>
           </Box>
 
@@ -204,7 +204,7 @@ export function Footer({ sx, layoutQuery = 'md' }) {
             },
           })}
         >
-          © {new Date().getFullYear()} Minimal Dashboard. All rights reserved.
+          © {new Date().getFullYear()} Cloud Mate Restaurant POS. All rights reserved.
         </Box>
       </Container>
     </Box>

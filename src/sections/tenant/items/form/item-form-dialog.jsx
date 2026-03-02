@@ -485,8 +485,8 @@ export function ItemFormDialog({ open, mode, record, onClose, onSuccess, tenantO
                       'image/jpeg': ['.jpg', '.jpeg'],
                       'image/webp': ['.webp'],
                     }}
-                    maxSize={5 * 1024 * 1024}
-                    helperText="Upload item image (max 5MB, PNG/JPG/WebP)"
+                    maxSize={2 * 1024 * 1024}
+                    helperText="Upload item image (max 2MB, PNG/JPG/WebP)"
                   />
                   {mode === 'edit' && (
                     <>

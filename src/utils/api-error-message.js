@@ -53,6 +53,14 @@ export function getApiErrorMessage(err, options = {}) {
     };
   }
 
+  // 4b. 401 (e.g. invalid credentials, disabled account, session expired)
+  if (status === 401) {
+    return {
+      message: dataMessage || defaultMessage,
+      isRetryable: false,
+    };
+  }
+
   // 5. 5xx
   if (typeof status === 'number' && status >= 500) {
     return { message: serverMessage, isRetryable: true };

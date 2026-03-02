@@ -1,7 +1,7 @@
 {
-  "name": "Minimal Dashboard",
-  "short_name": "Minimal",
-  "description": "Minimal Dashboard Theme",
+  "name": "Cloud Mate Restaurant POS",
+  "short_name": "Cloud Mate",
+  "description": "Cloud Mate is a cloud-powered Restaurant POS that helps teams take orders faster, manage operations smarter, and grow revenue — all from one reliable platform.",
   "start_url": "/dashboard",
   "display": "standalone",
   "background_color": "#141A21",

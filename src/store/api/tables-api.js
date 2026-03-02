@@ -1,4 +1,5 @@
 import { baseApi } from 'src/store/api/base-api';
+import { buildQueryParams, normalizePaginatedResponse } from 'src/store/api/build-query-params';
 
 // ----------------------------------------------------------------------
 
@@ -18,30 +19,10 @@ export const tablesApi = baseApi.injectEndpoints({
     getAllTables: builder.query({
       query: (params) => ({
         url: '/api/tables',
-        params: {
-          branchId: params?.branchId || undefined,
-          pageNumber: params?.pageNumber || undefined,
-          pageSize: params?.pageSize || undefined,
-          searchTerm: params?.searchTerm || undefined,
-        },
+        params: buildQueryParams(params ?? {}),
       }),
       providesTags: ['Table'],
-      transformResponse: (response) => {
-        // Handle both old format (array) and new format (PaginatedResponse)
-        if (Array.isArray(response)) {
-          return {
-            data: response,
-            pageNumber: 1,
-            pageSize: response.length,
-            totalCount: response.length,
-            totalPages: 1,
-            hasPreviousPage: false,
-            hasNextPage: false,
-          };
-        }
-        // Already in PaginatedResponse format
-        return response;
-      },
+      transformResponse: normalizePaginatedResponse,
     }),
 
     // Get table by ID (PLACEHOLDER - only returns { id }, not full table data)
@@ -114,9 +95,7 @@ export const tablesApi = baseApi.injectEndpoints({
       query: (params) => ({
         url: '/api/tables/dropdown',
         method: 'GET',
-        params: {
-          branchId: params?.branchId || undefined,
-        },
+        params: buildQueryParams(params ?? {}),
       }),
       providesTags: ['Table'],
     }),

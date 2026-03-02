@@ -4,6 +4,7 @@ import Box from '@mui/material/Box';
 import { styled } from '@mui/material/styles';
 import Typography from '@mui/material/Typography';
 
+import { paths } from 'src/routes/paths';
 import { RouterLink } from 'src/routes/components';
 
 import { layoutClasses } from 'src/layouts/core';
@@ -35,7 +36,7 @@ export function NavVertical({
           <Logo />
           <Typography
             component={RouterLink}
-            href="/"
+            href={paths.dashboard.root}
             variant="h4"
             sx={(theme) => ({
               fontFamily: theme.typography.fontSecondaryFamily, // Barlow font
@@ -59,8 +60,8 @@ export function NavVertical({
               },
             })}
           >
-            <span className="brand-name">Minimal</span>
-            <span className="brand-extension" />
+            <span className="brand-name">Cloud Mate</span>
+            <span className="brand-extension"> Restaurant POS</span>
           </Typography>
         </Box>
       )}
