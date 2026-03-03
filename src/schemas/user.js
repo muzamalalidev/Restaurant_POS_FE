@@ -1,8 +1,10 @@
 import { z as zod } from 'zod';
 
 import {
+  optionalId,
   requiredId,
   requiredString,
+  optionalString,
 } from 'src/schemas/fields';
 
 // ----------------------------------------------------------------------
@@ -74,6 +76,69 @@ export const registerUserSchema = zod.object({
   lastName: requiredString('Last name is required', 200, { trim: true }),
   role: roleSchema,
 });
+
+// Register tenant-master-level user (RegisterTenantMasterUserCommand)
+export const registerTenantMasterUserSchema = zod.object({
+  email: emailSchema,
+  password: passwordSchema,
+  userName: optionalString(256),
+  firstName: requiredString('First name is required', 200, { trim: true }),
+  lastName: requiredString('Last name is required', 200, { trim: true }),
+  phoneNumber: optionalString(50),
+  tenantMasterId: requiredId('Tenant master is required', 'Invalid tenant master ID'),
+  role: roleSchema.optional(),
+});
+
+// Register tenant-level user (RegisterTenantUserCommand)
+export const registerTenantUserSchema = zod.object({
+  email: emailSchema,
+  password: passwordSchema,
+  userName: optionalString(256),
+  firstName: requiredString('First name is required', 200, { trim: true }),
+  lastName: requiredString('Last name is required', 200, { trim: true }),
+  phoneNumber: optionalString(50),
+  tenantId: requiredId('Tenant is required', 'Invalid tenant ID'),
+  role: roleSchema.optional(),
+});
+
+// Register branch-level user (RegisterBranchUserCommand)
+export const registerBranchUserSchema = zod.object({
+  email: emailSchema,
+  password: passwordSchema,
+  userName: optionalString(256),
+  firstName: requiredString('First name is required', 200, { trim: true }),
+  lastName: requiredString('Last name is required', 200, { trim: true }),
+  phoneNumber: optionalString(50),
+  branchId: requiredId('Branch is required', 'Invalid branch ID'),
+  role: roleSchema.optional(),
+});
+
+// Scoped register: scope + one of tenantMasterId, tenantId, branchId (for dialog with scope selector)
+const scopeSchema = zod.enum(['tenant-master', 'tenant', 'branch']);
+export const registerUserScopedSchema = zod
+  .object({
+    scope: zod.preprocess(
+      (val) => (typeof val === 'object' && val !== null && 'id' in val ? val.id : val),
+      scopeSchema
+    ),
+    email: emailSchema,
+    password: passwordSchema,
+    userName: optionalString(256),
+    firstName: requiredString('First name is required', 200, { trim: true }),
+    lastName: requiredString('Last name is required', 200, { trim: true }),
+    phoneNumber: optionalString(50),
+    tenantMasterId: optionalId(),
+    tenantId: optionalId(),
+    branchId: optionalId(),
+    role: roleSchema.optional(),
+  })
+  .refine(
+    (data) =>
+      (data.scope === 'tenant-master' && data.tenantMasterId) ||
+      (data.scope === 'tenant' && data.tenantId) ||
+      (data.scope === 'branch' && data.branchId),
+    { message: 'Please select a scope option', path: ['tenantMasterId'] }
+  );
 
 // ----------------------------------------------------------------------
 

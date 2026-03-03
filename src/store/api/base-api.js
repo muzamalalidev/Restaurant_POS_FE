@@ -95,6 +95,7 @@ export const baseApi = createApi({
     'TenantMaster',
     'PaymentMode',
     'OrderType',
+    'Role',
     // Add more as needed for new features
   ],
   endpoints: () => ({}),

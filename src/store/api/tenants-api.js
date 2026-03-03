@@ -83,6 +83,15 @@ export const tenantsApi = baseApi.injectEndpoints({
       }),
       providesTags: ['Tenant'],
     }),
+
+    // Tenants for current tenant master from JWT (no tenantMasterId passed). Returns 403 when no tenant master context.
+    getTenantsDropdownCurrentTenantMaster: builder.query({
+      query: () => ({
+        url: '/api/tenants/dropdown/current-tenantmaster',
+        method: 'GET',
+      }),
+      providesTags: ['Tenant'],
+    }),
   }),
 });
 
@@ -97,5 +106,6 @@ export const {
   useDeleteTenantMutation,
   useToggleTenantActiveMutation,
   useGetTenantsDropdownQuery,
+  useGetTenantsDropdownCurrentTenantMasterQuery,
 } = tenantsApi;
 

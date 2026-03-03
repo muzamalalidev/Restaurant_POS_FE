@@ -11,9 +11,10 @@ import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
 
+import { can } from 'src/utils/permissions';
 import { getApiErrorMessage } from 'src/utils/api-error-message';
 
-import { useGetBranchesDropdownQuery } from 'src/store/api/branches-api';
+import { useGetBranchesDropdownQuery, useGetBranchesDropdownCurrentTenantQuery } from 'src/store/api/branches-api';
 import {
   useGetAllTablesQuery,
   useDeleteTableMutation,
@@ -141,11 +142,15 @@ export function TableListView() {
     }
   }, [watchedBranchId, branchId]);
 
-  const { data: branchesDropdown } = useGetBranchesDropdownQuery();
+  const { data: branchesDropdownCurrentTenant, error: branchesCurrentTenantError } = useGetBranchesDropdownCurrentTenantQuery();
+  const { data: branchesDropdownFallback } = useGetBranchesDropdownQuery(undefined, {
+    skip: branchesCurrentTenantError?.status !== 403,
+  });
   const branchOptions = useMemo(() => {
-    if (!branchesDropdown || !Array.isArray(branchesDropdown)) return [];
-    return branchesDropdown.map((item) => ({ id: item.key, label: item.value || item.key }));
-  }, [branchesDropdown]);
+    const source = branchesCurrentTenantError?.status === 403 ? branchesDropdownFallback : branchesDropdownCurrentTenant;
+    if (!source || !Array.isArray(source)) return [];
+    return source.map((item) => ({ id: item.key, label: item.value || item.key }));
+  }, [branchesDropdownCurrentTenant, branchesCurrentTenantError?.status, branchesDropdownFallback]);
 
   // Debounce search term
   useEffect(() => {
@@ -157,27 +162,20 @@ export function TableListView() {
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
-  // Check if required filters are present
+  // Branch filter is UI-only for Create; list uses branch from context (no branchId sent)
   const hasRequiredFilters = useMemo(() => !!getId(branchId), [branchId]);
 
-  // Fetch tables with pagination and search params
+  // Fetch tables with pagination and search params (no branchId sent; branch from context)
   const queryParams = useMemo(
-    () => {
-      const branchIdValue = getId(branchId);
-      
-      return {
-        branchId: branchIdValue || undefined,
-        pageNumber,
-        pageSize,
-        searchTerm: debouncedSearchTerm.trim() || undefined,
-      };
-    },
-    [pageNumber, pageSize, debouncedSearchTerm, branchId]
+    () => ({
+      pageNumber,
+      pageSize,
+      searchTerm: debouncedSearchTerm.trim() || undefined,
+    }),
+    [pageNumber, pageSize, debouncedSearchTerm]
   );
 
-  const { data: tablesResponse, isLoading, error, refetch } = useGetAllTablesQuery(queryParams, {
-    skip: !hasRequiredFilters, // Skip query if required filters are missing
-  });
+  const { data: tablesResponse, isLoading, error, refetch } = useGetAllTablesQuery(queryParams);
 
   // Extract data from paginated response
   const tables = useMemo(() => {
@@ -292,6 +290,7 @@ export function TableListView() {
       const { message, isRetryable } = getApiErrorMessage(err, {
         defaultMessage: 'Failed to release table',
         notFoundMessage: 'Table not found',
+        forbiddenMessage: 'You do not have permission to release this table',
       });
       if (isRetryable) {
         toast.error(message, {
@@ -468,7 +467,7 @@ export function TableListView() {
         icon: 'solar:check-circle-bold',
         onClick: (row) => handleRelease(row.id),
         order: 3,
-        visible: (row) => canRelease(row.isAvailable),
+        visible: (row) => canRelease(row.isAvailable) && can('Tables.Release'),
         disabled: (row) => releasingTableId === row.id,
       },
       {
@@ -581,22 +580,22 @@ export function TableListView() {
           </Field.Button>
         </Stack>
 
-        {/* Table - P0-005: show error in table area so branch/Create remain; P0-001: sorting disabled with server pagination */}
-        {!hasRequiredFilters ? (
-            <EmptyContent
-              title="Select a Branch"
-              description="Please select a branch to view tables"
-            />
-        ) : (
-          <CustomTable
-            rows={rows}
-            columns={columns}
-            loading={isLoading}
-            actions={actions}
-            error={error}
-            onRetry={refetch}
-            errorEntityLabel="tables"
-            pagination={{
+        {branchesCurrentTenantError?.status === 403 && (
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+            No tenant context; showing all branches.
+          </Typography>
+        )}
+
+        {/* Table - list always runs (branch from context); branch filter only for Create */}
+        <CustomTable
+          rows={rows}
+          columns={columns}
+          loading={isLoading}
+          actions={actions}
+          error={error}
+          onRetry={refetch}
+          errorEntityLabel="tables"
+          pagination={{
               ...DEFAULT_PAGINATION,
               mode: 'server',
               page: pageNumber - 1,
@@ -617,8 +616,7 @@ export function TableListView() {
               />
             }
           />
-        )}
-      </Card>
+        </Card>
 
       {/* Form Dialog */}
       <TableFormDialog

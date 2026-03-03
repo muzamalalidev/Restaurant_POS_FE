@@ -212,7 +212,7 @@ export function ItemListView() {
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
-  // Fetch items with pagination, search, and filter params
+  // Fetch items with pagination, search, and filter params (tenant from context; no tenantId sent)
   const queryParams = useMemo(
     () => {
       // Extract categoryId: if it's an object, get the id; if it's a string, use it directly
@@ -220,23 +220,14 @@ export function ItemListView() {
         ? categoryId.id
         : categoryId;
 
-      // Extract tenantId: if it's an object, get the id; if it's a string, use it directly
-      // Only include tenantId if categoryId is not set (categoryId takes precedence)
-      const tenantIdValue = categoryIdValue
-        ? undefined
-        : (typeof tenantId === 'object' && tenantId !== null
-            ? tenantId.id
-            : tenantId);
-
       return {
         pageNumber,
         pageSize,
         searchTerm: debouncedSearchTerm.trim() || undefined,
         categoryId: categoryIdValue || undefined,
-        tenantId: tenantIdValue || undefined,
       };
     },
-    [pageNumber, pageSize, debouncedSearchTerm, categoryId, tenantId]
+    [pageNumber, pageSize, debouncedSearchTerm, categoryId]
   );
 
   const { data: itemsResponse, isLoading, error, refetch } = useGetItemsQuery(queryParams);

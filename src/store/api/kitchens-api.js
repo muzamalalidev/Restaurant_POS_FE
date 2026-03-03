@@ -79,10 +79,9 @@ export const kitchensApi = baseApi.injectEndpoints({
     }),
 
     getKitchensDropdown: builder.query({
-      query: (params) => ({
+      query: () => ({
         url: '/api/kitchens/dropdown',
         method: 'GET',
-        params: buildQueryParams(params ?? {}),
       }),
       providesTags: ['Kitchen'],
     }),

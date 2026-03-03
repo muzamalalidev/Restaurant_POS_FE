@@ -6,40 +6,34 @@ import { buildQueryParams, normalizePaginatedResponse } from 'src/store/api/buil
 /**
  * Payment Modes RTK Query API Slice
  *
- * All endpoints are tenant-scoped: /api/tenants/{tenantId}/payment-modes
- * Every call requires tenantId (from list filter or context).
+ * Base route: api/PaymentModes (no tenantId in path).
+ * Tenant is resolved from the current user context (JWT).
  */
 
-const buildBaseUrl = (tenantId) => `/api/tenants/${tenantId}/payment-modes`;
+const BASE_URL = '/api/PaymentModes';
 
 export const paymentModesApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
     getPaymentModes: builder.query({
-      query: (params) => {
-        const { tenantId, ...queryParams } = params ?? {};
-        return {
-          url: buildBaseUrl(tenantId),
-          params: buildQueryParams(queryParams),
-        };
-      },
-      providesTags: (result, error, params) => [
-        { type: 'PaymentMode', id: `LIST-${params?.tenantId ?? ''}` },
-        'PaymentMode',
-      ],
+      query: (params) => ({
+        url: BASE_URL,
+        params: buildQueryParams(params ?? {}),
+      }),
+      providesTags: (result, error) => ['PaymentMode'],
       transformResponse: normalizePaginatedResponse,
     }),
 
     getPaymentModeById: builder.query({
-      query: ({ tenantId, id }) => ({
-        url: `${buildBaseUrl(tenantId)}/${id}`,
+      query: (id) => ({
+        url: `${BASE_URL}/${id}`,
         method: 'GET',
       }),
-      providesTags: (result, error, { id }) => [{ type: 'PaymentMode', id }],
+      providesTags: (result, error, id) => [{ type: 'PaymentMode', id }],
     }),
 
     createPaymentMode: builder.mutation({
-      query: ({ tenantId, body }) => ({
-        url: buildBaseUrl(tenantId),
+      query: (body) => ({
+        url: BASE_URL,
         method: 'POST',
         body,
       }),
@@ -47,8 +41,8 @@ export const paymentModesApi = baseApi.injectEndpoints({
     }),
 
     updatePaymentMode: builder.mutation({
-      query: ({ tenantId, id, body }) => ({
-        url: `${buildBaseUrl(tenantId)}/${id}`,
+      query: ({ id, body }) => ({
+        url: `${BASE_URL}/${id}`,
         method: 'PUT',
         body,
       }),
@@ -59,33 +53,30 @@ export const paymentModesApi = baseApi.injectEndpoints({
     }),
 
     deletePaymentMode: builder.mutation({
-      query: ({ tenantId, id }) => ({
-        url: `${buildBaseUrl(tenantId)}/${id}`,
+      query: (id) => ({
+        url: `${BASE_URL}/${id}`,
         method: 'DELETE',
       }),
       invalidatesTags: ['PaymentMode'],
     }),
 
     togglePaymentModeActive: builder.mutation({
-      query: ({ tenantId, id }) => ({
-        url: `${buildBaseUrl(tenantId)}/${id}/toggle-active`,
+      query: (id) => ({
+        url: `${BASE_URL}/${id}/toggle-active`,
         method: 'POST',
       }),
-      invalidatesTags: (result, error, { id }) => [
+      invalidatesTags: (result, error, id) => [
         { type: 'PaymentMode', id },
         'PaymentMode',
       ],
     }),
 
     getPaymentModesDropdown: builder.query({
-      query: (tenantId) => ({
-        url: `${buildBaseUrl(tenantId)}/dropdown`,
+      query: () => ({
+        url: `${BASE_URL}/dropdown`,
         method: 'GET',
       }),
-      providesTags: (result, error, tenantId) => [
-        { type: 'PaymentMode', id: `DROPDOWN-${tenantId}` },
-        'PaymentMode',
-      ],
+      providesTags: ['PaymentMode'],
     }),
   }),
 });

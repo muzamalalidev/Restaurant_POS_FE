@@ -10,6 +10,7 @@ const ICONS = {
   tenantMasters: icon('solar:buildings-2-outline'),
   tenants: icon('solar:shop-2-outline'),
   user: icon('solar:user-outline'),
+  roles: icon('solar:shield-user-outline'),
   branches: icon('solar:map-point-outline'),
   staffTypes: icon('solar:tag-outline'),
   staff: icon('solar:users-group-two-rounded-outline'),
@@ -36,6 +37,7 @@ export const navData = [
       { title: 'Tenant Masters', path: paths.platform.tenantMasters.root, icon: ICONS.tenantMasters },
       { title: 'Tenants', path: paths.platform.tenants.root, icon: ICONS.tenants },
       { title: 'Users', path: paths.platform.users.root, icon: ICONS.user },
+      { title: 'Roles', path: paths.platform.roles.root, icon: ICONS.roles },
     ],
   },
   /**

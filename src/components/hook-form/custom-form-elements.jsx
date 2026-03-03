@@ -1,7 +1,7 @@
 import dayjs from 'dayjs';
 import { MuiOtpInput } from 'mui-one-time-password-input';
 import { Controller, useFormContext } from 'react-hook-form';
-import { lazy, useRef, Suspense, useState, useEffect } from 'react';
+import { lazy, useRef, Suspense, useState, useEffect, forwardRef } from 'react';
 import { transformValue, transformValueOnBlur, transformValueOnChange } from 'minimal-shared/utils';
 
 import Box from '@mui/material/Box';
@@ -420,6 +420,7 @@ export function RHFDateTimePicker({ name, slotProps, ...other }) {
  * @param {string} label - Field label
  * @param {Array} options - Array of {value, label} objects
  * @param {boolean} checkbox - Show checkboxes in dropdown
+ * @param {boolean} showSelectAll - Show "Select all" row in dropdown (default: false)
  * @param {string} placeholder - Placeholder text when empty
  * @param {object} slotProps - MUI slot props for customization
  * @param {ReactNode} helperText - Helper text to display
@@ -435,6 +436,7 @@ export function RHFMultiSelect({
   label,
   options = [],
   checkbox,
+  showSelectAll = false,
   placeholder,
   slotProps,
   helperText,
@@ -447,6 +449,11 @@ export function RHFMultiSelect({
   const { control, setValue } = useFormContext();
 
   const labelId = generateFieldId(name, 'multi-select');
+  const paperSxArray = Array.isArray(slotProps?.autocomplete?.paper?.sx)
+    ? slotProps.autocomplete.paper.sx
+    : [slotProps?.autocomplete?.paper?.sx].filter(Boolean);
+  const listboxMaxHeight =
+    paperSxArray.reduce((acc, obj) => (obj?.maxHeight != null ? obj.maxHeight : acc), null) ?? 220;
 
   // Default filter function - case-insensitive search by label
   const defaultFilterOptions = (optionsToFilter, { inputValue }) => {
@@ -481,6 +488,56 @@ export function RHFMultiSelect({
           fieldValue.includes(option.value)
         );
 
+        const allSelected = options.length > 0 && fieldValue.length === options.length;
+        const someSelected = fieldValue.length > 0;
+
+        const SelectAllListbox = forwardRef((listboxProps, listboxRef) => {
+          const { children, ...listboxRest } = listboxProps;
+          return (
+            <ul ref={listboxRef} {...listboxRest}>
+              {showSelectAll && options.length > 0 && (
+                <li
+                  key="__select-all__"
+                  style={{ listStyle: 'none' }}
+                  role="presentation"
+                >
+                  <FormControlLabel
+                    sx={{
+                      px: 1.5,
+                      py: 0.75,
+                      width: '100%',
+                      mx: 0,
+                      borderBottom: 1,
+                      borderColor: 'divider',
+                    }}
+                    control={
+                      <Checkbox
+                        size="small"
+                        disableRipple
+                        checked={allSelected}
+                        indeterminate={someSelected && !allSelected}
+                        onChange={() => {
+                          if (allSelected) {
+                            setValue(name, [], { shouldValidate: true });
+                          } else {
+                            setValue(
+                              name,
+                              options.map((o) => o.value),
+                              { shouldValidate: true }
+                            );
+                          }
+                        }}
+                      />
+                    }
+                    label="Select all"
+                  />
+                </li>
+              )}
+              {children}
+            </ul>
+          );
+        });
+
         // Handle input change with leading space prevention
         const handleInputChange = (event, value, reason) => {
           // Only prevent leading spaces when user is typing (not when selecting from options)
@@ -511,6 +568,16 @@ export function RHFMultiSelect({
             isOptionEqualToValue={isOptionEqualToValue}
             disableCloseOnSelect
             limitTags={limitTags}
+            ListboxComponent={showSelectAll ? SelectAllListbox : undefined}
+            ListboxProps={{
+              ...slotProps?.autocomplete?.listbox,
+              sx: [
+                { maxHeight: listboxMaxHeight, overflowY: 'auto' },
+                ...(Array.isArray(slotProps?.autocomplete?.listbox?.sx)
+                  ? slotProps.autocomplete.listbox.sx
+                  : [slotProps?.autocomplete?.listbox?.sx].filter(Boolean)),
+              ],
+            }}
             renderInput={(params) => (
               <TextField
                 {...params}
@@ -610,10 +677,19 @@ export function RHFMultiSelect({
               paper: {
                 ...slotProps?.autocomplete?.paper,
                 sx: [
-                  { maxHeight: 220 },
+                  { maxHeight: listboxMaxHeight, overflow: 'hidden' },
                   ...(Array.isArray(slotProps?.autocomplete?.paper?.sx)
                     ? slotProps.autocomplete.paper.sx
-                    : [slotProps?.autocomplete?.paper?.sx]),
+                    : [slotProps?.autocomplete?.paper?.sx].filter(Boolean)),
+                ],
+              },
+              listbox: {
+                ...slotProps?.autocomplete?.listbox,
+                sx: [
+                  { maxHeight: listboxMaxHeight, overflowY: 'auto' },
+                  ...(Array.isArray(slotProps?.autocomplete?.listbox?.sx)
+                    ? slotProps.autocomplete.listbox.sx
+                    : [slotProps?.autocomplete?.listbox?.sx].filter(Boolean)),
                 ],
               },
             }}

@@ -143,16 +143,14 @@ export function OrderFormDialog({ open, onClose, onSuccess, branchOptions = [], 
   }, [watchedBranchId]);
 
   // Fetch tables dropdown based on selected branch
-  const { data: tablesDropdown } = useGetTablesDropdownQuery(
-    { branchId: selectedBranchId || undefined },
-    { skip: !selectedBranchId || !open }
-  );
+  const { data: tablesDropdown } = useGetTablesDropdownQuery(undefined, {
+    skip: !open,
+  });
 
   // Fetch kitchens dropdown based on selected branch
-  const { data: kitchensDropdown } = useGetKitchensDropdownQuery(
-    { branchId: selectedBranchId || undefined },
-    { skip: !selectedBranchId || !open }
-  );
+  const { data: kitchensDropdown } = useGetKitchensDropdownQuery(undefined, {
+    skip: !open,
+  });
 
   // Transform tables dropdown to options format
   const tableOptions = useMemo(() => {

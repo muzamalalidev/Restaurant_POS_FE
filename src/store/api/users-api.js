@@ -5,13 +5,17 @@ import { buildQueryParams, normalizePaginatedResponse } from 'src/store/api/buil
 
 /**
  * Users RTK Query API Slice
- * 
+ *
  * Handles all user operations.
- * Uses proper cache invalidation with tagTypes.
- * 
- * Note: Register endpoint returns raw GUID string (201 Created).
- * Toggle active and assign ownership return 204 No Content.
+ * Register endpoints return raw GUID string (201 Created); transformed to { id }.
  */
+
+function transformRegisterResponse(response) {
+  if (typeof response === 'string') {
+    return { id: response };
+  }
+  return response ?? {};
+}
 
 export const usersApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
@@ -42,14 +46,37 @@ export const usersApi = baseApi.injectEndpoints({
         body: data,
       }),
       invalidatesTags: ['User'],
-      // API returns raw GUID string (201 Created), transform to object for consistency
-      transformResponse: (response) => {
-        // If response is a string (GUID), return as id
-        if (typeof response === 'string') {
-          return { id: response };
-        }
-        return response;
-      },
+      transformResponse: transformRegisterResponse,
+    }),
+
+    registerTenantMasterUser: builder.mutation({
+      query: (body) => ({
+        url: '/api/Users/register/tenant-master',
+        method: 'POST',
+        body,
+      }),
+      invalidatesTags: ['User'],
+      transformResponse: transformRegisterResponse,
+    }),
+
+    registerTenantUser: builder.mutation({
+      query: (body) => ({
+        url: '/api/Users/register/tenant',
+        method: 'POST',
+        body,
+      }),
+      invalidatesTags: ['User'],
+      transformResponse: transformRegisterResponse,
+    }),
+
+    registerBranchUser: builder.mutation({
+      query: (body) => ({
+        url: '/api/Users/register/branch',
+        method: 'POST',
+        body,
+      }),
+      invalidatesTags: ['User'],
+      transformResponse: transformRegisterResponse,
     }),
 
     // Toggle user active status
@@ -83,6 +110,9 @@ export const {
   useGetUsersQuery,
   useGetUserByIdQuery,
   useRegisterUserMutation,
+  useRegisterTenantMasterUserMutation,
+  useRegisterTenantUserMutation,
+  useRegisterBranchUserMutation,
   useToggleUserActiveMutation,
   useAssignTenantOwnershipMutation,
 } = usersApi;

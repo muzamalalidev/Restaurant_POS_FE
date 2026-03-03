@@ -25,12 +25,6 @@ export { createCategorySchema, updateCategorySchema } from 'src/schemas/category
 // Staff type
 export { createStaffTypeSchema, updateStaffTypeSchema } from 'src/schemas/staff-type';
 
-// User
-export {
-  registerUserSchema,
-  assignTenantOwnershipSchema,
-} from 'src/schemas/user';
-
 // Payment mode
 export { createPaymentModeSchema, updatePaymentModeSchema } from 'src/schemas/payment-mode';
 
@@ -39,6 +33,13 @@ export {
   createTenantMasterSchema,
   updateTenantMasterSchema,
 } from 'src/schemas/tenant-master';
+
+// Role
+export {
+  createRoleSchema,
+  updateRoleSchema,
+  assignRoleToUserSchema,
+} from 'src/schemas/role';
 
 // Stock document
 export {
@@ -59,3 +60,13 @@ export {
   updateRecipeSchema,
   recipeIngredientSchema,
 } from 'src/schemas/recipe';
+
+// User
+export {
+  registerUserSchema,
+  registerBranchUserSchema,
+  registerTenantUserSchema,
+  registerUserScopedSchema,
+  assignTenantOwnershipSchema,
+  registerTenantMasterUserSchema,
+} from 'src/schemas/user';

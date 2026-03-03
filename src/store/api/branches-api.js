@@ -84,6 +84,15 @@ export const branchesApi = baseApi.injectEndpoints({
       }),
       providesTags: ['Branch'],
     }),
+
+    // Branches for current tenant from JWT (no tenantId passed). Returns 403 when no tenant context.
+    getBranchesDropdownCurrentTenant: builder.query({
+      query: () => ({
+        url: '/api/branches/dropdown/current-tenant',
+        method: 'GET',
+      }),
+      providesTags: ['Branch'],
+    }),
   }),
 });
 
@@ -98,5 +107,6 @@ export const {
   useDeleteBranchMutation,
   useToggleBranchActiveMutation,
   useGetBranchesDropdownQuery,
+  useGetBranchesDropdownCurrentTenantQuery,
 } = branchesApi;
 

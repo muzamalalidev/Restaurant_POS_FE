@@ -62,6 +62,7 @@ import { normalizeRows, normalizeColumns, normalizeToolbar, hasConfirmationDialo
  * @param {unknown} props.error - RTK Query / API error; when set, table shows error state instead of grid
  * @param {Function} [props.onRetry] - Callback when user clicks Retry (e.g. refetch)
  * @param {string} [props.errorEntityLabel] - Label for error message, e.g. "recipes" -> "Error loading recipes"
+ * @param {object} [props.errorMessageOptions] - Options for getApiErrorMessage (e.g. noContextMessage, forbiddenMessage)
  * @param {object} props.otherProps - All other DataGrid props
  */
 function CustomTableComponent({
@@ -90,6 +91,7 @@ function CustomTableComponent({
   error: errorProp,
   onRetry,
   errorEntityLabel = 'data',
+  errorMessageOptions,
   ...otherProps
 }) {
   // Normalize and validate data with error handling
@@ -466,6 +468,7 @@ function CustomTableComponent({
   if (errorProp) {
     const { message, isRetryable } = getApiErrorMessage(errorProp, {
       defaultMessage: `Error loading ${errorEntityLabel}`,
+      ...errorMessageOptions,
     });
     const title = `Error loading ${errorEntityLabel}`;
     return (
@@ -555,7 +558,8 @@ export const CustomTable = memo(CustomTableComponent, (prevProps, nextProps) => 
     prevProps.height !== nextProps.height ||
     prevProps.error !== nextProps.error ||
     prevProps.onRetry !== nextProps.onRetry ||
-    prevProps.errorEntityLabel !== nextProps.errorEntityLabel
+    prevProps.errorEntityLabel !== nextProps.errorEntityLabel ||
+    prevProps.errorMessageOptions !== nextProps.errorMessageOptions
   ) {
     return false;
   }

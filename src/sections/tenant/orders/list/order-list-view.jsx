@@ -283,45 +283,24 @@ export function OrderListView() {
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
-  // Fetch orders with pagination, search, and filter params
+  // Fetch orders with pagination, search, and filter params (branch from context; no branchId sent)
   const queryParams = useMemo(
     () => {
-      // Extract branchId: if it's an object, get the id; if it's a string, use it directly
-      const branchIdValue = typeof branchId === 'object' && branchId !== null
-        ? branchId.id
-        : branchId;
-
-      // Extract staffId: only include if branchId is not set (branchId takes precedence)
-      const staffIdValue = branchIdValue
-        ? undefined
-        : (typeof staffId === 'object' && staffId !== null
-            ? staffId.id
-            : staffId);
-
-      // Extract customerId: only include if branchId and staffId are not set
-      const customerIdValue = branchIdValue || staffIdValue
-        ? undefined
-        : (typeof customerId === 'object' && customerId !== null
-            ? customerId.id
-            : customerId);
-
-      // Extract status: if it's an object, get the id; if it's a number, use it directly
-      const statusValue = typeof status === 'object' && status !== null
-        ? status.id
-        : status;
+      const staffIdValue = typeof staffId === 'object' && staffId !== null ? staffId.id : staffId;
+      const customerIdValue = typeof customerId === 'object' && customerId !== null ? customerId.id : customerId;
+      const statusValue = typeof status === 'object' && status !== null ? status.id : status;
 
       return {
         pageNumber,
         pageSize,
         searchTerm: debouncedSearchTerm.trim() || undefined,
-        branchId: branchIdValue || undefined,
         staffId: staffIdValue || undefined,
         customerId: customerIdValue || undefined,
         status: statusValue || undefined,
         includeItems: true, // Full row for View/Update without getById
       };
     },
-    [pageNumber, pageSize, debouncedSearchTerm, branchId, staffId, customerId, status]
+    [pageNumber, pageSize, debouncedSearchTerm, staffId, customerId, status]
   );
 
   const { data: ordersResponse, isLoading, error, refetch } = useGetOrdersQuery(queryParams);

@@ -195,11 +195,6 @@ export function CategoryListView() {
   // Fetch categories with pagination, search, and filter params
   const queryParams = useMemo(
     () => {
-      // Extract tenantId: if it's an object, get the id; if it's a string, use it directly
-      const tenantIdValue = typeof tenantId === 'object' && tenantId !== null
-        ? tenantId.id
-        : tenantId;
-
       // Extract parentId: if it's an object, get the id; if it's a string, use it directly
       // Handle special case: if it's the "Root Categories" option (id: null), pass null
       let parentIdValue = null;
@@ -215,11 +210,10 @@ export function CategoryListView() {
         pageNumber,
         pageSize,
         searchTerm: debouncedSearchTerm.trim() || undefined,
-        tenantId: tenantIdValue || undefined,
         parentId: parentIdValue || undefined,
       };
     },
-    [pageNumber, pageSize, debouncedSearchTerm, tenantId, parentId]
+    [pageNumber, pageSize, debouncedSearchTerm, parentId]
   );
 
   const { data: categoriesResponse, isLoading, error, refetch } = useGetCategoriesQuery(queryParams);

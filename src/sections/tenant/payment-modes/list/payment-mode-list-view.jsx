@@ -114,24 +114,16 @@ export function PaymentModeListView() {
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
-  const resolvedTenantId = useMemo(() => {
-    if (typeof tenantId === 'object' && tenantId !== null && 'id' in tenantId) return tenantId.id;
-    return tenantId || null;
-  }, [tenantId]);
-
   const queryParams = useMemo(
     () => ({
-      tenantId: resolvedTenantId,
       pageNumber,
       pageSize,
       searchTerm: debouncedSearchTerm.trim() || undefined,
     }),
-    [resolvedTenantId, pageNumber, pageSize, debouncedSearchTerm]
+    [pageNumber, pageSize, debouncedSearchTerm]
   );
 
-  const { data: response, isLoading, error, refetch } = useGetPaymentModesQuery(queryParams, {
-    skip: !resolvedTenantId,
-  });
+  const { data: response, isLoading, error, refetch } = useGetPaymentModesQuery(queryParams);
 
   const paymentModes = useMemo(() => response?.data ?? [], [response]);
 
@@ -155,11 +147,10 @@ export function PaymentModeListView() {
   const [togglingId, setTogglingId] = useState(null);
 
   const handleCreate = useCallback(() => {
-    if (!resolvedTenantId) return;
     setFormDialogMode('create');
     setFormDialogRecord(null);
     setFormDialogOpen(true);
-  }, [resolvedTenantId]);
+  }, []);
 
   const handleEdit = useCallback((row) => {
     const record = paymentModes.find((p) => p.id === row.id) ?? null;
@@ -183,9 +174,9 @@ export function PaymentModeListView() {
   }, []);
 
   const handleDeleteConfirm = useCallback(async () => {
-    if (!deletePaymentModeId || !resolvedTenantId || isDeleting) return;
+    if (!deletePaymentModeId || isDeleting) return;
     try {
-      await deletePaymentMode({ tenantId: resolvedTenantId, id: deletePaymentModeId }).unwrap();
+      await deletePaymentMode(deletePaymentModeId).unwrap();
       toast.success('Payment mode deleted successfully');
       setDeleteConfirmOpen(false);
       setDeletePaymentModeId(null);
@@ -210,14 +201,14 @@ export function PaymentModeListView() {
         toast.error(message);
       }
     }
-  }, [deletePaymentModeId, resolvedTenantId, isDeleting, deletePaymentMode, refetch, paymentModes.length, pageNumber]);
+  }, [deletePaymentModeId, isDeleting, deletePaymentMode, refetch, paymentModes.length, pageNumber]);
 
   const handleToggleActive = useCallback(
     async (id, onRevert) => {
-      if (!resolvedTenantId || togglingId === id) return;
+      if (togglingId === id) return;
       setTogglingId(id);
       try {
-        await togglePaymentModeActive({ tenantId: resolvedTenantId, id }).unwrap();
+        await togglePaymentModeActive(id).unwrap();
         toast.success('Status updated successfully');
       } catch (err) {
         const { message, isRetryable } = getApiErrorMessage(err, {
@@ -239,7 +230,7 @@ export function PaymentModeListView() {
         setTogglingId(null);
       }
     },
-    [resolvedTenantId, togglePaymentModeActive, togglingId]
+    [togglePaymentModeActive, togglingId]
   );
 
   const handleFormSuccess = useCallback((id, action) => {
@@ -340,11 +331,7 @@ export function PaymentModeListView() {
     [handleView, handleEdit, handleToggleActive, handleDeleteClick, togglingId, toggleForm]
   );
 
-  const showTable = !!resolvedTenantId;
-  const emptyMessage = !resolvedTenantId
-    ? 'Select a tenant to view payment modes'
-    : (searchTerm || debouncedSearchTerm) ? 'No payment modes match your search'
-    : 'Get started by creating a payment mode';
+  const emptyMessage = (searchTerm || debouncedSearchTerm) ? 'No payment modes match your search' : 'Get started by creating a payment mode';
 
   return (
     <Box>
@@ -390,25 +377,22 @@ export function PaymentModeListView() {
             variant="contained"
             startIcon="mingcute:add-line"
             onClick={handleCreate}
-            disabled={!resolvedTenantId}
             sx={{ ml: 'auto', minHeight: 44 }}
           >
             Create Payment Mode
           </Field.Button>
         </Stack>
 
-        {!showTable ? (
-          <EmptyContent title="No tenant selected" description={emptyMessage} />
-        ) : (
-          <CustomTable
-            rows={rows}
-            columns={columns}
-            loading={isLoading}
-            actions={actions}
-            error={error}
-            onRetry={refetch}
-            errorEntityLabel="payment modes"
-            pagination={{
+        <CustomTable
+          rows={rows}
+          columns={columns}
+          loading={isLoading}
+          actions={actions}
+          error={error}
+          onRetry={refetch}
+          errorEntityLabel="payment modes"
+          errorMessageOptions={{ noContextMessage: 'No tenant context' }}
+          pagination={{
               ...DEFAULT_PAGINATION,
               mode: 'server',
               page: pageNumber - 1,
@@ -420,13 +404,11 @@ export function PaymentModeListView() {
             getRowId={(row) => row.id}
             emptyContent={<EmptyContent title="No payment modes found" description={emptyMessage} />}
           />
-        )}
         </Card>
 
         <PaymentModeFormDialog
           open={formDialogOpen}
           mode={formDialogMode}
-          tenantId={resolvedTenantId}
           record={formDialogRecord}
           onClose={handleFormClose}
           onSuccess={handleFormSuccess}

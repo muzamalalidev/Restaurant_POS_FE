@@ -5,15 +5,17 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useRef, useMemo, useState, useEffect, useCallback } from 'react';
 
 import Box from '@mui/material/Box';
+import Typography from '@mui/material/Typography';
 import { useTheme, useMediaQuery } from '@mui/material';
 
 import { getApiErrorMessage } from 'src/utils/api-error-message';
 
-import { createPaymentModeSchema, updatePaymentModeSchema } from 'src/schemas';
+import { createRoleSchema, updateRoleSchema } from 'src/schemas';
 import {
-  useCreatePaymentModeMutation,
-  useUpdatePaymentModeMutation,
-} from 'src/store/api/payment-modes-api';
+  useCreateRoleMutation,
+  useUpdateRoleMutation,
+  useGetRoleScopesDropdownQuery,
+} from 'src/store/api/roles-api';
 
 import { toast } from 'src/components/snackbar';
 import { Form, Field } from 'src/components/hook-form';
@@ -23,36 +25,43 @@ import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
 // ----------------------------------------------------------------------
 
 /**
- * Payment Mode Form Dialog
- *
- * Single dialog for create and edit. Edit mode uses record from list (no getById).
- * Tenant is resolved from user context (JWT); no tenantId passed to API.
+ * Role Form Dialog
+ * Single dialog for create and edit. Create returns 201 with GUID in body.
+ * Scope options from scopes-dropdown (allowed for current user).
  */
-export function PaymentModeFormDialog({
-  open,
-  mode,
-  record,
-  onClose,
-  onSuccess,
-}) {
+export function RoleFormDialog({ open, mode, record, onClose, onSuccess }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] = useState(false);
-  const isSubmittingRef = useRef(false);
 
-  const [createPaymentMode, { isLoading: isCreating }] = useCreatePaymentModeMutation();
-  const [updatePaymentMode, { isLoading: isUpdating }] = useUpdatePaymentModeMutation();
+  const [createRole, { isLoading: isCreating }] = useCreateRoleMutation();
+  const [updateRole, { isLoading: isUpdating }] = useUpdateRoleMutation();
 
   const isSubmitting = isCreating || isUpdating;
-  const schema = mode === 'create' ? createPaymentModeSchema : updatePaymentModeSchema;
+  const isSubmittingRef = useRef(false);
+  const schema = mode === 'create' ? createRoleSchema : updateRoleSchema;
+
+  const { data: scopesDropdown } = useGetRoleScopesDropdownQuery(undefined, { skip: !open });
+
+  const scopeOptions = useMemo(() => {
+    if (!scopesDropdown || !Array.isArray(scopesDropdown)) return [];
+    return scopesDropdown.map((d) => {
+      const key = d.key ?? d.Key;
+      const num = typeof key === 'string' ? Number(key) : key;
+      return {
+        id: Number.isNaN(num) ? key : num,
+        label: d.value ?? d.Value ?? String(key),
+      };
+    });
+  }, [scopesDropdown]);
 
   const methods = useForm({
     resolver: zodResolver(schema),
     defaultValues: useMemo(
       () => ({
         name: '',
-        description: null,
+        scope: null,
         isActive: true,
       }),
       []
@@ -64,54 +73,56 @@ export function PaymentModeFormDialog({
 
   useEffect(() => {
     if (!open) {
-      reset({ name: '', description: null, isActive: true });
+      reset({ name: '', scope: null, isActive: true });
       return;
     }
     if (mode === 'edit' && record) {
+      const scopeOption = scopeOptions.find((o) => o.id === record.scope) ?? {
+        id: record.scope,
+        label: String(record.scope),
+      };
       reset({
         name: record.name ?? '',
-        description: record.description ?? null,
+        scope: record.scope != null ? scopeOption : null,
         isActive: record.isActive ?? true,
       });
     } else {
-      reset({ name: '', description: null, isActive: true });
+      reset({ name: '', scope: null, isActive: true });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, mode, record?.id, record?.name, record?.description, record?.isActive, reset]);
+  }, [open, mode, record, reset, scopeOptions]);
 
   const onSubmit = handleSubmit(async (data) => {
-    if (isSubmittingRef.current || isSubmitting) return;
+    if (isSubmittingRef.current) return;
     isSubmittingRef.current = true;
-
-    const body = {
-      name: data.name.trim(),
-      description: data.description?.trim() || null,
-      isActive: data.isActive ?? true,
-    };
-
     try {
+      const scopeValue = data.scope?.id ?? data.scope;
       if (mode === 'create') {
-        const result = await createPaymentMode(body).unwrap();
-        onSuccess?.(result, 'created');
+        const createData = {
+          name: data.name.trim(),
+          scope: scopeValue,
+          isActive: data.isActive,
+        };
+        const result = await createRole(createData).unwrap();
+        const id = result?.id ?? result;
+        if (onSuccess) onSuccess(id, 'created');
       } else {
-        await updatePaymentMode({ id: record.id, body }).unwrap();
-        onSuccess?.(record.id, 'updated');
+        const updateData = {
+          name: data.name.trim(),
+          scope: scopeValue,
+          isActive: data.isActive,
+        };
+        await updateRole({ id: record.id, ...updateData }).unwrap();
+        if (onSuccess) onSuccess(record.id, 'updated');
       }
       reset();
       onClose();
     } catch (err) {
       const { message, isRetryable } = getApiErrorMessage(err, {
-        defaultMessage: `Failed to ${mode === 'create' ? 'create' : 'update'} payment mode`,
-        validationMessage: 'Validation failed or duplicate name for this tenant.',
+        defaultMessage: `Failed to ${mode === 'create' ? 'create' : 'update'} role`,
       });
       if (isRetryable) {
         toast.error(message, {
-          action: {
-            label: 'Retry',
-            onClick: () => {
-              setTimeout(() => onSubmit({ preventDefault: () => {}, target: { checkValidity: () => true } }), 100);
-            },
-          },
+          action: { label: 'Retry', onClick: () => onSubmit() },
         });
       } else {
         toast.error(message);
@@ -143,12 +154,7 @@ export function PaymentModeFormDialog({
 
   const renderActions = () => (
     <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
-      <Field.Button
-        variant="outlined"
-        color="inherit"
-        onClick={handleClose}
-        disabled={isSubmitting}
-      >
+      <Field.Button variant="outlined" color="inherit" onClick={handleClose} disabled={isSubmitting}>
         Cancel
       </Field.Button>
       <Field.Button
@@ -170,7 +176,7 @@ export function PaymentModeFormDialog({
       <CustomDialog
         open={open}
         onClose={handleClose}
-        title={mode === 'create' ? 'Create Payment Mode' : 'Edit Payment Mode'}
+        title={mode === 'create' ? 'Create Role' : 'Edit Role'}
         maxWidth="sm"
         fullWidth
         fullScreen={isMobile}
@@ -181,27 +187,28 @@ export function PaymentModeFormDialog({
         <Form methods={methods} onSubmit={onSubmit}>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1 }}>
             <Box>
+              <Typography variant="subtitle2" sx={{ mb: 2 }}>
+                Role details
+              </Typography>
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <Field.Text
                   name="name"
                   label="Name"
-                  placeholder="Enter payment mode name"
+                  placeholder="Enter role name"
                   required
-                  slotProps={{
-                    input: {
-                      maxLength: 200,
-                    },
-                  }}
+                  inputProps={{ maxLength: 256 }}
+                  characterCounter
                 />
-                <Field.Text
-                  name="description"
-                  label="Description"
-                  placeholder="Enter description (optional)"
-                  multiline
-                  rows={3}
+                <Field.Autocomplete
+                  name="scope"
+                  label="Scope"
+                  options={scopeOptions}
+                  getOptionLabel={(option) => (option ? (option.label ?? String(option.id ?? '')) : '')}
+                  isOptionEqualToValue={(a, b) => (a?.id ?? a) === (b?.id ?? b)}
                   slotProps={{
-                    input: {
-                      maxLength: 1000,
+                    textField: {
+                      placeholder: 'Select scope',
+                      required: true,
                     },
                   }}
                 />

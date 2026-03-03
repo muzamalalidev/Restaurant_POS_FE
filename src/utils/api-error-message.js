@@ -3,7 +3,7 @@
  * Use in list views (mutation catch), form dialogs (submit catch), and details dialogs (query error).
  *
  * @param {unknown} err - RTK Query / API error (from .unwrap() catch or query error)
- * @param {{ defaultMessage: string, notFoundMessage?: string, validationMessage?: string }} [options]
+ * @param {{ defaultMessage: string, notFoundMessage?: string, validationMessage?: string, forbiddenMessage?: string, noContextMessage?: string }} [options]
  * @returns {{ message: string, isRetryable: boolean }}
  */
 export function getApiErrorMessage(err, options = {}) {
@@ -11,6 +11,8 @@ export function getApiErrorMessage(err, options = {}) {
     defaultMessage = 'An error occurred',
     notFoundMessage,
     validationMessage,
+    forbiddenMessage,
+    noContextMessage,
   } = options;
 
   const networkMessage = 'Network error. Please check your connection.';
@@ -57,6 +59,14 @@ export function getApiErrorMessage(err, options = {}) {
   if (status === 401) {
     return {
       message: dataMessage || defaultMessage,
+      isRetryable: false,
+    };
+  }
+
+  // 4c. 403 Forbidden (permission denied or missing context e.g. no tenant/tenant master)
+  if (status === 403) {
+    return {
+      message: forbiddenMessage ?? noContextMessage ?? dataMessage ?? defaultMessage,
       isRetryable: false,
     };
   }

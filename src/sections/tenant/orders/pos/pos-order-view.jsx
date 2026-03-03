@@ -167,14 +167,9 @@ function PosOrderContent({
     [products]
   );
 
-  const { data: tablesDropdown } = useGetTablesDropdownQuery(
-    { branchId: selectedBranchId || undefined },
-    { skip: !selectedBranchId }
-  );
+  const { data: tablesDropdown } = useGetTablesDropdownQuery();
 
-  const { data: paymentModesDropdown } = useGetPaymentModesDropdownQuery(selectedBranchId ?? undefined, {
-    skip: !selectedBranchId,
-  });
+  const { data: paymentModesDropdown } = useGetPaymentModesDropdownQuery();
   const paymentModeOptions = useMemo(() => {
     if (!paymentModesDropdown || !Array.isArray(paymentModesDropdown)) return [];
     return paymentModesDropdown.map((item) => ({ id: item.key, label: item.value || item.key }));

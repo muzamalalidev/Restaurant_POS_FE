@@ -7,18 +7,22 @@ import Box from '@mui/material/Box';
 import { Card } from '@mui/material';
 import Stack from '@mui/material/Stack';
 import Switch from '@mui/material/Switch';
+import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
+import Autocomplete from '@mui/material/Autocomplete';
 import InputAdornment from '@mui/material/InputAdornment';
 
 import { fDateTime } from 'src/utils/format-time';
 import { getApiErrorMessage } from 'src/utils/api-error-message';
 
-import { useGetTenantsDropdownQuery } from 'src/store/api/tenants-api';
+import { useGetBranchesDropdownQuery } from 'src/store/api/branches-api';
+import { useGetTenantMastersDropdownQuery } from 'src/store/api/tenant-masters-api';
 import {
   useGetUsersQuery,
   useToggleUserActiveMutation,
 } from 'src/store/api/users-api';
+import { useGetTenantsDropdownQuery, useGetTenantsDropdownCurrentTenantMasterQuery } from 'src/store/api/tenants-api';
 
 import { Label } from 'src/components/label';
 import { toast } from 'src/components/snackbar';
@@ -57,6 +61,11 @@ export function UserListView() {
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
 
+  // Optional filters: tenantMasterId, tenantId, branchId
+  const [tenantMasterId, setTenantMasterId] = useState(null);
+  const [tenantId, setTenantId] = useState(null);
+  const [branchId, setBranchId] = useState(null);
+
   // Minimal form for search (required for Field.Text)
   const searchForm = useForm({
     defaultValues: {
@@ -81,20 +90,34 @@ export function UserListView() {
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
-  // Fetch users with pagination and search params
+  const getId = (val) => {
+    if (!val) return null;
+    if (typeof val === 'object' && val !== null && 'id' in val) return val.id;
+    return val;
+  };
+
+  // Fetch users with pagination, search, and optional scope filters
   const queryParams = useMemo(
     () => ({
       pageNumber,
       pageSize,
       searchTerm: debouncedSearchTerm.trim() || undefined,
+      tenantMasterId: getId(tenantMasterId) || undefined,
+      tenantId: getId(tenantId) || undefined,
+      branchId: getId(branchId) || undefined,
     }),
-    [pageNumber, pageSize, debouncedSearchTerm]
+    [pageNumber, pageSize, debouncedSearchTerm, tenantMasterId, tenantId, branchId]
   );
 
+  // Prefer current tenant master tenants; on 403 fallback to full tenants dropdown
+  const { data: tenantsDropdownCurrentTM, error: tenantsCurrentTMError } = useGetTenantsDropdownCurrentTenantMasterQuery();
+  const { data: tenantsDropdownFallback } = useGetTenantsDropdownQuery(undefined, {
+    skip: tenantsCurrentTMError?.status !== 403,
+  });
   const { data: usersResponse, isLoading, error, refetch } = useGetUsersQuery(queryParams);
 
   // Fetch tenants dropdown (for assign ownership dialog)
-  const { data: tenantsDropdown } = useGetTenantsDropdownQuery(undefined);
+  const tenantsDropdown = tenantsCurrentTMError?.status === 403 ? tenantsDropdownFallback : tenantsDropdownCurrentTM;
 
   // Extract data from paginated response
   const users = useMemo(() => {
@@ -102,7 +125,7 @@ export function UserListView() {
     return usersResponse.data || [];
   }, [usersResponse]);
 
-  // Transform tenants dropdown to options (for assign ownership dialog)
+  // Transform tenants dropdown to options (for assign ownership dialog and filter)
   const tenantOptions = useMemo(() => {
     if (!tenantsDropdown || !Array.isArray(tenantsDropdown)) return [];
     return tenantsDropdown.map((item) => ({
@@ -110,6 +133,18 @@ export function UserListView() {
       label: item.value || item.key,
     }));
   }, [tenantsDropdown]);
+
+  const { data: tenantMastersDropdown } = useGetTenantMastersDropdownQuery();
+  const tenantMasterOptions = useMemo(() => {
+    if (!tenantMastersDropdown || !Array.isArray(tenantMastersDropdown)) return [];
+    return tenantMastersDropdown.map((item) => ({ id: item.key, label: item.value || item.key }));
+  }, [tenantMastersDropdown]);
+
+  const { data: branchesDropdown } = useGetBranchesDropdownQuery();
+  const branchOptions = useMemo(() => {
+    if (!branchesDropdown || !Array.isArray(branchesDropdown)) return [];
+    return branchesDropdown.map((item) => ({ id: item.key, label: item.value || item.key }));
+  }, [branchesDropdown]);
 
   // Extract pagination metadata
   const paginationMeta = useMemo(() => {
@@ -393,6 +428,45 @@ export function UserListView() {
               sx={{ maxWidth: { sm: 400 }, flex: 1 }}
             />
           </FormProvider>
+          <Autocomplete
+            size="small"
+            options={tenantMasterOptions}
+            value={tenantMasterId}
+            onChange={(e, newValue) => {
+              setTenantMasterId(newValue);
+              setPageNumber(1);
+            }}
+            getOptionLabel={(opt) => (opt?.label ?? opt?.id ?? '').toString()}
+            isOptionEqualToValue={(opt, val) => opt?.id === val?.id}
+            renderInput={(params) => <TextField {...params} label="Tenant Master" />}
+            sx={{ minWidth: { sm: 180 } }}
+          />
+          <Autocomplete
+            size="small"
+            options={tenantOptions}
+            value={tenantId}
+            onChange={(e, newValue) => {
+              setTenantId(newValue);
+              setPageNumber(1);
+            }}
+            getOptionLabel={(opt) => (opt?.label ?? opt?.id ?? '').toString()}
+            isOptionEqualToValue={(opt, val) => opt?.id === val?.id}
+            renderInput={(params) => <TextField {...params} label="Tenant" />}
+            sx={{ minWidth: { sm: 180 } }}
+          />
+          <Autocomplete
+            size="small"
+            options={branchOptions}
+            value={branchId}
+            onChange={(e, newValue) => {
+              setBranchId(newValue);
+              setPageNumber(1);
+            }}
+            getOptionLabel={(opt) => (opt?.label ?? opt?.id ?? '').toString()}
+            isOptionEqualToValue={(opt, val) => opt?.id === val?.id}
+            renderInput={(params) => <TextField {...params} label="Branch" />}
+            sx={{ minWidth: { sm: 180 } }}
+          />
           <Field.Button
             variant="contained"
             startIcon="mingcute:add-line"
@@ -439,6 +513,9 @@ export function UserListView() {
         open={registerDialogOpen}
         onClose={handleRegisterClose}
         onSuccess={handleRegisterSuccess}
+        tenantMasterOptions={tenantMasterOptions}
+        tenantOptions={tenantOptions}
+        branchOptions={branchOptions}
       />
 
       {/* Details Dialog */}

@@ -5,22 +5,21 @@ import { buildQueryParams, normalizePaginatedResponse } from 'src/store/api/buil
 
 /**
  * Tables RTK Query API Slice
- * 
- * Handles all table operations.
- * Uses proper cache invalidation with tagTypes.
- * 
- * Note: GetById endpoint is a placeholder (returns only { id }).
- * Use getAllTables with branchId filter and client-side filtering by ID as workaround.
+ *
+ * Branch is resolved from the current user context (JWT).
+ * GetAll does not take branchId; dropdown has no query parameters.
  */
-
 export const tablesApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
-    // Get all tables
+    // Get all tables (pageNumber, pageSize, searchTerm only; branch from context)
     getAllTables: builder.query({
-      query: (params) => ({
-        url: '/api/tables',
-        params: buildQueryParams(params ?? {}),
-      }),
+      query: (params) => {
+        const { branchId: _b, ...rest } = params ?? {};
+        return {
+          url: '/api/tables',
+          params: buildQueryParams(rest),
+        };
+      },
       providesTags: ['Table'],
       transformResponse: normalizePaginatedResponse,
     }),
@@ -92,10 +91,9 @@ export const tablesApi = baseApi.injectEndpoints({
     }),
 
     getTablesDropdown: builder.query({
-      query: (params) => ({
+      query: () => ({
         url: '/api/tables/dropdown',
         method: 'GET',
-        params: buildQueryParams(params ?? {}),
       }),
       providesTags: ['Table'],
     }),
