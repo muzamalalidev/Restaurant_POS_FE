@@ -69,6 +69,9 @@ export const paths = {
     items: {
       root: `${ROOTS.TENANT}/items`,
     },
+    deals: {
+      root: `${ROOTS.TENANT}/deals`,
+    },
     stock: {
       root: `${ROOTS.TENANT}/stock`,
     },

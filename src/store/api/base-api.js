@@ -96,6 +96,7 @@ export const baseApi = createApi({
     'PaymentMode',
     'OrderType',
     'Role',
+    'Deal',
     // Add more as needed for new features
   ],
   endpoints: () => ({}),

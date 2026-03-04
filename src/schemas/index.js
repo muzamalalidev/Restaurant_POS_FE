@@ -1,6 +1,9 @@
 // Item
 export { createItemSchema, updateItemSchema } from 'src/schemas/item';
 
+// Deal
+export { createDealSchema, updateDealSchema } from 'src/schemas/deal';
+
 // Order
 export { createOrderSchema, updateOrderSchema } from 'src/schemas/order';
 

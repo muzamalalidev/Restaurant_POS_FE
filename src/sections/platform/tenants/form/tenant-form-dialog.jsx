@@ -305,7 +305,6 @@ export function TenantFormDialog({ open, mode, record, onClose, onSuccess, tenan
                   required={mode === 'create'}
                   slotProps={{
                     textField: {
-                      size: 'small',
                       placeholder: mode === 'create' ? 'Select tenant master' : 'Optional',
                     },
                   }}
