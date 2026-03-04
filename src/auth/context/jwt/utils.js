@@ -129,17 +129,22 @@ export async function setSession(accessTokenOrResponse, opts = {}) {
       user = opts.user ?? null;
     } else {
       const res = accessTokenOrResponse;
-      accessToken = res.accessToken;
-      refreshToken = res.refreshToken ?? null;
-      expiresAt = res.expiresAt ?? null;
+      accessToken = res.accessToken ?? res.AccessToken;
+      refreshToken = res.refreshToken ?? res.RefreshToken ?? null;
+      expiresAt = res.expiresAt ?? res.ExpiresAt ?? null;
+      const userId = res.userId ?? res.UserId;
+      const email = res.email ?? res.Email;
+      const userName = res.userName ?? res.UserName;
+      const roles = res.roles ?? res.Roles ?? [];
+      const permissions = res.permissions ?? res.Permissions ?? [];
       user = {
-        id: res.userId,
-        userId: res.userId,
-        email: res.email,
-        displayName: res.userName ?? res.email,
-        userName: res.userName,
-        roles: res.roles ?? [],
-        permissions: res.permissions ?? [],
+        id: userId,
+        userId,
+        email,
+        displayName: userName ?? email,
+        userName,
+        roles,
+        permissions,
       };
     }
 

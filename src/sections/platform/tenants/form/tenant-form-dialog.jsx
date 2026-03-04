@@ -35,7 +35,7 @@ import { PhoneNumbersField } from './components/phone-numbers-field';
  * - phoneNumbers: array field (add/remove cards), no dropdowns; primary via Radio.
  * - No dependent dropdowns (no parent -> child chain).
  */
-export function TenantFormDialog({ open, mode, record, onClose, onSuccess }) {
+export function TenantFormDialog({ open, mode, record, onClose, onSuccess, tenantMasterOptions = [] }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
@@ -57,8 +57,14 @@ export function TenantFormDialog({ open, mode, record, onClose, onSuccess }) {
     resolver: zodResolver(schema),
     defaultValues: useMemo(
       () => ({
+        tenantMasterId: null,
         name: '',
         description: null,
+        address: null,
+        city: null,
+        state: null,
+        country: null,
+        postalCode: null,
         ownerId: null,
         isActive: true,
         phoneNumbers: null,
@@ -78,8 +84,14 @@ export function TenantFormDialog({ open, mode, record, onClose, onSuccess }) {
   useEffect(() => {
     if (!open) {
       reset({
+        tenantMasterId: null,
         name: '',
         description: null,
+        address: null,
+        city: null,
+        state: null,
+        country: null,
+        postalCode: null,
         ownerId: null,
         isActive: true,
         phoneNumbers: null,
@@ -89,8 +101,16 @@ export function TenantFormDialog({ open, mode, record, onClose, onSuccess }) {
 
     if (mode === 'edit' && record) {
       reset({
+        tenantMasterId: record.tenantMasterId
+          ? { id: record.tenantMasterId, label: record.tenantMasterName || record.tenantMasterId }
+          : null,
         name: record.name || '',
         description: record.description || null,
+        address: record.address || null,
+        city: record.city || null,
+        state: record.state || null,
+        country: record.country || null,
+        postalCode: record.postalCode || null,
         ownerId: record.ownerId || null,
         isActive: record.isActive ?? true,
         phoneNumbers: record.phoneNumbers?.map((phone) => ({
@@ -105,8 +125,14 @@ export function TenantFormDialog({ open, mode, record, onClose, onSuccess }) {
     } else {
       // create, or edit with no record (e.g. row no longer in list)
       reset({
+        tenantMasterId: null,
         name: '',
         description: null,
+        address: null,
+        city: null,
+        state: null,
+        country: null,
+        postalCode: null,
         ownerId: null,
         isActive: true,
         phoneNumbers: null,
@@ -120,12 +146,18 @@ export function TenantFormDialog({ open, mode, record, onClose, onSuccess }) {
     isSubmittingRef.current = true;
     try {
       if (mode === 'create') {
-        // Transform data for create: phoneNumbers should only have phoneNumber, isPrimary, label
-        // Filter out phones with empty phoneNumber and convert empty array to null
+        // Transform data for create: tenantMasterId required; phoneNumbers only phoneNumber, isPrimary, label
         const validPhones = data.phoneNumbers?.filter((phone) => phone.phoneNumber?.trim()) || [];
+        const tenantMasterIdValue = data.tenantMasterId?.id ?? data.tenantMasterId ?? null;
         const createData = {
+          tenantMasterId: tenantMasterIdValue,
           name: data.name,
           description: data.description || null,
+          address: data.address || null,
+          city: data.city || null,
+          state: data.state || null,
+          country: data.country || null,
+          postalCode: data.postalCode || null,
           phoneNumbers:
             validPhones.length > 0
               ? validPhones.map((phone) => ({
@@ -140,13 +172,19 @@ export function TenantFormDialog({ open, mode, record, onClose, onSuccess }) {
           onSuccess(result, 'created');
         }
       } else {
-        // Transform data for update: include all phone fields, ensure tenantId matches
-        // Per API spec: empty array [] = soft delete all phones, null = don't modify existing phones
+        // Transform data for update: full DTO including tenantMasterId, address block, ownerId, phones
         const ownerIdValue = data.ownerId?.id ?? data.ownerId ?? null;
+        const tenantMasterIdValue = data.tenantMasterId?.id ?? data.tenantMasterId ?? null;
         const validPhones = data.phoneNumbers?.filter((phone) => phone.phoneNumber?.trim()) || [];
         const updateData = {
           name: data.name,
           description: data.description || null,
+          tenantMasterId: tenantMasterIdValue,
+          address: data.address || null,
+          city: data.city || null,
+          state: data.state || null,
+          country: data.country || null,
+          postalCode: data.postalCode || null,
           ownerId: ownerIdValue,
           isActive: data.isActive,
           phoneNumbers:
@@ -252,6 +290,26 @@ export function TenantFormDialog({ open, mode, record, onClose, onSuccess }) {
                 Tenant Information
               </Typography>
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <Field.Autocomplete
+                  name="tenantMasterId"
+                  label="Tenant Master"
+                  options={tenantMasterOptions}
+                  getOptionLabel={(option) => {
+                    if (!option) return '';
+                    return option.label || option.id || '';
+                  }}
+                  isOptionEqualToValue={(option, value) => {
+                    if (!option || !value) return option === value;
+                    return option.id === value.id;
+                  }}
+                  required={mode === 'create'}
+                  slotProps={{
+                    textField: {
+                      size: 'small',
+                      placeholder: mode === 'create' ? 'Select tenant master' : 'Optional',
+                    },
+                  }}
+                />
                 <Field.Text
                   name="name"
                   label="Name"
@@ -268,7 +326,6 @@ export function TenantFormDialog({ open, mode, record, onClose, onSuccess }) {
                 {mode === 'edit' && (
                   <>
                     <Field.Switch name="isActive" label="Active" />
-                    {/* Owner ID field - hidden for now, can be added later */}
                     <Field.Text
                       name="ownerId"
                       label="Owner ID"
@@ -277,6 +334,50 @@ export function TenantFormDialog({ open, mode, record, onClose, onSuccess }) {
                     />
                   </>
                 )}
+              </Box>
+            </Box>
+
+            <Divider />
+
+            {/* Address Section */}
+            <Box>
+              <Typography variant="subtitle2" sx={{ mb: 2 }}>
+                Address
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <Field.Text
+                  name="address"
+                  label="Address"
+                  placeholder="Street address (optional)"
+                />
+                <Box sx={{ display: 'flex', flexDirection: 'row', gap: 2, flexWrap: 'wrap' }}>
+                  <Field.Text
+                    name="city"
+                    label="City"
+                    placeholder="City (optional)"
+                    sx={{ flex: 1, minWidth: 120 }}
+                  />
+                  <Field.Text
+                    name="state"
+                    label="State / Region"
+                    placeholder="State or region (optional)"
+                    sx={{ flex: 1, minWidth: 120 }}
+                  />
+                </Box>
+                <Box sx={{ display: 'flex', flexDirection: 'row', gap: 2, flexWrap: 'wrap' }}>
+                  <Field.Text
+                    name="country"
+                    label="Country"
+                    placeholder="Country (optional)"
+                    sx={{ flex: 1, minWidth: 120 }}
+                  />
+                  <Field.Text
+                    name="postalCode"
+                    label="Postal Code"
+                    placeholder="Postal code (optional)"
+                    sx={{ flex: 1, minWidth: 120 }}
+                  />
+                </Box>
               </Box>
             </Box>
 

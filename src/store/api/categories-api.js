@@ -12,12 +12,15 @@ import { buildQueryParams, normalizePaginatedResponse } from 'src/store/api/buil
 
 export const categoriesApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
-    // Get all categories
+    // Get all categories (tenant from context; do not send tenantId)
     getCategories: builder.query({
-      query: (params) => ({
-        url: '/api/categories',
-        params: buildQueryParams(params ?? {}),
-      }),
+      query: (params) => {
+        const { tenantId: _t, ...rest } = params ?? {};
+        return {
+          url: '/api/categories',
+          params: buildQueryParams(rest),
+        };
+      },
       providesTags: ['Category'],
       transformResponse: normalizePaginatedResponse,
     }),

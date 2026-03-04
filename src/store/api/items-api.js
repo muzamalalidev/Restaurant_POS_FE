@@ -12,12 +12,15 @@ import { buildQueryParams, normalizePaginatedResponse } from 'src/store/api/buil
 
 export const itemsApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
-    // Get all items
+    // Get all items (tenant from context; do not send tenantId)
     getItems: builder.query({
-      query: (params) => ({
-        url: '/api/items',
-        params: buildQueryParams(params ?? {}),
-      }),
+      query: (params) => {
+        const { tenantId: _t, ...rest } = params ?? {};
+        return {
+          url: '/api/items',
+          params: buildQueryParams(rest),
+        };
+      },
       providesTags: ['Item'],
       transformResponse: normalizePaginatedResponse,
     }),

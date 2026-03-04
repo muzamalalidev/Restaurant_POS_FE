@@ -13,6 +13,7 @@ import InputAdornment from '@mui/material/InputAdornment';
 
 import { getApiErrorMessage } from 'src/utils/api-error-message';
 
+import { useGetTenantMastersDropdownQuery } from 'src/store/api/tenant-masters-api';
 import { useGetTenantsQuery, useDeleteTenantMutation, useToggleTenantActiveMutation } from 'src/store/api/tenants-api';
 
 import { Label } from 'src/components/label';
@@ -58,6 +59,9 @@ export function TenantListView() {
   // OwnerId filter state
   const [ownerId, setOwnerId] = useState(null);
 
+  // Tenant Master filter state
+  const [tenantMasterId, setTenantMasterId] = useState(null);
+
   // Minimal form for search (required for Field.Text)
   const searchForm = useForm({
     defaultValues: {
@@ -69,6 +73,13 @@ export function TenantListView() {
   const ownerFilterForm = useForm({
     defaultValues: {
       ownerId: null,
+    },
+  });
+
+  // Minimal form for tenant master filter (required for Field.Autocomplete)
+  const tenantMasterFilterForm = useForm({
+    defaultValues: {
+      tenantMasterId: null,
     },
   });
 
@@ -92,6 +103,20 @@ export function TenantListView() {
     }
   }, [watchedOwnerId, ownerId]);
 
+  // Sync form value with tenantMasterId state
+  useEffect(() => {
+    tenantMasterFilterForm.setValue('tenantMasterId', tenantMasterId);
+  }, [tenantMasterId, tenantMasterFilterForm]);
+
+  // Watch form value changes and sync with tenantMasterId state
+  const watchedTenantMasterId = tenantMasterFilterForm.watch('tenantMasterId');
+  useEffect(() => {
+    if (watchedTenantMasterId !== tenantMasterId) {
+      setTenantMasterId(watchedTenantMasterId);
+      setPageNumber(1);
+    }
+  }, [watchedTenantMasterId, tenantMasterId]);
+
   // Owner options (empty for now, will be populated from API in future)
   const ownerOptions = useMemo(() => 
     // TODO: Fetch owners from API when available
@@ -100,6 +125,13 @@ export function TenantListView() {
     // return owners?.map(owner => ({ id: owner.id, label: owner.name || owner.email || owner.id })) || [];
      []
   , []);
+
+  // Tenant Master dropdown for filter
+  const { data: tenantMastersDropdown } = useGetTenantMastersDropdownQuery();
+  const tenantMasterOptions = useMemo(() => {
+    if (!tenantMastersDropdown || !Array.isArray(tenantMastersDropdown)) return [];
+    return tenantMastersDropdown.map((item) => ({ id: item.key, label: item.value || item.key }));
+  }, [tenantMastersDropdown]);
 
   // Debounce search term
   useEffect(() => {
@@ -118,9 +150,10 @@ export function TenantListView() {
       pageNumber,
       pageSize,
       searchTerm: debouncedSearchTerm.trim() || undefined,
+      tenantMasterId: tenantMasterId?.id ?? tenantMasterId ?? undefined,
       ownerId: ownerId?.id ?? ownerId ?? undefined,
     }),
-    [pageNumber, pageSize, debouncedSearchTerm, ownerId]
+    [pageNumber, pageSize, debouncedSearchTerm, tenantMasterId, ownerId]
   );
 
   const { data: tenantsResponse, isLoading, error, refetch } = useGetTenantsQuery(queryParams);
@@ -206,6 +239,7 @@ export function TenantListView() {
     } catch (err) {
       const { message } = getApiErrorMessage(err, {
         defaultMessage: 'Failed to delete tenant',
+        notFoundMessage: 'Tenant not found or already deleted.',
       });
       toast.error(message);
     }
@@ -222,6 +256,7 @@ export function TenantListView() {
     } catch (err) {
       const { message } = getApiErrorMessage(err, {
         defaultMessage: 'Failed to update tenant status',
+        notFoundMessage: 'Tenant not found or already deleted.',
       });
       toast.error(message);
     } finally {
@@ -276,6 +311,7 @@ export function TenantListView() {
   const rows = useMemo(() => tenants.map((tenant) => ({
       id: tenant.id,
       name: tenant.name,
+      tenantMasterName: tenant.tenantMasterName ?? '-',
       description: tenant.description || '-',
       primaryPhone: getPrimaryPhone(tenant.phoneNumbers),
       ownerId: tenant.ownerId || '-',
@@ -289,6 +325,11 @@ export function TenantListView() {
       {
         field: 'name',
         headerName: 'Name',
+        flex: 1,
+      },
+      {
+        field: 'tenantMasterName',
+        headerName: 'Tenant Master',
         flex: 1,
       },
       {
@@ -424,6 +465,28 @@ export function TenantListView() {
             sx={{ maxWidth: { sm: 400 } }}
           />
         </FormProvider>
+        <FormProvider {...tenantMasterFilterForm}>
+          <Field.Autocomplete
+            name="tenantMasterId"
+            label="Tenant Master"
+            options={tenantMasterOptions}
+            getOptionLabel={(option) => {
+              if (!option) return '';
+              return option.label || option.id || '';
+            }}
+            isOptionEqualToValue={(option, value) => {
+              if (!option || !value) return option === value;
+              return option.id === value.id;
+            }}
+            slotProps={{
+              textField: {
+                size: 'small',
+                placeholder: 'All Tenant Masters',
+              },
+            }}
+            sx={{ minWidth: { sm: 200 } }}
+          />
+        </FormProvider>
         <FormProvider {...ownerFilterForm}>
           <Field.Autocomplete
             name="ownerId"
@@ -485,7 +548,7 @@ export function TenantListView() {
           <EmptyContent
             title="No tenants found"
             description={
-              searchTerm || ownerId
+              searchTerm || ownerId || tenantMasterId
                 ? "Try adjusting your search or filter criteria"
                 : "Get started by creating a new tenant"
             }
@@ -502,6 +565,7 @@ export function TenantListView() {
         record={formDialogRecord}
         onClose={handleFormClose}
         onSuccess={handleFormSuccess}
+        tenantMasterOptions={tenantMasterOptions}
       />
 
       {/* Details Dialog */}

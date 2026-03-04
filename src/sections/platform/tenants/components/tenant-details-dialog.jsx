@@ -43,6 +43,14 @@ export function TenantDetailsDialog({ open, record, onClose }) {
                 </Typography>
                 <Typography variant="body1">{record.name}</Typography>
               </Box>
+              {record.tenantMasterName && (
+                <Box>
+                  <Typography variant="caption" color="text.secondary">
+                    Tenant Master
+                  </Typography>
+                  <Typography variant="body1">{record.tenantMasterName}</Typography>
+                </Box>
+              )}
               {record.description && (
                 <Box>
                   <Typography variant="caption" color="text.secondary">
@@ -71,6 +79,63 @@ export function TenantDetailsDialog({ open, record, onClose }) {
               )}
             </Stack>
           </Box>
+
+          {(record.address || record.city || record.state || record.country || record.postalCode) && (
+            <>
+              <Divider />
+              <Box>
+                <Typography variant="subtitle2" sx={{ mb: 2 }}>
+                  Address
+                </Typography>
+                <Stack spacing={2}>
+                  {record.address && (
+                    <Box>
+                      <Typography variant="caption" color="text.secondary">
+                        Street
+                      </Typography>
+                      <Typography variant="body1">{record.address}</Typography>
+                    </Box>
+                  )}
+                  {(record.city || record.state || record.postalCode) && (
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+                      {record.city && (
+                        <Box>
+                          <Typography variant="caption" color="text.secondary">
+                            City
+                          </Typography>
+                          <Typography variant="body1">{record.city}</Typography>
+                        </Box>
+                      )}
+                      {record.state && (
+                        <Box>
+                          <Typography variant="caption" color="text.secondary">
+                            State / Region
+                          </Typography>
+                          <Typography variant="body1">{record.state}</Typography>
+                        </Box>
+                      )}
+                      {record.postalCode && (
+                        <Box>
+                          <Typography variant="caption" color="text.secondary">
+                            Postal Code
+                          </Typography>
+                          <Typography variant="body1">{record.postalCode}</Typography>
+                        </Box>
+                      )}
+                    </Box>
+                  )}
+                  {record.country && (
+                    <Box>
+                      <Typography variant="caption" color="text.secondary">
+                        Country
+                      </Typography>
+                      <Typography variant="body1">{record.country}</Typography>
+                    </Box>
+                  )}
+                </Stack>
+              </Box>
+            </>
+          )}
 
           <Divider />
 

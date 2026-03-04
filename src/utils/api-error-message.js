@@ -73,6 +73,25 @@ export function getApiErrorMessage(err, options = {}) {
 
   // 5. 5xx
   if (typeof status === 'number' && status >= 500) {
+    const lowerMessage = (dataMessage && String(dataMessage).toLowerCase()) || '';
+    const isTenantContext = lowerMessage.includes('tenant context');
+    const isNotFound = lowerMessage.includes('not found');
+    const isPermissionLike =
+      lowerMessage.includes('permission') ||
+      lowerMessage.includes('access denied') ||
+      lowerMessage.includes('do not have access');
+    if (isTenantContext && noContextMessage) {
+      return { message: noContextMessage, isRetryable: false };
+    }
+    if (isNotFound && notFoundMessage) {
+      return { message: notFoundMessage, isRetryable: false };
+    }
+    if (isPermissionLike) {
+      return {
+        message: dataMessage || forbiddenMessage || defaultMessage,
+        isRetryable: false,
+      };
+    }
     return { message: serverMessage, isRetryable: true };
   }
 

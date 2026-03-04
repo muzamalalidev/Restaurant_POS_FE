@@ -127,6 +127,7 @@ export const endpoints = {
   auth: {
     login: '/api/auth/login',
     me: '/api/auth/me',
+    permissions: '/api/auth/permissions',
     refresh: '/api/auth/refresh',
     logout: '/api/auth/logout',
     signIn: '/api/auth/login',

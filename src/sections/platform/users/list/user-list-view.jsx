@@ -16,12 +16,12 @@ import InputAdornment from '@mui/material/InputAdornment';
 import { fDateTime } from 'src/utils/format-time';
 import { getApiErrorMessage } from 'src/utils/api-error-message';
 
-import { useGetBranchesDropdownQuery } from 'src/store/api/branches-api';
 import { useGetTenantMastersDropdownQuery } from 'src/store/api/tenant-masters-api';
 import {
   useGetUsersQuery,
   useToggleUserActiveMutation,
 } from 'src/store/api/users-api';
+import { useGetBranchesDropdownQuery, useGetBranchesDropdownCurrentTenantQuery } from 'src/store/api/branches-api';
 import { useGetTenantsDropdownQuery, useGetTenantsDropdownCurrentTenantMasterQuery } from 'src/store/api/tenants-api';
 
 import { Label } from 'src/components/label';
@@ -140,7 +140,12 @@ export function UserListView() {
     return tenantMastersDropdown.map((item) => ({ id: item.key, label: item.value || item.key }));
   }, [tenantMastersDropdown]);
 
-  const { data: branchesDropdown } = useGetBranchesDropdownQuery();
+  // Prefer current tenant branches; on 403 fallback to full branches dropdown
+  const { data: branchesDropdownCurrentTenant, error: branchesCurrentTenantError } = useGetBranchesDropdownCurrentTenantQuery();
+  const { data: branchesDropdownFallback } = useGetBranchesDropdownQuery(undefined, {
+    skip: branchesCurrentTenantError?.status !== 403,
+  });
+  const branchesDropdown = branchesCurrentTenantError?.status === 403 ? branchesDropdownFallback : branchesDropdownCurrentTenant;
   const branchOptions = useMemo(() => {
     if (!branchesDropdown || !Array.isArray(branchesDropdown)) return [];
     return branchesDropdown.map((item) => ({ id: item.key, label: item.value || item.key }));

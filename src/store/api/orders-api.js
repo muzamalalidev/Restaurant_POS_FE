@@ -12,32 +12,41 @@ import { buildQueryParams, normalizePaginatedResponse } from 'src/store/api/buil
 
 export const ordersApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
-    // Get all orders
+    // Get all orders (branch/tenant from context; do not send branchId)
     getOrders: builder.query({
-      query: (params) => ({
-        url: '/api/orders',
-        params: buildQueryParams({ includeItems: true, ...params }),
-      }),
+      query: (params) => {
+        const { branchId: _b, ...rest } = params ?? {};
+        return {
+          url: '/api/orders',
+          params: buildQueryParams({ includeItems: true, ...rest }),
+        };
+      },
       providesTags: ['Order'],
       transformResponse: normalizePaginatedResponse,
     }),
 
-    // Get orders by order type
+    // Get orders by order type (branch from context; do not send branchId)
     getOrdersByOrderType: builder.query({
-      query: (params) => ({
-        url: '/api/orders/by-order-type',
-        params: buildQueryParams({ includeItems: true, ...params }),
-      }),
+      query: (params) => {
+        const { branchId: _b, ...rest } = params ?? {};
+        return {
+          url: '/api/orders/by-order-type',
+          params: buildQueryParams({ includeItems: true, ...rest }),
+        };
+      },
       providesTags: ['Order'],
       transformResponse: normalizePaginatedResponse,
     }),
 
-    // Get take away orders (convenience endpoint)
+    // Get take away orders (branch from context; do not send branchId)
     getTakeAwayOrders: builder.query({
-      query: (params) => ({
-        url: '/api/orders/takeaway',
-        params: buildQueryParams({ includeItems: true, ...params }),
-      }),
+      query: (params) => {
+        const { branchId: _b, ...rest } = params ?? {};
+        return {
+          url: '/api/orders/takeaway',
+          params: buildQueryParams({ includeItems: true, ...rest }),
+        };
+      },
       providesTags: ['Order'],
       transformResponse: normalizePaginatedResponse,
     }),

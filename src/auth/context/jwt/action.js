@@ -7,6 +7,18 @@ import axios, { endpoints } from 'src/lib/axios';
 import { JWT_STORAGE_KEY } from './constant';
 import { setSession, clearSession, getRefreshToken } from './utils';
 
+/**
+ * Fetch permission codes from GET api/auth/permissions.
+ * Login/refresh responses do not include Permissions; call this after storing the token.
+ * @returns {Promise<string[]>} Array of permission codes
+ * @throws On 401 or network error (caller should clear session / redirect)
+ */
+async function fetchPermissions() {
+  const res = await axios.get(endpoints.auth.permissions);
+  const data = res.data;
+  return Array.isArray(data) ? data : [];
+}
+
 /** **************************************
  * Sign in
  *************************************** */
@@ -19,11 +31,27 @@ export const signInWithPassword = async ({ email, password }) => {
   const res = await axios.post(endpoints.auth.login, params);
   const data = res.data;
 
-  if (!data?.accessToken) {
+  const accessToken = data?.accessToken ?? data?.AccessToken;
+  if (!accessToken) {
     throw new Error('Access token not found in response');
   }
 
   await setSession(data);
+
+  try {
+    const permissions = await fetchPermissions();
+    await setSession({ ...data, permissions });
+  } catch (err) {
+    if (err?.status === 401) {
+      clearSession();
+      if (typeof window !== 'undefined') {
+        window.location.href = paths.auth.signIn;
+      }
+      throw err;
+    }
+    await setSession({ ...data, permissions: [] });
+  }
+
   return data;
 };
 
@@ -42,13 +70,28 @@ export const signUp = async ({ email, password, firstName, lastName }) => {
   };
 
   const res = await axios.post(endpoints.auth.signUp, params);
-  const { accessToken } = res.data;
+  const data = res.data;
+  const accessToken = data?.accessToken ?? data?.AccessToken;
 
   if (!accessToken) {
     throw new Error('Access token not found in response');
   }
 
-  await setSession({ ...res.data, accessToken });
+  await setSession(data);
+
+  try {
+    const permissions = await fetchPermissions();
+    await setSession({ ...data, permissions });
+  } catch (err) {
+    if (err?.status === 401) {
+      clearSession();
+      if (typeof window !== 'undefined') {
+        window.location.href = paths.auth.signIn;
+      }
+      throw err;
+    }
+    await setSession({ ...data, permissions: [] });
+  }
 };
 
 /** **************************************
@@ -81,7 +124,8 @@ export async function refreshSession() {
         RefreshToken: refreshToken,
       });
       const data = res.data;
-      if (!data?.accessToken) {
+      const accessToken = data?.accessToken ?? data?.AccessToken;
+      if (!accessToken) {
         clearSession();
         if (typeof window !== 'undefined') {
           window.location.href = paths.auth.signIn;
@@ -89,6 +133,21 @@ export async function refreshSession() {
         return null;
       }
       await setSession(data);
+
+      try {
+        const permissions = await fetchPermissions();
+        await setSession({ ...data, permissions });
+      } catch (permErr) {
+        if (permErr?.status === 401) {
+          clearSession();
+          if (typeof window !== 'undefined') {
+            window.location.href = paths.auth.signIn;
+          }
+          return null;
+        }
+        await setSession({ ...data, permissions: [] });
+      }
+
       return data;
     } catch (err) {
       clearSession();
