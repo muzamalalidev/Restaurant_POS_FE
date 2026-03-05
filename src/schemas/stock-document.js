@@ -1,6 +1,7 @@
 import { z as zod } from 'zod';
 
 import {
+  optionalId,
   requiredId,
   optionalString,
   numberFromInput,
@@ -20,8 +21,8 @@ const stockDocumentItemSchema = zod.object({
 // ----------------------------------------------------------------------
 
 export const createStockDocumentSchema = zod.object({
-  tenantId: requiredId('Tenant is required', 'Tenant ID must be a valid GUID'),
-  branchId: requiredId('Branch is required', 'Branch ID must be a valid GUID'),
+  tenantId: optionalId('Invalid tenant ID').optional(),
+  branchId: optionalId('Invalid branch ID').optional(),
   documentType: requiredNumberOption(
     'Document type is required',
     'Document type must be 1 (Purchase), 2 (Adjustment), or 3 (Wastage)',

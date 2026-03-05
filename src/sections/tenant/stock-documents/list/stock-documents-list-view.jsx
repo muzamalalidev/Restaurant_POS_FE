@@ -895,7 +895,6 @@ export function StockDocumentsListView() {
           setFormDialogRecord(null);
         }}
         onSuccess={handleFormDialogSuccess}
-        tenantOptions={tenantOptions}
       />
 
       {/* Details Dialog */}

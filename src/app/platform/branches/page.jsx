@@ -4,11 +4,13 @@ import { CONFIG } from 'src/global-config';
 
 // ----------------------------------------------------------------------
 
-const BranchesView = createLazyView(() => import('src/sections/tenant/branches/list/branch-list-view'), 'BranchesView');
+const BranchesView = createLazyView(
+  () => import('src/sections/platform/branches/list/branch-list-view'),
+  'BranchesView'
+);
 
 export const metadata = { title: `Branches - ${CONFIG.appName}` };
 
 export default function Page() {
   return <BranchesView />;
 }
-

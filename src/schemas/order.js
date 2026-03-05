@@ -35,7 +35,7 @@ const deliveryDetailsSchema = zod
 // ----------------------------------------------------------------------
 
 export const createOrderSchema = zod.object({
-  branchId: requiredId('Branch is required', 'Branch ID must be a valid GUID'),
+  branchId: optionalId('Branch ID must be a valid GUID').optional(),
   orderTypeId: requiredIdOrNumber('Order type is required', 'Order type must be a valid selection'),
   paymentModeId: optionalId('Payment Mode ID must be a valid GUID'),
   staffId: optionalId('Staff ID must be a valid GUID'),

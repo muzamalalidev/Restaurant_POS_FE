@@ -749,7 +749,6 @@ export function OrderListView() {
         open={formDialogOpen}
         onClose={handleFormClose}
         onSuccess={handleFormSuccess}
-        branchOptions={branchOptions}
         staffOptions={staffOptions}
       />
 

@@ -7,17 +7,15 @@ import { Field } from 'src/components/hook-form';
 // ----------------------------------------------------------------------
 
 /**
- * Order context: branch, order type, table, staff, payment mode.
- * Compact for POS right pane. All from Form context.
+ * Order context: order type, table, staff, payment mode.
+ * Compact for POS right pane. All from Form context. Branch comes from route/context.
  */
 export function PosOrderContext({
-  branchOptions = [],
   orderTypeOptions = [],
   orderTypeOptionsLoading = false,
   tableOptions = [],
   staffOptions = [],
   paymentModeOptions = [],
-  branchSelected,
   showTableField = true,
 }) {
   return (
@@ -33,20 +31,6 @@ export function PosOrderContext({
           required
         />
       </Stack>
-      <Field.Autocomplete
-        name="branchId"
-        label="Branch"
-        options={branchOptions}
-        getOptionLabel={(opt) => (opt?.label ?? opt?.name ?? opt?.id ?? '')}
-        isOptionEqualToValue={(a, b) => (a?.id ?? a) === (b?.id ?? b)}
-        required
-        slotProps={{
-          textField: {
-            size: 'small',
-          },
-        }}
-      />
-     
       {showTableField && (
         <Field.Autocomplete
           name="tableId"
@@ -54,7 +38,6 @@ export function PosOrderContext({
           options={tableOptions}
           getOptionLabel={(opt) => (opt?.label ?? opt?.name ?? opt?.id ?? '')}
           isOptionEqualToValue={(a, b) => (a?.id ?? a) === (b?.id ?? b)}
-          disabled={!branchSelected}
           slotProps={{
             textField: {
               size: 'small',

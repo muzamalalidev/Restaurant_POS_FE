@@ -39,6 +39,7 @@ export const navData = [
       { title: 'Tenants', path: paths.platform.tenants.root, icon: ICONS.tenants },
       { title: 'Users', path: paths.platform.users.root, icon: ICONS.user },
       { title: 'Roles', path: paths.platform.roles.root, icon: ICONS.roles },
+      { title: 'Branches', path: paths.platform.branches.root, icon: ICONS.branches },
     ],
   },
   /**
@@ -47,7 +48,6 @@ export const navData = [
   {
     subheader: 'Tenant',
     items: [
-      { title: 'Branches', path: paths.tenant.branches.root, icon: ICONS.branches },
       { title: 'Staff Types', path: paths.tenant.staffTypes.root, icon: ICONS.staffTypes },
       { title: 'Staff', path: paths.tenant.staff.root, icon: ICONS.staff },
       { title: 'Categories', path: paths.tenant.categories.root, icon: ICONS.categories },

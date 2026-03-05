@@ -10,7 +10,6 @@ import { useTheme, useMediaQuery } from '@mui/material';
 
 import { getApiErrorMessage } from 'src/utils/api-error-message';
 
-import { useGetTenantsDropdownQuery } from 'src/store/api/tenants-api';
 import { createCategorySchema, updateCategorySchema } from 'src/schemas';
 import {
   useCreateCategoryMutation,
@@ -29,33 +28,17 @@ import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
  * Category Form Dialog Component
  *
  * Single dialog for create and edit. Edit uses record from list (no getById).
+ * Tenant is taken from route/context; no tenant dropdown.
  *
- * Dropdown analysis:
- * - tenantId: API-based (tenantOptions from list or useGetTenantsDropdownQuery fallback).
- *   Single select; parent of parentId.
- * - parentId: API-based, dependent on tenantId. useGetCategoriesDropdownQuery({ tenantId })
- *   with skip: !selectedTenantIdRaw || !open. Options include "None (Root Category)" (id: null).
- *   In edit mode current category is excluded from options. When tenant is cleared, parentId
- *   resets to null and Parent Category dropdown is disabled.
- *
- * Dependent dropdown reset: When tenantId is cleared, parentId is set to null and Parent
- * Category is disabled (options show only "None (Root Category)" when no tenant).
- *
- * P0-034: Tenant context enforced at backend. P0-038: Optimistic locking not yet implemented.
+ * parentId: useGetCategoriesDropdownQuery (tenant from context). Options include
+ * "None (Root Category)". In edit mode current category is excluded from options.
  */
-export function CategoryFormDialog({ open, mode, record, onClose, onSuccess, tenantOptions = [] }) {
+export function CategoryFormDialog({ open, mode, record, onClose, onSuccess }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] = useState(false);
   const isSubmittingRef = useRef(false);
-
-  const { data: tenantsDropdownFallback } = useGetTenantsDropdownQuery(undefined, { skip: tenantOptions.length > 0 });
-  const effectiveTenantOptions = useMemo(() => {
-    if (tenantOptions.length > 0) return tenantOptions;
-    if (!tenantsDropdownFallback || !Array.isArray(tenantsDropdownFallback)) return [];
-    return tenantsDropdownFallback.map((item) => ({ id: item.key, label: item.value || item.key }));
-  }, [tenantOptions, tenantsDropdownFallback]);
 
   const [createCategory, { isLoading: isCreating }] = useCreateCategoryMutation();
   const [updateCategory, { isLoading: isUpdating }] = useUpdateCategoryMutation();
@@ -70,7 +53,6 @@ export function CategoryFormDialog({ open, mode, record, onClose, onSuccess, ten
     resolver: zodResolver(schema),
     defaultValues: useMemo(
       () => ({
-        tenantId: null,
         parentId: null,
         name: '',
         description: null,
@@ -84,24 +66,13 @@ export function CategoryFormDialog({ open, mode, record, onClose, onSuccess, ten
   const {
     reset,
     handleSubmit,
-    watch,
-    setValue,
     formState: { isDirty },
   } = methods;
 
-  // Watch tenantId for dependent category dropdown
-  const watchedTenantId = watch('tenantId');
-  const selectedTenantIdRaw = useMemo(
-    () => (watchedTenantId && typeof watchedTenantId === 'object' && watchedTenantId !== null
-      ? watchedTenantId.id
-      : watchedTenantId),
-    [watchedTenantId]
-  );
-
-  // Parent category options: fetch in form when tenant is selected (dependent dropdown)
+  // Parent category options: fetch when dialog is open (tenant from context)
   const { data: categoriesDropdown } = useGetCategoriesDropdownQuery(
-    { tenantId: selectedTenantIdRaw },
-    { skip: !selectedTenantIdRaw || !open }
+    {},
+    { skip: !open }
   );
   const parentCategoryOptions = useMemo(() => {
     const options = [{ id: null, label: 'None (Root Category)' }];
@@ -121,19 +92,11 @@ export function CategoryFormDialog({ open, mode, record, onClose, onSuccess, ten
     ) ?? null;
   }, [record?.parentId, parentCategoryOptions]);
 
-  // Dependent dropdown reset: when tenant is cleared, reset parentId and disable parent dropdown
-  useEffect(() => {
-    if (open && !selectedTenantIdRaw) {
-      setValue('parentId', null, { shouldValidate: false, shouldDirty: false });
-    }
-  }, [open, selectedTenantIdRaw, setValue]);
-
   // Load category data for edit mode from record or reset for create mode.
   // parentId is set from resolvedParentOption when parent options have loaded (edit mode), or synthetic option when not yet loaded.
   useEffect(() => {
     if (!open) {
       reset({
-        tenantId: null,
         parentId: null,
         name: '',
         description: null,
@@ -143,30 +106,25 @@ export function CategoryFormDialog({ open, mode, record, onClose, onSuccess, ten
     }
 
     if (mode === 'edit' && record) {
-      const matchingTenant = effectiveTenantOptions.find((t) => t.id === record.tenantId);
-      const tenantValue = matchingTenant ?? (record.tenantId ? { id: record.tenantId, label: record.tenantName || record.tenantId } : null);
       const parentValue = record.parentId != null
         ? (resolvedParentOption ?? { id: record.parentId, label: record.parentName || record.parentId })
         : null;
 
       reset({
-        tenantId: tenantValue,
         parentId: parentValue,
         name: record.name || '',
-        description: record.description || null,
+        description: record.description ?? null,
         isActive: record.isActive ?? true,
       });
     } else {
-      // create, or edit with no record (e.g. row no longer in list)
       reset({
-        tenantId: null,
         parentId: null,
         name: '',
         description: null,
         isActive: true,
       });
     }
-  }, [open, mode, record, record?.id, record?.tenantId, record?.parentId, record?.name, record?.description, record?.isActive, effectiveTenantOptions, resolvedParentOption, reset]);
+  }, [open, mode, record, record?.id, record?.parentId, record?.name, record?.description, record?.isActive, resolvedParentOption, reset]);
 
   // Handle form submit
   const onSubmit = handleSubmit(async (data) => {
@@ -178,7 +136,6 @@ export function CategoryFormDialog({ open, mode, record, onClose, onSuccess, ten
     isSubmittingRef.current = true;
 
     try {
-      const tenantIdValue = data.tenantId?.id ?? data.tenantId;
       const descriptionValue = data.description === '' ? null : data.description;
 
       // parentId: "None (Root Category)" option has id null -> send null to API
@@ -190,7 +147,6 @@ export function CategoryFormDialog({ open, mode, record, onClose, onSuccess, ten
 
       if (mode === 'create') {
         const createData = {
-          tenantId: tenantIdValue,
           parentId: parentIdValue,
           name: data.name,
           description: descriptionValue,
@@ -202,7 +158,6 @@ export function CategoryFormDialog({ open, mode, record, onClose, onSuccess, ten
         }
       } else {
         const updateData = {
-          tenantId: tenantIdValue,
           parentId: parentIdValue,
           name: data.name,
           description: descriptionValue,
@@ -313,20 +268,6 @@ export function CategoryFormDialog({ open, mode, record, onClose, onSuccess, ten
                 </Typography>
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                   <Field.Autocomplete
-                    name="tenantId"
-                    label="Tenant"
-                    options={effectiveTenantOptions}
-                    getOptionLabel={(option) => {
-                      if (!option) return '';
-                      return option.label || option.name || option.id || '';
-                    }}
-                    isOptionEqualToValue={(option, value) => {
-                      if (!option || !value) return option === value;
-                      return option.id === value.id;
-                    }}
-                    required
-                  />
-                  <Field.Autocomplete
                     name="parentId"
                     label="Parent Category"
                     options={parentCategoryOptions}
@@ -340,10 +281,9 @@ export function CategoryFormDialog({ open, mode, record, onClose, onSuccess, ten
                       if (option.id === null && value.id === null) return true;
                       return option.id === value.id;
                     }}
-                    disabled={!selectedTenantIdRaw}
                     slotProps={{
                       textField: {
-                        helperText: selectedTenantIdRaw ? 'Leave empty to create a root category' : 'Select a tenant first',
+                        helperText: 'Leave empty to create a root category',
                       },
                     }}
                   />

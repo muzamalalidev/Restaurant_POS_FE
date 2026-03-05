@@ -646,7 +646,6 @@ export function StaffListView() {
         record={formDialogRecord}
         onClose={handleFormClose}
         onSuccess={handleFormSuccess}
-        branchOptions={branchOptions}
         staffTypeOptions={staffTypeOptions}
       />
 

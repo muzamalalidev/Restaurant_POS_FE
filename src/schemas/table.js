@@ -1,7 +1,7 @@
 import { z as zod } from 'zod';
 
 import {
-  requiredId,
+  optionalId,
   booleanField,
   requiredString,
   optionalString,
@@ -11,7 +11,7 @@ import {
 // ----------------------------------------------------------------------
 
 export const createTableSchema = zod.object({
-  branchId: requiredId('Branch is required', 'Invalid branch ID'),
+  branchId: optionalId('Invalid branch ID').optional(),
   tableNumber: requiredString('Table number is required', 50),
   capacity: numberFromInput({ positive: true, int: true }),
   location: optionalString(500),
@@ -20,7 +20,7 @@ export const createTableSchema = zod.object({
 });
 
 export const updateTableSchema = zod.object({
-  branchId: requiredId('Branch is required', 'Invalid branch ID'),
+  branchId: optionalId('Invalid branch ID').optional(),
   tableNumber: requiredString('Table number is required', 50),
   capacity: numberFromInput({ positive: true, int: true }),
   location: optionalString(500),

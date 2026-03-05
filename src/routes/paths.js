@@ -50,13 +50,13 @@ export const paths = {
     roles: {
       root: `${ROOTS.PLATFORM}/roles`,
     },
+    branches: {
+      root: `${ROOTS.PLATFORM}/branches`,
+    },
   },
   // TENANT
   tenant: {
     root: ROOTS.TENANT,
-    branches: {
-      root: `${ROOTS.TENANT}/branches`,
-    },
     staffTypes: {
       root: `${ROOTS.TENANT}/staff-types`,
     },

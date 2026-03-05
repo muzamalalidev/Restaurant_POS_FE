@@ -82,9 +82,9 @@ function DashboardLayoutInner({ sx, cssVars, children, slotProps, layoutQuery = 
       ),
       rightArea: (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 0, sm: 0.75 } }}>
-          <AccountPopover data={_account} />
-          <ModeToggleButton />
           <SettingsButton />
+          <ModeToggleButton />
+          <AccountPopover data={_account} />
         </Box>
       ),
     };

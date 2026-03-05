@@ -12,7 +12,6 @@ import { useTheme, useMediaQuery } from '@mui/material';
 import { getApiErrorMessage } from 'src/utils/api-error-message';
 
 import { createStaffSchema, updateStaffSchema } from 'src/schemas';
-import { useGetBranchesDropdownQuery } from 'src/store/api/branches-api';
 import { useGetStaffTypesDropdownQuery } from 'src/store/api/staff-types-api';
 import { useCreateStaffMutation, useUpdateStaffMutation } from 'src/store/api/staff-api';
 
@@ -27,33 +26,21 @@ import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
  * Staff Form Dialog Component
  *
  * Single dialog for create and edit. Edit uses record from list (no getById).
+ * Branch is taken from route/context; no branch dropdown.
  *
- * Dropdown analysis:
- * - branchId: API-based (branchOptions from list or useGetBranchesDropdownQuery fallback).
- *   Single select; not dependent on another form field.
- * - staffTypeId: API-based (staffTypeOptions from list or useGetStaffTypesDropdownQuery fallback).
- *   Single select; not dependent on branchId in this form (both are independent).
- * - No dependent dropdowns in form (Branch and Staff Type are independent).
- *
- * Edit mapping: When options are not yet loaded, branchId/staffTypeId are set to synthetic
- * options { id: record.branchId, label: record.branchName || record.branchId } so the
- * Autocomplete displays correctly; when options load, effect re-runs and maps to real options.
+ * staffTypeId: API-based (staffTypeOptions from list or useGetStaffTypesDropdownQuery fallback).
+ * Edit mapping: When options are not yet loaded, staffTypeId is set to synthetic option;
+ * when options load, effect re-runs and maps to real option.
  */
-export function StaffFormDialog({ open, mode, record, onClose, onSuccess, branchOptions = [], staffTypeOptions = [] }) {
+export function StaffFormDialog({ open, mode, record, onClose, onSuccess, staffTypeOptions = [] }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] = useState(false);
   const isSubmittingRef = useRef(false);
 
-  // Fallback: fetch dropdowns when options not provided
-  const { data: branchesDropdownFallback } = useGetBranchesDropdownQuery(undefined, { skip: branchOptions.length > 0 });
+  // Fallback: fetch staff types when options not provided
   const { data: staffTypesDropdownFallback } = useGetStaffTypesDropdownQuery(undefined, { skip: staffTypeOptions.length > 0 });
-  const effectiveBranchOptions = useMemo(() => {
-    if (branchOptions.length > 0) return branchOptions;
-    if (!branchesDropdownFallback || !Array.isArray(branchesDropdownFallback)) return [];
-    return branchesDropdownFallback.map((item) => ({ id: item.key, label: item.value || item.key }));
-  }, [branchOptions, branchesDropdownFallback]);
   const effectiveStaffTypeOptions = useMemo(() => {
     if (staffTypeOptions.length > 0) return staffTypeOptions;
     if (!staffTypesDropdownFallback || !Array.isArray(staffTypesDropdownFallback)) return [];
@@ -74,7 +61,6 @@ export function StaffFormDialog({ open, mode, record, onClose, onSuccess, branch
     resolver: zodResolver(schema),
     defaultValues: useMemo(
       () => ({
-        branchId: null,
         staffTypeId: null,
         userId: null,
         firstName: '',
@@ -100,7 +86,6 @@ export function StaffFormDialog({ open, mode, record, onClose, onSuccess, branch
   useEffect(() => {
     if (!open) {
       reset({
-        branchId: null,
         staffTypeId: null,
         userId: null,
         firstName: '',
@@ -115,9 +100,7 @@ export function StaffFormDialog({ open, mode, record, onClose, onSuccess, branch
     }
 
     if (mode === 'edit' && record) {
-      const matchingBranch = effectiveBranchOptions.find((b) => b.id === record.branchId);
       const matchingStaffType = effectiveStaffTypeOptions.find((st) => st.id === record.staffTypeId);
-      const branchValue = matchingBranch ?? (record.branchId ? { id: record.branchId, label: record.branchName || record.branchId } : null);
       const staffTypeValue = matchingStaffType ?? (record.staffTypeId ? { id: record.staffTypeId, label: record.staffTypeName || record.staffTypeId } : null);
 
       let hireDateValue = null;
@@ -130,7 +113,6 @@ export function StaffFormDialog({ open, mode, record, onClose, onSuccess, branch
       }
 
       reset({
-        branchId: branchValue,
         staffTypeId: staffTypeValue,
         userId: record.userId || null,
         firstName: record.firstName || '',
@@ -142,9 +124,7 @@ export function StaffFormDialog({ open, mode, record, onClose, onSuccess, branch
         isActive: record.isActive ?? true,
       });
     } else {
-      // create, or edit with no record (e.g. row no longer in list)
       reset({
-        branchId: null,
         staffTypeId: null,
         userId: null,
         firstName: '',
@@ -157,7 +137,7 @@ export function StaffFormDialog({ open, mode, record, onClose, onSuccess, branch
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, mode, record?.id, record?.branchId, record?.staffTypeId, record?.firstName, record?.lastName, record?.email, record?.phone, record?.address, record?.hireDate, record?.isActive, effectiveBranchOptions, effectiveStaffTypeOptions, reset]);
+  }, [open, mode, record?.id, record?.staffTypeId, record?.firstName, record?.lastName, record?.email, record?.phone, record?.address, record?.hireDate, record?.isActive, effectiveStaffTypeOptions, reset]);
 
   // Handle form submit
   const onSubmit = handleSubmit(async (data) => {
@@ -168,7 +148,6 @@ export function StaffFormDialog({ open, mode, record, onClose, onSuccess, branch
 
     isSubmittingRef.current = true;
     try {
-      const branchIdValue = data.branchId?.id ?? data.branchId;
       const staffTypeIdValue = data.staffTypeId?.id ?? data.staffTypeId;
       const emailValue = data.email === '' ? null : data.email;
       const phoneValue = data.phone === '' ? null : data.phone;
@@ -185,7 +164,6 @@ export function StaffFormDialog({ open, mode, record, onClose, onSuccess, branch
 
       if (mode === 'create') {
         const createData = {
-          branchId: branchIdValue,
           staffTypeId: staffTypeIdValue,
           userId: data.userId || null,
           firstName: data.firstName,
@@ -202,7 +180,6 @@ export function StaffFormDialog({ open, mode, record, onClose, onSuccess, branch
         }
       } else {
         const updateData = {
-          branchId: branchIdValue,
           staffTypeId: staffTypeIdValue,
           userId: data.userId || null,
           firstName: data.firstName,
@@ -223,7 +200,7 @@ export function StaffFormDialog({ open, mode, record, onClose, onSuccess, branch
     } catch (error) {
       const { message, isRetryable } = getApiErrorMessage(error, {
         defaultMessage: `Failed to ${mode === 'create' ? 'create' : 'update'} staff member`,
-        notFoundMessage: 'Staff member or branch not found',
+        notFoundMessage: 'Staff member not found',
         validationMessage: 'Validation failed. Please check your input.',
       });
       if (isRetryable) {
@@ -320,21 +297,6 @@ export function StaffFormDialog({ open, mode, record, onClose, onSuccess, branch
                 </Typography>
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                 <Box sx={{ display: 'flex', gap: 2 }}>
-                  <Field.Autocomplete
-                    name="branchId"
-                    label="Branch"
-                    options={effectiveBranchOptions}
-                    getOptionLabel={(option) => {
-                      if (!option) return '';
-                      return option.label || option.name || option.id || '';
-                    }}
-                    isOptionEqualToValue={(option, value) => {
-                      if (!option || !value) return option === value;
-                      return option.id === value.id;
-                    }}
-                    required
-                    sx={{ flex: 1 }}
-                  />
                   <Field.Autocomplete
                     name="staffTypeId"
                     label="Staff Type"

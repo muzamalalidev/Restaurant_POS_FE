@@ -666,7 +666,6 @@ export function ItemListView() {
         record={formDialogRecord}
         onClose={handleFormClose}
         onSuccess={handleFormSuccess}
-        tenantOptions={tenantOptions}
       />
 
       {/* Details Dialog */}

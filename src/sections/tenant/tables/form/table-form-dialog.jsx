@@ -13,7 +13,6 @@ import { useTheme, useMediaQuery } from '@mui/material';
 import { getApiErrorMessage } from 'src/utils/api-error-message';
 
 import { createTableSchema, updateTableSchema } from 'src/schemas';
-import { useGetBranchesDropdownQuery } from 'src/store/api/branches-api';
 import { useCreateTableMutation, useUpdateTableMutation } from 'src/store/api/tables-api';
 
 import { toast } from 'src/components/snackbar';
@@ -24,77 +23,29 @@ import { ConfirmDialog } from 'src/components/custom-dialog/confirm-dialog';
 // ----------------------------------------------------------------------
 
 /**
- * Helper function to extract ID from object or string
- */
-const getId = (value) => {
-  if (!value) return null;
-  if (typeof value === 'object' && value !== null && 'id' in value) {
-    return value.id;
-  }
-  return value;
-};
-
-// ----------------------------------------------------------------------
-
-/**
  * Table Form Dialog Component
  *
  * Single dialog for create and edit. Edit mode uses record from list (no getById).
- *
- * Dropdown analysis:
- * - branchId: API (branchOptions from list or useGetBranchesDropdownQuery when open). No dependent dropdown in form.
- *
- * @param {Object} props
- * @param {boolean} props.open - Whether the dialog is open
- * @param {string} props.mode - 'create' or 'edit'
- * @param {Object|null} props.record - Full table object for edit mode (from list)
- * @param {string|null} props.branchId - Branch ID for create mode (pre-select branch)
- * @param {Function} props.onClose - Callback when dialog closes
- * @param {Function} props.onSuccess - Callback when form is successfully submitted
- * @param {Array} props.branchOptions - Branch options (from list view)
+ * Branch is taken from route/context; no branch dropdown.
  */
-export function TableFormDialog({ open, mode, record, branchId, onClose, onSuccess, branchOptions = [] }) {
+export function TableFormDialog({ open, mode, record, onClose, onSuccess }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] = useState(false);
 
-  const { data: branchesDropdownFallback } = useGetBranchesDropdownQuery(undefined, {
-    skip: branchOptions.length > 0 || !open,
-  });
-  const branchOptionsBase = useMemo(() => {
-    if (branchOptions.length > 0) return branchOptions;
-    if (!branchesDropdownFallback || !Array.isArray(branchesDropdownFallback)) return [];
-    return branchesDropdownFallback.map((item) => ({ id: item.key, label: item.value || item.key }));
-  }, [branchOptions, branchesDropdownFallback]);
-
-  const effectiveBranchOptions = useMemo(() => {
-    if (
-      mode === 'edit' &&
-      record?.branchId &&
-      !branchOptionsBase.some((b) => b.id === record.branchId)
-    ) {
-      return [...branchOptionsBase, { id: record.branchId, label: record.branchName || record.branchId }];
-    }
-    return branchOptionsBase;
-  }, [mode, record?.branchId, record?.branchName, branchOptionsBase]);
-
   const [createTable, { isLoading: isCreating }] = useCreateTableMutation();
   const [updateTable, { isLoading: isUpdating }] = useUpdateTableMutation();
 
   const isSubmitting = isCreating || isUpdating;
-  // P0-002: Ref guard to prevent double-submit
   const isSubmittingRef = useRef(false);
 
-  // Determine schema based on mode
   const schema = mode === 'create' ? createTableSchema : updateTableSchema;
 
-  // Form setup
   const methods = useForm({
     resolver: zodResolver(schema),
     defaultValues: useMemo(
       () => ({
-        branchId: null,
         tableNumber: '',
         capacity: 1,
         location: null,
@@ -109,9 +60,6 @@ export function TableFormDialog({ open, mode, record, branchId, onClose, onSucce
   const {
     reset,
     handleSubmit,
-    getValues,
-    setValue,
-    watch: _watch,
     formState: { isDirty },
   } = methods;
 
@@ -119,7 +67,6 @@ export function TableFormDialog({ open, mode, record, branchId, onClose, onSucce
   useEffect(() => {
     if (!open) {
       reset({
-        branchId: null,
         tableNumber: '',
         capacity: 1,
         location: null,
@@ -130,38 +77,15 @@ export function TableFormDialog({ open, mode, record, branchId, onClose, onSucce
     }
 
     if (mode === 'edit' && record) {
-      const matchingBranch =
-        record.branchId && effectiveBranchOptions.length > 0
-          ? effectiveBranchOptions.find((b) => b.id === record.branchId)
-          : null;
-      const branchValue =
-        matchingBranch ||
-        (record.branchId ? { id: record.branchId, label: record.branchName || record.branchId } : null);
-
       reset({
-        branchId: branchValue,
         tableNumber: record.tableNumber || '',
         capacity: record.capacity ?? 1,
         location: record.location ?? null,
         isAvailable: record.isAvailable ?? true,
         isActive: record.isActive ?? true,
       });
-    } else if (mode === 'edit' && !record) {
+    } else {
       reset({
-        branchId: null,
-        tableNumber: '',
-        capacity: 1,
-        location: null,
-        isAvailable: true,
-        isActive: true,
-      });
-    } else if (mode === 'create') {
-      const branchToSelect =
-        getId(branchId) && effectiveBranchOptions.length > 0
-          ? effectiveBranchOptions.find((b) => b.id === getId(branchId))
-          : null;
-      reset({
-        branchId: branchToSelect || null,
         tableNumber: '',
         capacity: 1,
         location: null,
@@ -169,36 +93,14 @@ export function TableFormDialog({ open, mode, record, branchId, onClose, onSucce
         isActive: true,
       });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, mode, record?.id, record?.branchId, record?.tableNumber, record?.capacity, record?.location, record?.isAvailable, record?.isActive, record?.branchName, branchId, effectiveBranchOptions, reset]);
-
-  // When branch options load in edit mode, set branchId to matching option (replaces synthetic)
-  useEffect(() => {
-    if (open && mode === 'edit' && record?.branchId && effectiveBranchOptions.length > 0) {
-      const matchingBranch = effectiveBranchOptions.find((b) => b.id === record.branchId);
-      if (matchingBranch) {
-        const currentValue = getValues('branchId');
-        const currentId = typeof currentValue === 'object' && currentValue !== null ? currentValue.id : currentValue;
-        if (currentId !== matchingBranch.id) {
-          setValue('branchId', matchingBranch, { shouldValidate: false, shouldDirty: false });
-        }
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, mode, record?.branchId, effectiveBranchOptions.length]);
+  }, [open, mode, record.id, record.tableNumber, record.capacity, record.location, record.isAvailable, record.isActive, reset, record]);
 
   // Handle form submit (P0-002: ref guard prevents double-submit)
   const onSubmit = handleSubmit(async (data) => {
     if (isSubmittingRef.current) return;
     isSubmittingRef.current = true;
     try {
-      // Extract branchId: if it's an object, get the id; if it's a string, use it directly
-      const branchIdValue = typeof data.branchId === 'object' && data.branchId !== null
-        ? data.branchId.id
-        : data.branchId;
-
       const payload = {
-        branchId: branchIdValue,
         tableNumber: data.tableNumber,
         capacity: data.capacity,
         location: data.location || null,
@@ -222,7 +124,7 @@ export function TableFormDialog({ open, mode, record, branchId, onClose, onSucce
     } catch (error) {
       const { message, isRetryable } = getApiErrorMessage(error, {
         defaultMessage: `Failed to ${mode === 'create' ? 'create' : 'update'} table`,
-        notFoundMessage: 'Table or branch not found',
+        notFoundMessage: 'Table not found',
         validationMessage: 'Validation failed. Please check your input.',
       });
       if (isRetryable) {
@@ -333,28 +235,6 @@ export function TableFormDialog({ open, mode, record, branchId, onClose, onSucce
                   Table Information
                 </Typography>
                 <Stack spacing={2}>
-                  {/* Branch */}
-                  <Field.Autocomplete
-                    name="branchId"
-                    label="Branch"
-                    options={effectiveBranchOptions}
-                    required
-                    disabled={mode === 'edit'}
-                    getOptionLabel={(option) => {
-                      if (!option) return '';
-                      return option.label || option.name || option.id || '';
-                    }}
-                    isOptionEqualToValue={(option, value) => {
-                      if (!option || !value) return option === value;
-                      return option.id === value.id;
-                    }}
-                    slotProps={{
-                      textField: {
-                        placeholder: 'Select branch',
-                      },
-                    }}
-                  />
-
                   {/* Table Number */}
                   <Field.Text
                     name="tableNumber"

@@ -23,10 +23,6 @@ import { PhoneNumbersField } from './components/phone-numbers-field';
 
 // ----------------------------------------------------------------------
 
-/**
- * Normalize phone number by removing spaces, dashes, and parentheses
- * P0-003 FIX: Backend matches phones by normalized format, so we normalize before sending
- */
 const normalizePhoneNumber = (phoneNumber) => {
   if (!phoneNumber) return phoneNumber;
   return phoneNumber.replace(/\s+/g, '').replace(/-/g, '').replace(/\(/g, '').replace(/\)/g, '');
@@ -38,42 +34,23 @@ const normalizePhoneNumber = (phoneNumber) => {
  * Branch Form Dialog Component
  *
  * Single dialog for create and edit. Edit uses record from list (no getById).
- *
- * Dropdown analysis:
- * - tenantId: API-based (tenantOptions from list view via useGetTenantsDropdownQuery).
- *   Single select; not dependent on another form field. When options load after dialog
- *   open (edit), a second effect maps record.tenantId to the option object.
- * - phoneNumbers: array field; each item has PhoneLabelSelect (static options: Main,
- *   Delivery, Reservations). No dependent dropdowns in form (no parent -> child chain).
- *
- * Dependent dropdown reset: N/A (Tenant is the only top-level dropdown; no child to
- * reset when Tenant is cleared). If a child dropdown is added later, clear its value
- * and options when parent is cleared.
- *
- * P0-024: Tenant context enforcement is at the backend; frontend sends tenantId,
- * backend validates access and multi-tenant isolation.
+ * Platform scope: tenantOptions from list view; tenantId required in form.
  */
 export function BranchFormDialog({ open, mode, record, onClose, onSuccess, tenantOptions = [] }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
-  // State for unsaved changes confirmation
   const [unsavedChangesDialogOpen, setUnsavedChangesDialogOpen] = useState(false);
-
-  // Track original phoneNumbers state to distinguish null (no change) from [] (soft delete)
   const [originalPhoneNumbers, setOriginalPhoneNumbers] = useState(null);
 
-  // Mutations
   const [createBranch, { isLoading: isCreating }] = useCreateBranchMutation();
   const [updateBranch, { isLoading: isUpdating }] = useUpdateBranchMutation();
 
   const isSubmitting = isCreating || isUpdating;
   const isSubmittingRef = useRef(false);
 
-  // Determine schema based on mode
   const schema = mode === 'create' ? createBranchSchema : updateBranchSchema;
 
-  // Form setup
   const methods = useForm({
     resolver: zodResolver(schema),
     defaultValues: useMemo(
@@ -97,11 +74,9 @@ export function BranchFormDialog({ open, mode, record, onClose, onSuccess, tenan
     formState: { isDirty },
   } = methods;
 
-  // P1-028 FIX: Track if form has been initialized to prevent multiple resets
   const formInitializedRef = useRef(false);
   const previousBranchIdRef = useRef(null);
-  
-  // Load branch data for edit mode from record or reset for create mode
+
   useEffect(() => {
     if (!open) {
       setOriginalPhoneNumbers(null);
@@ -160,7 +135,6 @@ export function BranchFormDialog({ open, mode, record, onClose, onSuccess, tenan
         formInitializedRef.current = true;
         previousBranchIdRef.current = currentBranchId;
       } else {
-        // edit with no record (e.g. row no longer in list)
         setOriginalPhoneNumbers(null);
         reset({
           tenantId: null,
@@ -176,7 +150,6 @@ export function BranchFormDialog({ open, mode, record, onClose, onSuccess, tenan
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, mode, record?.id, reset]);
 
-  // Update tenantId when tenantOptions become available in edit mode
   useEffect(() => {
     if (open && mode === 'edit' && record?.tenantId && tenantOptions.length > 0) {
       const matchingTenant = tenantOptions.find((t) => t.id === record.tenantId);
@@ -191,19 +164,15 @@ export function BranchFormDialog({ open, mode, record, onClose, onSuccess, tenan
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, mode, record?.tenantId, tenantOptions.length]);
 
-  // Handle form submit (ref guard prevents double-submit)
   const onSubmit = handleSubmit(async (data) => {
     if (isSubmittingRef.current) return;
     isSubmittingRef.current = true;
     try {
-      // Extract tenantId: if it's an object, get the id; if it's a string, use it directly
       const tenantIdValue = typeof data.tenantId === 'object' && data.tenantId !== null
         ? data.tenantId.id
         : data.tenantId;
 
       if (mode === 'create') {
-        // Transform data for create: phoneNumbers should only have phoneNumber, isPrimary, phoneLabel
-        // Filter out phones with empty phoneNumber and convert empty array to null
         const validPhones = data.phoneNumbers?.filter((phone) => phone.phoneNumber?.trim()) || [];
         const createData = {
           tenantId: tenantIdValue,
@@ -212,7 +181,7 @@ export function BranchFormDialog({ open, mode, record, onClose, onSuccess, tenan
           phoneNumbers:
             validPhones.length > 0
               ? validPhones.map((phone) => ({
-                  phoneNumber: normalizePhoneNumber(phone.phoneNumber), // P0-003 FIX: Normalize before sending
+                  phoneNumber: normalizePhoneNumber(phone.phoneNumber),
                   isPrimary: phone.isPrimary || false,
                   phoneLabel: phone.phoneLabel || null,
                 }))
@@ -223,22 +192,12 @@ export function BranchFormDialog({ open, mode, record, onClose, onSuccess, tenan
           onSuccess(result, 'created');
         }
       } else {
-        // Transform data for update: include all phone fields, ensure branchId matches
-        // Filter out phones with empty phoneNumber
-        // Per API spec: empty array [] = soft delete all phones, null = don't modify existing phones
-        // P0-001 FIX: Check if phoneNumbers field was modified to distinguish null (no change) from [] (soft delete)
-        // P1-006: Empty phone fields are automatically filtered out here - this is correct behavior
-        // The full replacement strategy means phones not in validPhones array will be soft deleted
         const validPhones = data.phoneNumbers?.filter((phone) => phone.phoneNumber?.trim()) || [];
-        
-        // Determine phoneNumbers value based on whether field was modified
-        // If originalPhoneNumbers was null and current is also null/empty, send null (no change)
-        // If originalPhoneNumbers was an array and current is empty, send [] (soft delete)
-        // If current has valid phones, send full replacement
+
         let phoneNumbersValue;
         const wasPhoneNumbersNull = originalPhoneNumbers === null || originalPhoneNumbers === undefined;
         const isPhoneNumbersEmpty = !data.phoneNumbers || data.phoneNumbers.length === 0 || validPhones.length === 0;
-        
+
         if (wasPhoneNumbersNull && isPhoneNumbersEmpty) {
           phoneNumbersValue = null;
         } else if (validPhones.length > 0) {
@@ -280,43 +239,29 @@ export function BranchFormDialog({ open, mode, record, onClose, onSuccess, tenan
     }
   });
 
-  // Handle dialog close
   const handleClose = useCallback(() => {
-    if (isSubmitting) {
-      return; // Prevent close during submit
-    }
-    
-    // Check for unsaved changes
+    if (isSubmitting) return;
     if (isDirty) {
       setUnsavedChangesDialogOpen(true);
       return;
     }
-    
     reset();
     onClose();
   }, [isSubmitting, isDirty, reset, onClose]);
 
-  // Handle confirm discard changes
   const handleConfirmDiscard = useCallback(() => {
     setUnsavedChangesDialogOpen(false);
     reset();
     onClose();
   }, [reset, onClose]);
 
-  // Handle cancel discard changes
   const handleCancelDiscard = useCallback(() => {
     setUnsavedChangesDialogOpen(false);
   }, []);
 
-  // Render actions
   const renderActions = () => (
     <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
-      <Field.Button
-        variant="outlined"
-        color="inherit"
-        onClick={handleClose}
-        disabled={isSubmitting}
-      >
+      <Field.Button variant="outlined" color="inherit" onClick={handleClose} disabled={isSubmitting}>
         Cancel
       </Field.Button>
       <Field.Button
@@ -366,7 +311,6 @@ export function BranchFormDialog({ open, mode, record, onClose, onSuccess, tenan
               flex: 1,
             }}
           >
-            {/* Branch Information Section */}
             <Box>
               <Typography variant="subtitle2" sx={{ mb: 2 }}>
                 Branch Information
@@ -426,7 +370,6 @@ export function BranchFormDialog({ open, mode, record, onClose, onSuccess, tenan
 
             <Divider />
 
-            {/* Phone Numbers Section */}
             <Box>
               <PhoneNumbersField name="phoneNumbers" mode={mode} />
             </Box>
@@ -434,7 +377,6 @@ export function BranchFormDialog({ open, mode, record, onClose, onSuccess, tenan
         </Form>
       </CustomDialog>
 
-      {/* Unsaved Changes Confirmation Dialog */}
       <ConfirmDialog
         open={unsavedChangesDialogOpen}
         title="Discard Changes?"
@@ -449,4 +391,3 @@ export function BranchFormDialog({ open, mode, record, onClose, onSuccess, tenan
     </>
   );
 }
-

@@ -22,7 +22,6 @@ import { useGetItemsQuery } from 'src/store/api/items-api';
 import { useCreateOrderMutation } from 'src/store/api/orders-api';
 import { useGetStaffDropdownQuery } from 'src/store/api/staff-api';
 import { useGetTablesDropdownQuery } from 'src/store/api/tables-api';
-import { useGetBranchesDropdownQuery } from 'src/store/api/branches-api';
 import { useGetCategoriesDropdownQuery } from 'src/store/api/categories-api';
 import { useGetOrderTypesDropdownQuery } from 'src/store/api/order-types-api';
 import { useGetPaymentModesDropdownQuery } from 'src/store/api/payment-modes-api';
@@ -47,7 +46,6 @@ import { PosDeliveryDetails } from './components/pos-delivery-details';
 
 const defaultValues = {
   searchTerm: '',
-  branchId: null,
   orderTypeId: null,
   paymentModeId: null,
   staffId: null,
@@ -83,7 +81,6 @@ const defaultDeliveryDetails = {
 // ----------------------------------------------------------------------
 
 function PosOrderContent({
-  branchOptions = [],
   orderTypeOptions = [],
   orderTypeOptionsLoading = false,
   staffOptions = [],
@@ -97,7 +94,6 @@ function PosOrderContent({
   const [categoryId, setCategoryId] = useState(null);
   const [debouncedSearch, setDebouncedSearch] = useState('');
 
-  const branchId = watch('branchId');
   const orderTypeId = watch('orderTypeId');
   const searchTerm = useWatch({ control, name: 'searchTerm', defaultValue: '' }) ?? '';
   const watchedItems = useWatch({ control, name: 'items', defaultValue: [] });
@@ -109,11 +105,6 @@ function PosOrderContent({
   const taxPercentage = watch('taxPercentage');
   const discountAmount = watch('discountAmount') ?? 0;
   const discountPercentage = watch('discountPercentage');
-
-  const selectedBranchId = useMemo(() => {
-    if (!branchId) return null;
-    return typeof branchId === 'object' && branchId !== null ? branchId.id : branchId;
-  }, [branchId]);
 
   const selectedOrderTypeLabel = useMemo(() => {
     if (!orderTypeId || !orderTypeOptions?.length) return '';
@@ -182,7 +173,6 @@ function PosOrderContent({
   useEffect(() => {
     if (optionsRef?.current) {
       optionsRef.current = {
-        branchOptions,
         orderTypeOptions,
         staffOptions,
         tableOptions,
@@ -190,7 +180,7 @@ function PosOrderContent({
         itemOptions,
       };
     }
-  }, [optionsRef, branchOptions, orderTypeOptions, staffOptions, tableOptions, paymentModeOptions, itemOptions]);
+  }, [optionsRef, orderTypeOptions, staffOptions, tableOptions, paymentModeOptions, itemOptions]);
 
   const subtotal = useMemo(() => {
     if (!items.length) return 0;
@@ -319,13 +309,11 @@ function PosOrderContent({
         >
           <Stack spacing={2} sx={{ p: 2, overflow: 'auto', flex: 1, minHeight: 0 }}>
             <PosOrderContext
-              branchOptions={branchOptions}
               orderTypeOptions={orderTypeOptions}
               orderTypeOptionsLoading={orderTypeOptionsLoading}
               tableOptions={tableOptions}
               staffOptions={staffOptions}
               paymentModeOptions={paymentModeOptions}
-              branchSelected={!!selectedBranchId}
               showTableField={isDineInOrderType}
             />
             <PosDeliveryDetails open={isDeliveryOrderType} defaultExpanded={isDeliveryOrderType} />
@@ -472,14 +460,8 @@ export function PosOrderView() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewPayload, setPreviewPayload] = useState(null);
 
-  const { data: branchesDropdown } = useGetBranchesDropdownQuery();
   const { data: staffDropdown } = useGetStaffDropdownQuery();
   const { data: orderTypesDropdown, isLoading: orderTypesLoading } = useGetOrderTypesDropdownQuery();
-
-  const branchOptions = useMemo(() => {
-    if (!branchesDropdown || !Array.isArray(branchesDropdown)) return [];
-    return branchesDropdown.map((item) => ({ id: item.key, label: item.value || item.key }));
-  }, [branchesDropdown]);
 
   const staffOptions = useMemo(() => {
     if (!staffDropdown || !Array.isArray(staffDropdown)) return [];
@@ -564,7 +546,6 @@ export function PosOrderView() {
         : null;
 
       const createData = {
-        branchId: typeof data.branchId === 'object' && data.branchId !== null ? data.branchId.id : data.branchId,
         orderTypeId: orderTypeIdResolved,
         paymentModeId:
           typeof data.paymentModeId === 'object' && data.paymentModeId !== null ? data.paymentModeId.id : data.paymentModeId ?? null,
@@ -678,7 +659,6 @@ export function PosOrderView() {
 
         <Form methods={methods} onSubmit={onSubmit}>
           <PosOrderContent
-            branchOptions={branchOptions}
             orderTypeOptions={orderTypeOptions}
             orderTypeOptionsLoading={orderTypesLoading}
             staffOptions={staffOptions}

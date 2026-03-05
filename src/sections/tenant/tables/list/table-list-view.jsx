@@ -623,10 +623,8 @@ export function TableListView() {
         open={formDialogOpen}
         mode={formDialogMode}
         record={formDialogRecord}
-        branchId={getId(branchId)}
         onClose={handleFormClose}
         onSuccess={handleFormSuccess}
-        branchOptions={branchOptions}
       />
 
       {/* Details Dialog */}

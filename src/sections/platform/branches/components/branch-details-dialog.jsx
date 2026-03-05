@@ -11,9 +11,6 @@ import { CustomDialog } from 'src/components/custom-dialog';
 
 // ----------------------------------------------------------------------
 
-/**
- * PhoneLabel enum mapping
- */
 const PHONE_LABEL_MAP = {
   1: 'Main',
   2: 'Delivery',
@@ -22,12 +19,6 @@ const PHONE_LABEL_MAP = {
 
 // ----------------------------------------------------------------------
 
-/**
- * Branch Details Dialog Component
- *
- * Read-only view using record from list (no getById).
- * No action buttons - purely informational.
- */
 export function BranchDetailsDialog({ open, record, onClose }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
@@ -43,7 +34,6 @@ export function BranchDetailsDialog({ open, record, onClose }) {
     >
       {record ? (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, pt: 1, pb: 3 }}>
-          {/* Basic Information */}
           <Box>
             <Typography variant="subtitle2" sx={{ mb: 2 }}>
               Branch Information
@@ -84,7 +74,6 @@ export function BranchDetailsDialog({ open, record, onClose }) {
 
           <Divider />
 
-          {/* Phone Numbers */}
           <Box>
             <Typography variant="subtitle2" sx={{ mb: 2 }}>
               Phone Numbers

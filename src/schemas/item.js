@@ -2,6 +2,7 @@ import { z as zod } from 'zod';
 
 import {
   requiredId,
+  optionalId,
   booleanField,
   requiredString,
   optionalString,
@@ -13,7 +14,7 @@ import {
 // ----------------------------------------------------------------------
 
 export const createItemSchema = zod.object({
-  tenantId: requiredId('Tenant is required', 'Invalid tenant ID'),
+  tenantId: optionalId('Invalid tenant ID').optional(),
   categoryId: requiredId('Category is required', 'Invalid category ID'),
   name: requiredString('Name is required', 200, { trim: true }),
   description: optionalString(1000),
@@ -30,7 +31,7 @@ export const createItemSchema = zod.object({
 });
 
 export const updateItemSchema = zod.object({
-  tenantId: requiredId('Tenant is required', 'Invalid tenant ID'),
+  tenantId: optionalId('Invalid tenant ID').optional(),
   categoryId: requiredId('Category is required', 'Invalid category ID'),
   name: requiredString('Name is required', 200, { trim: true }),
   description: optionalString(1000),

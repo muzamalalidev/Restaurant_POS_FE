@@ -1,7 +1,7 @@
 import { z as zod } from 'zod';
 
 import {
-  requiredId,
+  optionalId,
   requiredString,
   optionalString,
 } from 'src/schemas/fields';
@@ -9,16 +9,16 @@ import {
 // ----------------------------------------------------------------------
 
 export const createKitchenSchema = zod.object({
-  tenantId: requiredId('Tenant is required', 'Invalid tenant ID'),
-  branchId: requiredId('Branch is required', 'Invalid branch ID'),
+  tenantId: optionalId('Invalid tenant ID').optional(),
+  branchId: optionalId('Invalid branch ID').optional(),
   name: requiredString('Name is required', 200),
   description: optionalString(1000),
   location: optionalString(200),
 });
 
 export const updateKitchenSchema = zod.object({
-  tenantId: requiredId('Tenant is required', 'Invalid tenant ID'),
-  branchId: requiredId('Branch is required', 'Invalid branch ID'),
+  tenantId: optionalId('Invalid tenant ID').optional(),
+  branchId: optionalId('Invalid branch ID').optional(),
   name: requiredString('Name is required', 200),
   description: optionalString(1000),
   location: optionalString(200),

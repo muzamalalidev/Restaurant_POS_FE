@@ -197,7 +197,6 @@ export function RoleFormDialog({ open, mode, record, onClose, onSuccess }) {
                   placeholder="Enter role name"
                   required
                   inputProps={{ maxLength: 256 }}
-                  characterCounter
                 />
                 <Field.Autocomplete
                   name="scope"

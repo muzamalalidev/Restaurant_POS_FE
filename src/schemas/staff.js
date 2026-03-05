@@ -13,7 +13,7 @@ import {
 // ----------------------------------------------------------------------
 
 export const createStaffSchema = zod.object({
-  branchId: requiredId('Branch is required', 'Invalid branch ID'),
+  branchId: optionalId('Invalid branch ID').optional(),
   staffTypeId: requiredId('Staff type is required', 'Invalid staff type ID'),
   userId: optionalId('Invalid user ID'),
   firstName: requiredString('First name is required', 100),
@@ -26,7 +26,7 @@ export const createStaffSchema = zod.object({
 });
 
 export const updateStaffSchema = zod.object({
-  branchId: requiredId('Branch is required', 'Invalid branch ID'),
+  branchId: optionalId('Invalid branch ID').optional(),
   staffTypeId: requiredId('Staff type is required', 'Invalid staff type ID'),
   userId: optionalId('Invalid user ID'),
   firstName: requiredString('First name is required', 100),

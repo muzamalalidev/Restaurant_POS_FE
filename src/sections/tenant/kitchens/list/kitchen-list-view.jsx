@@ -676,7 +676,6 @@ export function KitchenListView() {
         record={formDialogRecord}
         onClose={handleFormClose}
         onSuccess={handleFormSuccess}
-        tenantOptions={tenantOptions}
       />
 
       {/* Details Dialog */}

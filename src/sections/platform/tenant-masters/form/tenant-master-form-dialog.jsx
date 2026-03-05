@@ -265,7 +265,6 @@ export function TenantMasterFormDialog({ open, mode, record, onClose, onSuccess 
                   placeholder="Enter tenant master name"
                   required
                   inputProps={{ maxLength: 200 }}
-                  characterCounter
                 />
                 <Field.Text
                   name="description"
@@ -274,7 +273,6 @@ export function TenantMasterFormDialog({ open, mode, record, onClose, onSuccess 
                   multiline
                   rows={3}
                   inputProps={{ maxLength: 1000 }}
-                  characterCounter
                 />
               </Box>
             </Box>
