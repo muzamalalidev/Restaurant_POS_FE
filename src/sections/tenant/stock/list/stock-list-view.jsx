@@ -10,6 +10,9 @@ import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
 
+import { can } from 'src/utils/permissions';
+import { ACTION_PERMISSIONS } from 'src/utils/action-permissions';
+
 import { useGetItemsQuery } from 'src/store/api/items-api';
 import { useGetTenantsDropdownQuery } from 'src/store/api/tenants-api';
 import { useGetCategoriesDropdownQuery } from 'src/store/api/categories-api';
@@ -432,6 +435,7 @@ export function StockListView() {
         icon: 'solar:pen-bold',
         onClick: (row) => handleUpdate(row),
         order: 2,
+        permission: () => can(ACTION_PERMISSIONS.Stock.update),
       },
       {
         id: 'adjust',
@@ -439,6 +443,7 @@ export function StockListView() {
         icon: 'solar:add-circle-bold',
         onClick: (row) => handleAdjust(row),
         order: 3,
+        permission: () => can(ACTION_PERMISSIONS.Stock.adjust),
       },
     ],
     [handleView, handleUpdate, handleAdjust]

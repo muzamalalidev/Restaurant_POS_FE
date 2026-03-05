@@ -10,7 +10,9 @@ import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
 
+import { can } from 'src/utils/permissions';
 import { getApiErrorMessage } from 'src/utils/api-error-message';
+import { ACTION_PERMISSIONS } from 'src/utils/action-permissions';
 
 import { useGetUsersQuery } from 'src/store/api/users-api';
 import {
@@ -315,6 +317,7 @@ export function TenantMasterListView() {
         icon: 'solar:pen-bold',
         onClick: (row) => handleEdit(row),
         order: 2,
+        permission: () => can(ACTION_PERMISSIONS.TenantMasters.update),
       },
       {
         id: 'toggle-active',
@@ -341,6 +344,7 @@ export function TenantMasterListView() {
           />
         ),
         order: 3,
+        permission: () => can(ACTION_PERMISSIONS.TenantMasters.toggleActive),
       },
       {
         id: 'delete',
@@ -348,6 +352,7 @@ export function TenantMasterListView() {
         icon: 'solar:trash-bin-trash-bold',
         onClick: (row) => handleDeleteClick(row),
         order: 4,
+        permission: () => can(ACTION_PERMISSIONS.TenantMasters.delete),
       },
     ],
     [handleView, handleEdit, handleToggleActive, handleDeleteClick, togglingTenantMasterId, toggleForm]
@@ -401,9 +406,11 @@ export function TenantMasterListView() {
               sx={{ minWidth: { sm: 200 } }}
             />
           </FormProvider>
-          <Field.Button variant="contained" startIcon="mingcute:add-line" onClick={handleCreate} sx={{ ml: 'auto' }}>
-            Create Tenant Master
-          </Field.Button>
+          {can(ACTION_PERMISSIONS.TenantMasters.create) && (
+            <Field.Button variant="contained" startIcon="mingcute:add-line" onClick={handleCreate} sx={{ ml: 'auto' }}>
+              Create Tenant Master
+            </Field.Button>
+          )}
         </Stack>
 
         {/* P0-005: show error in table area so search/filters/Create remain; P0-001: sorting disabled */}

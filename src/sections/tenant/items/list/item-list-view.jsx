@@ -11,8 +11,10 @@ import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
 
+import { can } from 'src/utils/permissions';
 import { fNumber, fCurrency } from 'src/utils/format-number';
 import { getApiErrorMessage } from 'src/utils/api-error-message';
+import { ACTION_PERMISSIONS } from 'src/utils/action-permissions';
 
 import { useGetTenantsDropdownQuery } from 'src/store/api/tenants-api';
 import { useGetCategoriesDropdownQuery } from 'src/store/api/categories-api';
@@ -494,6 +496,7 @@ export function ItemListView() {
         icon: 'solar:pen-bold',
         onClick: (row) => handleEdit(row),
         order: 2,
+        permission: () => can(ACTION_PERMISSIONS.Items.update),
       },
       {
         id: 'toggle-active',
@@ -519,6 +522,7 @@ export function ItemListView() {
           />
         ),
         order: 3,
+        permission: () => can(ACTION_PERMISSIONS.Items.toggleActive),
       },
       {
         id: 'delete',
@@ -526,6 +530,7 @@ export function ItemListView() {
         icon: 'solar:trash-bin-trash-bold',
         onClick: (row) => handleDeleteClick(row),
         order: 4,
+        permission: () => can(ACTION_PERMISSIONS.Items.delete),
       },
     ],
     [handleView, handleEdit, handleToggleActive, handleDeleteClick, togglingItemId]
@@ -618,14 +623,16 @@ export function ItemListView() {
               sx={{ minWidth: { sm: 200 } }}
             />
           </FormProvider>
-          <Field.Button
-            variant="contained"
-            startIcon="mingcute:add-line"
-            onClick={handleCreate}
-            sx={{ ml: 'auto', minHeight: 44 }}
-          >
-            Create Item
-          </Field.Button>
+          {can(ACTION_PERMISSIONS.Items.create) && (
+            <Field.Button
+              variant="contained"
+              startIcon="mingcute:add-line"
+              onClick={handleCreate}
+              sx={{ ml: 'auto', minHeight: 44 }}
+            >
+              Create Item
+            </Field.Button>
+          )}
         </Stack>
 
         <CustomTable

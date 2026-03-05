@@ -53,6 +53,9 @@ const formatDate = (dateString) => {
  * @param {Function} props.onEdit - Callback when Edit is clicked (receives record)
  * @param {Function} props.onPost - Callback when Post is clicked (receives record)
  * @param {Function} props.onDelete - Callback when Delete is clicked (receives record)
+ * @param {boolean} [props.canPostDocument=true] - Whether the user can post (permission); when false, Post button is hidden
+ * @param {boolean} [props.canEditDocument=true] - Whether the user can edit (permission)
+ * @param {boolean} [props.canDeleteDocument=true] - Whether the user can delete (permission)
  */
 export function StockDocumentDetailsDialog({
   open,
@@ -61,21 +64,28 @@ export function StockDocumentDetailsDialog({
   onEdit,
   onPost,
   onDelete,
+  canPostDocument = true,
+  canEditDocument = true,
+  canDeleteDocument = true,
 }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   const showActions = useMemo(() => {
     if (!record) return false;
-    return canEdit(record.status) || canDelete(record.status) || canPost(record.status);
-  }, [record]);
+    return (
+      (canEdit(record.status) && canEditDocument) ||
+      (canDelete(record.status) && canDeleteDocument) ||
+      (canPost(record.status) && canPostDocument)
+    );
+  }, [record, canPostDocument, canEditDocument, canDeleteDocument]);
 
   const renderActions = () => {
     if (!record || !showActions) return null;
 
     return (
       <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
-        {canEdit(record.status) && (
+        {canEdit(record.status) && canEditDocument && (
           <Field.Button
             variant="outlined"
             color="primary"
@@ -86,7 +96,7 @@ export function StockDocumentDetailsDialog({
             Edit
           </Field.Button>
         )}
-        {canPost(record.status) && (
+        {canPost(record.status) && canPostDocument && (
           <Field.Button
             variant="contained"
             color="success"
@@ -97,7 +107,7 @@ export function StockDocumentDetailsDialog({
             Post
           </Field.Button>
         )}
-        {canDelete(record.status) && (
+        {canDelete(record.status) && canDeleteDocument && (
           <Field.Button
             variant="outlined"
             color="error"

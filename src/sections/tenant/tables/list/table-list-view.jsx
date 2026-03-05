@@ -13,6 +13,7 @@ import InputAdornment from '@mui/material/InputAdornment';
 
 import { can } from 'src/utils/permissions';
 import { getApiErrorMessage } from 'src/utils/api-error-message';
+import { ACTION_PERMISSIONS } from 'src/utils/action-permissions';
 
 import { useGetBranchesDropdownQuery, useGetBranchesDropdownCurrentTenantQuery } from 'src/store/api/branches-api';
 import {
@@ -460,6 +461,7 @@ export function TableListView() {
         onClick: (row) => handleEdit(row),
         order: 2,
         visible: (row) => canEdit(row.isActive),
+        permission: () => can(ACTION_PERMISSIONS.Tables.update),
       },
       {
         id: 'release',
@@ -467,7 +469,7 @@ export function TableListView() {
         icon: 'solar:check-circle-bold',
         onClick: (row) => handleRelease(row.id),
         order: 3,
-        visible: (row) => canRelease(row.isAvailable) && can('Tables.Release'),
+        visible: (row) => canRelease(row.isAvailable) && can(ACTION_PERMISSIONS.Tables.release),
         disabled: (row) => releasingTableId === row.id,
       },
       {
@@ -494,6 +496,7 @@ export function TableListView() {
           />
         ),
         order: 4,
+        permission: () => can(ACTION_PERMISSIONS.Tables.toggleActive),
       },
       {
         id: 'delete',
@@ -502,6 +505,7 @@ export function TableListView() {
         onClick: (row) => handleDeleteClick(row),
         order: 5,
         visible: (row) => canDelete(row.isActive),
+        permission: () => can(ACTION_PERMISSIONS.Tables.delete),
       },
     ],
     [handleView, handleEdit, handleRelease, handleToggleActive, handleDeleteClick, releasingTableId, togglingTableId]
@@ -569,15 +573,17 @@ export function TableListView() {
             />
           </FormProvider>
           
-          <Field.Button
-            variant="contained"
-            startIcon="mingcute:add-line"
-            onClick={handleCreate}
-            disabled={!hasRequiredFilters}
-            sx={{ ml: 'auto', minHeight: 44 }}
-          >
-            Create Table
-          </Field.Button>
+          {can(ACTION_PERMISSIONS.Tables.create) && (
+            <Field.Button
+              variant="contained"
+              startIcon="mingcute:add-line"
+              onClick={handleCreate}
+              disabled={!hasRequiredFilters}
+              sx={{ ml: 'auto', minHeight: 44 }}
+            >
+              Create Table
+            </Field.Button>
+          )}
         </Stack>
 
         {branchesCurrentTenantError?.status === 403 && (

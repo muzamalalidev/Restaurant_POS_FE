@@ -12,8 +12,10 @@ import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
 
+import { can } from 'src/utils/permissions';
 import { fDateTime } from 'src/utils/format-time';
 import { getApiErrorMessage } from 'src/utils/api-error-message';
+import { ACTION_PERMISSIONS } from 'src/utils/action-permissions';
 
 import { useGetTenantsDropdownQuery } from 'src/store/api/tenants-api';
 import { useGetBranchesDropdownQuery } from 'src/store/api/branches-api';
@@ -589,19 +591,24 @@ export function StockDocumentsListView() {
         field: 'isActive',
         headerName: 'Active',
         width: 80,
-        renderCell: (params) => (
-          <Tooltip title={params.value ? 'Active' : 'Inactive'}>
-          <Switch
-            checked={params.value}
-            onChange={(e) => {
-              e.stopPropagation();
-              handleToggleActive(params.row.id, params.value);
-            }}
-            disabled={isTogglingActive && togglingDocumentId === params.row.id}
-            size="small"
-          />
-          </Tooltip>
-        ),
+        renderCell: (params) =>
+          can(ACTION_PERMISSIONS.StockDocuments.toggleActive) ? (
+            <Tooltip title={params.value ? 'Active' : 'Inactive'}>
+              <Switch
+                checked={params.value}
+                onChange={(e) => {
+                  e.stopPropagation();
+                  handleToggleActive(params.row.id, params.value);
+                }}
+                disabled={isTogglingActive && togglingDocumentId === params.row.id}
+                size="small"
+              />
+            </Tooltip>
+          ) : (
+            <Typography variant="body2" color="text.secondary">
+              {params.value ? 'Yes' : 'No'}
+            </Typography>
+          ),
       },
       {
         field: 'actions',
@@ -611,7 +618,7 @@ export function StockDocumentsListView() {
           const document = params.row;
           const canEditDocument = canEdit(document.status);
           const canDeleteDocument = canDelete(document.status);
-          const canPostDocument = canPost(document.status);
+          const canPostDocument = canPost(document.status) && can(ACTION_PERMISSIONS.StockDocuments.post);
 
           return (
             <Stack direction="row" spacing={0.5}>
@@ -628,7 +635,7 @@ export function StockDocumentsListView() {
                   <Iconify icon="solar:eye-bold" />
                 </IconButton>
               </Tooltip>
-              {canEditDocument && (
+              {can(ACTION_PERMISSIONS.StockDocuments.update) && canEditDocument && (
                 <Tooltip title="Edit">
                   <IconButton
                     size="small"
@@ -658,7 +665,7 @@ export function StockDocumentsListView() {
                   </IconButton>
                 </Tooltip>
               )}
-              {canDeleteDocument && (
+              {can(ACTION_PERMISSIONS.StockDocuments.delete) && canDeleteDocument && (
                 <Tooltip title="Delete">
                   <IconButton
                     size="small"
@@ -708,14 +715,16 @@ export function StockDocumentsListView() {
           {/* Header */}
           <Stack direction="row" spacing={2} alignItems="center" justifyContent="space-between">
             <Typography variant="h4">Stock Documents</Typography>
-            <Field.Button
-              variant="contained"
-              startIcon="mingcute:add-line"
-              onClick={handleCreate}
-              sx={{ minHeight: 44 }}
-            >
-              Create Document
-            </Field.Button>
+            {can(ACTION_PERMISSIONS.StockDocuments.create) && (
+              <Field.Button
+                variant="contained"
+                startIcon="mingcute:add-line"
+                onClick={handleCreate}
+                sx={{ minHeight: 44 }}
+              >
+                Create Document
+              </Field.Button>
+            )}
           </Stack>
 
           {/* Filters */}
@@ -908,6 +917,9 @@ export function StockDocumentsListView() {
         onEdit={handleDetailsDialogEdit}
         onPost={handleDetailsDialogPost}
         onDelete={handleDetailsDialogDelete}
+        canPostDocument={can(ACTION_PERMISSIONS.StockDocuments.post)}
+        canEditDocument={can(ACTION_PERMISSIONS.StockDocuments.update)}
+        canDeleteDocument={can(ACTION_PERMISSIONS.StockDocuments.delete)}
       />
 
       {/* Post Dialog */}

@@ -11,9 +11,11 @@ import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
 
+import { can } from 'src/utils/permissions';
 import { fDate } from 'src/utils/format-time';
 import { fCurrency } from 'src/utils/format-number';
 import { getApiErrorMessage } from 'src/utils/api-error-message';
+import { ACTION_PERMISSIONS } from 'src/utils/action-permissions';
 
 import {
   useGetDealsQuery,
@@ -296,6 +298,7 @@ export function DealListView() {
         icon: 'solar:pen-bold',
         onClick: (row) => handleEdit(row),
         order: 2,
+        permission: () => can(ACTION_PERMISSIONS.Deals.update),
       },
       {
         id: 'toggle-active',
@@ -319,6 +322,7 @@ export function DealListView() {
           />
         ),
         order: 3,
+        permission: () => can(ACTION_PERMISSIONS.Deals.toggleActive),
       },
       {
         id: 'delete',
@@ -326,6 +330,7 @@ export function DealListView() {
         icon: 'solar:trash-bin-trash-bold',
         onClick: (row) => handleDeleteClick(row),
         order: 4,
+        permission: () => can(ACTION_PERMISSIONS.Deals.delete),
       },
     ],
     [handleView, handleEdit, handleToggleActive, handleDeleteClick, togglingDealId]
@@ -364,14 +369,16 @@ export function DealListView() {
               sx={{ maxWidth: { sm: 400 } }}
             />
           </FormProvider>
-          <Field.Button
-            variant="contained"
-            startIcon="mingcute:add-line"
-            onClick={handleCreate}
-            sx={{ ml: 'auto', minHeight: 44 }}
-          >
-            Create Deal
-          </Field.Button>
+          {can(ACTION_PERMISSIONS.Deals.create) && (
+            <Field.Button
+              variant="contained"
+              startIcon="mingcute:add-line"
+              onClick={handleCreate}
+              sx={{ ml: 'auto', minHeight: 44 }}
+            >
+              Create Deal
+            </Field.Button>
+          )}
         </Stack>
 
         <CustomTable

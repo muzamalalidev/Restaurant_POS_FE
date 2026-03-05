@@ -1,6 +1,10 @@
+import { paths } from 'src/routes/paths';
+
 import { createLazyView } from 'src/utils/dynamic-imports';
 
 import { CONFIG } from 'src/global-config';
+
+import { PermissionPageGuard } from 'src/auth/guard';
 
 // ----------------------------------------------------------------------
 
@@ -12,5 +16,9 @@ const TenantMasterListView = createLazyView(
 export const metadata = { title: `Tenant Masters - ${CONFIG.appName}` };
 
 export default function Page() {
-  return <TenantMasterListView />;
+  return (
+    <PermissionPageGuard path={paths.platform.tenantMasters.root}>
+      <TenantMasterListView />
+    </PermissionPageGuard>
+  );
 }

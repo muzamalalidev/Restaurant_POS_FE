@@ -11,7 +11,9 @@ import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
 
+import { can } from 'src/utils/permissions';
 import { getApiErrorMessage } from 'src/utils/api-error-message';
+import { ACTION_PERMISSIONS } from 'src/utils/action-permissions';
 
 import { useGetTenantMastersDropdownQuery } from 'src/store/api/tenant-masters-api';
 import { useGetTenantsQuery, useDeleteTenantMutation, useToggleTenantActiveMutation } from 'src/store/api/tenants-api';
@@ -387,6 +389,7 @@ export function TenantListView() {
         icon: 'solar:pen-bold',
         onClick: (row) => handleEdit(row),
         order: 2,
+        permission: () => can(ACTION_PERMISSIONS.Tenants.update),
       },
       {
         id: 'toggle-active',
@@ -412,6 +415,7 @@ export function TenantListView() {
           />
         ),
         order: 3,
+        permission: () => can(ACTION_PERMISSIONS.Tenants.toggleActive),
       },
       {
         id: 'delete',
@@ -419,6 +423,7 @@ export function TenantListView() {
         icon: 'solar:trash-bin-trash-bold',
         onClick: (row) => handleDeleteClick(row),
         order: 4,
+        permission: () => can(ACTION_PERMISSIONS.Tenants.delete),
       },
     ],
     [handleView, handleEdit, handleToggleActive, handleDeleteClick, togglingTenantId]
@@ -515,14 +520,16 @@ export function TenantListView() {
             // })) || [];
           />
         </FormProvider>
-        <Field.Button
-          variant="contained"
-          startIcon="mingcute:add-line"
-          onClick={handleCreate}
-          sx={{ ml: 'auto', minHeight: 44 }}
-        >
-          Create Tenant
-        </Field.Button>
+        {can(ACTION_PERMISSIONS.Tenants.create) && (
+          <Field.Button
+            variant="contained"
+            startIcon="mingcute:add-line"
+            onClick={handleCreate}
+            sx={{ ml: 'auto', minHeight: 44 }}
+          >
+            Create Tenant
+          </Field.Button>
+        )}
       </Stack>
 
 

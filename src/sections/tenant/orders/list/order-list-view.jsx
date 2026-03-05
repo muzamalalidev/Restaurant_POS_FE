@@ -14,8 +14,10 @@ import InputAdornment from '@mui/material/InputAdornment';
 
 import { paths } from 'src/routes/paths';
 
+import { can } from 'src/utils/permissions';
 import { fCurrency } from 'src/utils/format-number';
 import { getApiErrorMessage } from 'src/utils/api-error-message';
+import { ACTION_PERMISSIONS } from 'src/utils/action-permissions';
 
 import { useGetStaffDropdownQuery } from 'src/store/api/staff-api';
 import { useGetBranchesDropdownQuery } from 'src/store/api/branches-api';
@@ -541,6 +543,7 @@ export function OrderListView() {
         icon: 'solar:pen-bold',
         onClick: (row) => handleUpdate(row),
         order: 2,
+        permission: () => can(ACTION_PERMISSIONS.Orders.update),
       },
       {
         id: 'delete',
@@ -548,6 +551,7 @@ export function OrderListView() {
         icon: 'solar:trash-bin-trash-bold',
         onClick: (row) => handleDeleteClick(row),
         order: 3,
+        permission: () => can(ACTION_PERMISSIONS.Orders.delete),
       },
     ],
     [handleView, handleUpdate, handleDeleteClick]
@@ -734,9 +738,11 @@ export function OrderListView() {
                 : "Get started by creating a new order"
             }
             action={
-              <Field.Button variant="contained" onClick={handleCreate} startIcon="mingcute:add-line">
-                Create Order
-              </Field.Button>
+              can(ACTION_PERMISSIONS.Orders.create) ? (
+                <Field.Button variant="contained" onClick={handleCreate} startIcon="mingcute:add-line">
+                  Create Order
+                </Field.Button>
+              ) : null
             }
           />
         }

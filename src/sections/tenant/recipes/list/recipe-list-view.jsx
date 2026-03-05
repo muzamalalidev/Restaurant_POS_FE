@@ -11,7 +11,9 @@ import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
 
+import { can } from 'src/utils/permissions';
 import { getApiErrorMessage } from 'src/utils/api-error-message';
+import { ACTION_PERMISSIONS } from 'src/utils/action-permissions';
 
 import { useGetItemsQuery } from 'src/store/api/items-api';
 import {
@@ -378,6 +380,7 @@ export function RecipeListView() {
         onClick: (row) => handleEdit(row),
         order: 2,
         visible: (row) => canEdit(row.isActive),
+        permission: () => can(ACTION_PERMISSIONS.Recipes.update),
       },
       {
         id: 'toggle-active',
@@ -403,6 +406,7 @@ export function RecipeListView() {
           />
         ),
         order: 3,
+        permission: () => can(ACTION_PERMISSIONS.Recipes.toggleActive),
       },
       {
         id: 'delete',
@@ -411,6 +415,7 @@ export function RecipeListView() {
         onClick: (row) => handleDeleteClick(row),
         order: 4,
         visible: (row) => canDelete(row.isActive),
+        permission: () => can(ACTION_PERMISSIONS.Recipes.delete),
       },
     ],
     [handleView, handleEdit, handleToggleActive, handleDeleteClick, togglingRecipeId]
@@ -454,14 +459,16 @@ export function RecipeListView() {
               sx={{ maxWidth: { sm: 400 } }}
             />
           </FormProvider>
-          <Field.Button
-            variant="contained"
-            startIcon="mingcute:add-line"
-            onClick={handleCreate}
-            sx={{ ml: 'auto', minHeight: 44 }}
-          >
-            Create Recipe
-          </Field.Button>
+          {can(ACTION_PERMISSIONS.Recipes.create) && (
+            <Field.Button
+              variant="contained"
+              startIcon="mingcute:add-line"
+              onClick={handleCreate}
+              sx={{ ml: 'auto', minHeight: 44 }}
+            >
+              Create Recipe
+            </Field.Button>
+          )}
         </Stack>
 
         {/* Table - P0-005: show error in table area so search/Create remain; P0-001: sorting disabled with server pagination */}

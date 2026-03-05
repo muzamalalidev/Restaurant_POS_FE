@@ -11,7 +11,9 @@ import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
 
+import { can } from 'src/utils/permissions';
 import { getApiErrorMessage } from 'src/utils/api-error-message';
+import { ACTION_PERMISSIONS } from 'src/utils/action-permissions';
 
 import { useGetTenantsDropdownQuery } from 'src/store/api/tenants-api';
 import { useGetBranchesDropdownQuery } from 'src/store/api/branches-api';
@@ -504,6 +506,7 @@ export function KitchenListView() {
         onClick: (row) => handleEdit(row),
         order: 2,
         visible: (row) => canEdit(row.isActive),
+        permission: () => can(ACTION_PERMISSIONS.Kitchens.update),
       },
       {
         id: 'toggle-active',
@@ -530,6 +533,7 @@ export function KitchenListView() {
         ),
         order: 3,
         visible: (row) => canToggleActive(row.isActive),
+        permission: () => can(ACTION_PERMISSIONS.Kitchens.toggleActive),
       },
       {
         id: 'delete',
@@ -538,6 +542,7 @@ export function KitchenListView() {
         onClick: (row) => handleDeleteClick(row),
         order: 4,
         visible: (row) => canDelete(row.isActive),
+        permission: () => can(ACTION_PERMISSIONS.Kitchens.delete),
       },
     ],
     [handleView, handleEdit, handleToggleActive, handleDeleteClick, togglingKitchenId, isTogglingActive]
@@ -627,14 +632,16 @@ export function KitchenListView() {
               sx={{ minWidth: { sm: 200 } }}
             />
           </FormProvider>
-          <Field.Button
-            variant="contained"
-            startIcon="mingcute:add-line"
-            onClick={handleCreate}
-            sx={{ ml: 'auto', minHeight: 44 }}
-          >
-            Create Kitchen
-          </Field.Button>
+          {can(ACTION_PERMISSIONS.Kitchens.create) && (
+            <Field.Button
+              variant="contained"
+              startIcon="mingcute:add-line"
+              onClick={handleCreate}
+              sx={{ ml: 'auto', minHeight: 44 }}
+            >
+              Create Kitchen
+            </Field.Button>
+          )}
         </Stack>
 
         {/* Table - P0-005: show error in table area so filters/Create remain; P0-001: sorting disabled with server pagination */}

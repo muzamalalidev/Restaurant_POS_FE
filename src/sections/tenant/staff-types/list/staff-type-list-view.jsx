@@ -11,7 +11,9 @@ import IconButton from '@mui/material/IconButton';
 import Typography from '@mui/material/Typography';
 import InputAdornment from '@mui/material/InputAdornment';
 
+import { can } from 'src/utils/permissions';
 import { getApiErrorMessage } from 'src/utils/api-error-message';
+import { ACTION_PERMISSIONS } from 'src/utils/action-permissions';
 
 import {
   useGetStaffTypesQuery,
@@ -336,6 +338,7 @@ export function StaffTypeListView() {
         icon: 'solar:pen-bold',
         onClick: (row) => handleEdit(row),
         order: 2,
+        permission: () => can(ACTION_PERMISSIONS.StaffTypes.update),
       },
       {
         id: 'toggle-active',
@@ -361,6 +364,7 @@ export function StaffTypeListView() {
           />
         ),
         order: 3,
+        permission: () => can(ACTION_PERMISSIONS.StaffTypes.toggleActive),
       },
       {
         id: 'delete',
@@ -368,6 +372,7 @@ export function StaffTypeListView() {
         icon: 'solar:trash-bin-trash-bold',
         onClick: (row) => handleDeleteClick(row),
         order: 4,
+        permission: () => can(ACTION_PERMISSIONS.StaffTypes.delete),
       },
     ],
     [handleView, handleEdit, handleToggleActive, handleDeleteClick, togglingStaffTypeId]
@@ -411,14 +416,16 @@ export function StaffTypeListView() {
               sx={{ maxWidth: { sm: 400 } }}
             />
           </FormProvider>
-          <Field.Button
-            variant="contained"
-            startIcon="mingcute:add-line"
-            onClick={handleCreate}
-            sx={{ ml: 'auto', minHeight: 44 }}
-          >
-            Create Staff Type
-          </Field.Button>
+          {can(ACTION_PERMISSIONS.StaffTypes.create) && (
+            <Field.Button
+              variant="contained"
+              startIcon="mingcute:add-line"
+              onClick={handleCreate}
+              sx={{ ml: 'auto', minHeight: 44 }}
+            >
+              Create Staff Type
+            </Field.Button>
+          )}
         </Stack>
 
         <CustomTable

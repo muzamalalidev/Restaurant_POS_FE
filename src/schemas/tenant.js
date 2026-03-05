@@ -25,6 +25,16 @@ export const createTenantSchema = zod.object({
   country: optionalString(100),
   postalCode: optionalString(20),
   phoneNumbers: arrayWithAtMostOnePrimary(phoneNumberSchema, primaryRefineMessage),
+  ownerFirstName: requiredString('Owner first name is required', 200),
+  ownerLastName: requiredString('Owner last name is required', 200),
+  ownerEmail: zod
+    .union([
+      zod.string().email('Please enter a valid email address').max(255),
+      zod.literal(''),
+      zod.null(),
+    ])
+    .optional(),
+  ownerPhones: arrayWithAtMostOnePrimary(phoneNumberSchema, primaryRefineMessage).optional(),
 });
 
 const updatePhoneNumberSchema = createUpdatePhoneNumberSchema({

@@ -19,6 +19,16 @@ export const createBranchSchema = zod.object({
   name: requiredString('Name is required', 200),
   address: optionalString(1000),
   phoneNumbers: arrayWithAtMostOnePrimary(phoneNumberSchema, primaryRefineMessage),
+  ownerFirstName: requiredString('Owner first name is required', 200),
+  ownerLastName: requiredString('Owner last name is required', 200),
+  ownerEmail: zod
+    .union([
+      zod.string().email('Please enter a valid email address').max(255),
+      zod.literal(''),
+      zod.null(),
+    ])
+    .optional(),
+  ownerPhones: arrayWithAtMostOnePrimary(phoneNumberSchema, primaryRefineMessage).optional(),
 });
 
 const updatePhoneNumberSchema = createUpdatePhoneNumberSchema({

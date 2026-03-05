@@ -60,6 +60,10 @@ export function BranchFormDialog({ open, mode, record, onClose, onSuccess, tenan
         address: null,
         isActive: true,
         phoneNumbers: null,
+        ownerFirstName: '',
+        ownerLastName: '',
+        ownerEmail: null,
+        ownerPhones: null,
       }),
       []
     ),
@@ -88,6 +92,10 @@ export function BranchFormDialog({ open, mode, record, onClose, onSuccess, tenan
         address: null,
         isActive: true,
         phoneNumbers: null,
+        ownerFirstName: '',
+        ownerLastName: '',
+        ownerEmail: null,
+        ownerPhones: null,
       });
       return;
     }
@@ -130,6 +138,10 @@ export function BranchFormDialog({ open, mode, record, onClose, onSuccess, tenan
           address: null,
           isActive: true,
           phoneNumbers: null,
+          ownerFirstName: '',
+          ownerLastName: '',
+          ownerEmail: null,
+          ownerPhones: null,
         });
 
         formInitializedRef.current = true;
@@ -142,6 +154,10 @@ export function BranchFormDialog({ open, mode, record, onClose, onSuccess, tenan
           address: null,
           isActive: true,
           phoneNumbers: null,
+          ownerFirstName: '',
+          ownerLastName: '',
+          ownerEmail: null,
+          ownerPhones: null,
         });
         formInitializedRef.current = true;
         previousBranchIdRef.current = currentBranchId;
@@ -174,6 +190,7 @@ export function BranchFormDialog({ open, mode, record, onClose, onSuccess, tenan
 
       if (mode === 'create') {
         const validPhones = data.phoneNumbers?.filter((phone) => phone.phoneNumber?.trim()) || [];
+        const validOwnerPhones = data.ownerPhones?.filter((phone) => phone.phoneNumber?.trim()) || [];
         const createData = {
           tenantId: tenantIdValue,
           name: data.name,
@@ -186,7 +203,19 @@ export function BranchFormDialog({ open, mode, record, onClose, onSuccess, tenan
                   phoneLabel: phone.phoneLabel || null,
                 }))
               : null,
+          ownerFirstName: data.ownerFirstName,
+          ownerLastName: data.ownerLastName,
         };
+        if (data.ownerEmail != null && String(data.ownerEmail).trim() !== '') {
+          createData.ownerEmail = data.ownerEmail;
+        }
+        if (validOwnerPhones.length > 0) {
+          createData.ownerPhones = validOwnerPhones.map((phone) => ({
+            phoneNumber: normalizePhoneNumber(phone.phoneNumber),
+            isPrimary: phone.isPrimary || false,
+            label: phone.label || null,
+          }));
+        }
         const result = await createBranch(createData).unwrap();
         if (onSuccess) {
           onSuccess(result, 'created');
@@ -367,6 +396,41 @@ export function BranchFormDialog({ open, mode, record, onClose, onSuccess, tenan
                 )}
               </Box>
             </Box>
+
+            {mode === 'create' && (
+              <>
+                <Divider />
+                <Box>
+                  <Typography variant="subtitle2" sx={{ mb: 2 }}>
+                    Owner
+                  </Typography>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <Box sx={{ display: 'flex', flexDirection: 'row', gap: 2, flexWrap: 'wrap' }}>
+                      <Field.Text
+                        name="ownerFirstName"
+                        label="Owner first name"
+                        placeholder="First name"
+                        required
+                        sx={{ flex: 1, minWidth: 140 }}
+                      />
+                      <Field.Text
+                        name="ownerLastName"
+                        label="Owner last name"
+                        placeholder="Last name"
+                        required
+                        sx={{ flex: 1, minWidth: 140 }}
+                      />
+                    </Box>
+                    <Field.Text
+                      name="ownerEmail"
+                      label="Owner email"
+                      placeholder="Leave empty to generate from branch name"
+                    />
+                    <PhoneNumbersField name="ownerPhones" mode="create" />
+                  </Box>
+                </Box>
+              </>
+            )}
 
             <Divider />
 

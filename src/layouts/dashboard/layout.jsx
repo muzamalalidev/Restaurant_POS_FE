@@ -11,8 +11,8 @@ import { BreadcrumbsPortalProvider } from 'src/components/custom-breadcrumbs';
 
 import { NavHorizontal } from './nav-horizontal';
 import { _account } from '../nav-config-account';
-import { navData } from '../nav-config-dashboard';
 import { MenuButton } from '../components/menu-button';
+import { useDynamicNavData } from '../nav-config-dynamic';
 import { SettingsButton } from '../components/settings-button';
 import { AccountPopover } from '../components/account-popover';
 import { Sidebar, useSidebar, SidebarProvider } from '../sidebar';
@@ -42,8 +42,9 @@ function DashboardLayoutInner({ sx, cssVars, children, slotProps, layoutQuery = 
   const theme = useTheme();
   const { isCollapsed, openMobile } = useSidebar();
   const settings = useSettingsContext();
+  const dynamicNavData = useDynamicNavData();
 
-  const navDataToUse = slotProps?.nav?.data ?? navData;
+  const navDataToUse = slotProps?.nav?.data ?? dynamicNavData;
   const { navLayout, navColor } = settings.state;
 
   const renderHeader = () => {

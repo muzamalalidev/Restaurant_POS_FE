@@ -12,6 +12,7 @@ import InputAdornment from '@mui/material/InputAdornment';
 
 import { can } from 'src/utils/permissions';
 import { getApiErrorMessage } from 'src/utils/api-error-message';
+import { ACTION_PERMISSIONS } from 'src/utils/action-permissions';
 
 import {
   useGetRolesQuery,
@@ -31,15 +32,6 @@ import { CustomTable, DEFAULT_PAGINATION } from 'src/components/custom-table';
 import { RoleFormDialog } from '../form/role-form-dialog';
 import { RoleDetailDrawer } from '../components/role-detail-drawer';
 import { getScopeDisplayName, getActiveStatusLabel, getActiveStatusColor } from '../utils/role-helpers';
-
-// ----------------------------------------------------------------------
-
-const canCreate = () => can('Roles.Create');
-const canEdit = () => can('Roles.Update');
-const canUpdate = () => can('Roles.Update');
-const canAssign = () => can('Roles.AssignToUser');
-const canToggle = () => can('Roles.ToggleActive');
-const canDelete = () => can('Roles.Update');
 
 // ----------------------------------------------------------------------
 
@@ -318,7 +310,7 @@ export function RolesListView() {
         icon: 'solar:pen-bold',
         onClick: (row) => handleEdit(row),
         order: 2,
-        permission: () => canEdit(),
+        permission: () => can(ACTION_PERMISSIONS.Roles.update),
       },
       {
         id: 'toggle-active',
@@ -345,7 +337,7 @@ export function RolesListView() {
           />
         ),
         order: 3,
-        permission: () => canToggle(),
+        permission: () => can(ACTION_PERMISSIONS.Roles.toggleActive),
       },
       {
         id: 'delete',
@@ -353,7 +345,7 @@ export function RolesListView() {
         icon: 'solar:trash-bin-trash-bold',
         onClick: (row) => handleDeleteClick(row),
         order: 4,
-        permission: () => canDelete(),
+        permission: () => can(ACTION_PERMISSIONS.Roles.delete),
       },
     ],
     [handleView, handleEdit, handleToggleActive, handleDeleteClick, togglingRoleId, toggleForm]
@@ -429,7 +421,7 @@ export function RolesListView() {
                 sx={{ minWidth: { sm: 140 } }}
               />
             </FormProvider>
-            {canCreate() && (
+            {can(ACTION_PERMISSIONS.Roles.create) && (
               <Field.Button
                 variant="contained"
                 startIcon="mingcute:add-line"
@@ -476,8 +468,8 @@ export function RolesListView() {
           open={drawerOpen}
           selectedRoleId={selectedRoleId}
           onClose={handleDrawerClose}
-          canUpdate={canUpdate()}
-          canAssign={canAssign()}
+          canUpdate={can(ACTION_PERMISSIONS.Roles.update)}
+          canAssign={can(ACTION_PERMISSIONS.Roles.assignToUser)}
         />
 
         <RoleFormDialog

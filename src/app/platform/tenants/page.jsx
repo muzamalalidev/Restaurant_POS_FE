@@ -1,6 +1,10 @@
+import { paths } from 'src/routes/paths';
+
 import { createLazyView } from 'src/utils/dynamic-imports';
 
 import { CONFIG } from 'src/global-config';
+
+import { PermissionPageGuard } from 'src/auth/guard';
 
 // ----------------------------------------------------------------------
 
@@ -9,6 +13,10 @@ const TenantsView = createLazyView(() => import('src/sections/platform/tenants/l
 export const metadata = { title: `Tenants - ${CONFIG.appName}` };
 
 export default function Page() {
-  return <TenantsView />;
+  return (
+    <PermissionPageGuard path={paths.platform.tenants.root}>
+      <TenantsView />
+    </PermissionPageGuard>
+  );
 }
 

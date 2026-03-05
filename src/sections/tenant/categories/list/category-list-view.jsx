@@ -11,7 +11,9 @@ import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
 
+import { can } from 'src/utils/permissions';
 import { getApiErrorMessage } from 'src/utils/api-error-message';
+import { ACTION_PERMISSIONS } from 'src/utils/action-permissions';
 
 import { useGetTenantsDropdownQuery } from 'src/store/api/tenants-api';
 import {
@@ -455,6 +457,7 @@ export function CategoryListView() {
         icon: 'solar:pen-bold',
         onClick: (row) => handleEdit(row),
         order: 2,
+        permission: () => can(ACTION_PERMISSIONS.Categories.update),
       },
       {
         id: 'toggle-active',
@@ -480,6 +483,7 @@ export function CategoryListView() {
           />
         ),
         order: 3,
+        permission: () => can(ACTION_PERMISSIONS.Categories.toggleActive),
       },
       {
         id: 'delete',
@@ -487,6 +491,7 @@ export function CategoryListView() {
         icon: 'solar:trash-bin-trash-bold',
         onClick: (row) => handleDeleteClick(row),
         order: 4,
+        permission: () => can(ACTION_PERMISSIONS.Categories.delete),
       },
     ],
     [handleView, handleEdit, handleToggleActive, handleDeleteClick, togglingCategoryId]
@@ -576,14 +581,16 @@ export function CategoryListView() {
               sx={{ minWidth: { sm: 200 } }}
             />
           </FormProvider>
-          <Field.Button
-            variant="contained"
-            startIcon="mingcute:add-line"
-            onClick={handleCreate}
-            sx={{ ml: 'auto', minHeight: 44 }}
-          >
-            Create Category
-          </Field.Button>
+          {can(ACTION_PERMISSIONS.Categories.create) && (
+            <Field.Button
+              variant="contained"
+              startIcon="mingcute:add-line"
+              onClick={handleCreate}
+              sx={{ ml: 'auto', minHeight: 44 }}
+            >
+              Create Category
+            </Field.Button>
+          )}
         </Stack>
 
         <CustomTable

@@ -11,8 +11,10 @@ import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
 
+import { can } from 'src/utils/permissions';
 import { fDate } from 'src/utils/format-time';
 import { getApiErrorMessage } from 'src/utils/api-error-message';
+import { ACTION_PERMISSIONS } from 'src/utils/action-permissions';
 
 import { useGetBranchesDropdownQuery } from 'src/store/api/branches-api';
 import { useGetStaffTypesDropdownQuery } from 'src/store/api/staff-types-api';
@@ -478,6 +480,7 @@ export function StaffListView() {
         icon: 'solar:pen-bold',
         onClick: (row) => handleEdit(row),
         order: 2,
+        permission: () => can(ACTION_PERMISSIONS.Staff.update),
       },
       {
         id: 'toggle-active',
@@ -503,6 +506,7 @@ export function StaffListView() {
           />
         ),
         order: 3,
+        permission: () => can(ACTION_PERMISSIONS.Staff.toggleActive),
       },
       {
         id: 'delete',
@@ -510,6 +514,7 @@ export function StaffListView() {
         icon: 'solar:trash-bin-trash-bold',
         onClick: (row) => handleDeleteClick(row),
         order: 4,
+        permission: () => can(ACTION_PERMISSIONS.Staff.delete),
       },
     ],
     [handleView, handleEdit, handleToggleActive, handleDeleteClick, togglingStaffId]
@@ -598,14 +603,16 @@ export function StaffListView() {
               sx={{ minWidth: { sm: 200 } }}
             />
           </FormProvider>
-          <Field.Button
-            variant="contained"
-            startIcon="mingcute:add-line"
-            onClick={handleCreate}
-            sx={{ ml: 'auto', minHeight: 44 }}
-          >
-            Create Staff
-          </Field.Button>
+          {can(ACTION_PERMISSIONS.Staff.create) && (
+            <Field.Button
+              variant="contained"
+              startIcon="mingcute:add-line"
+              onClick={handleCreate}
+              sx={{ ml: 'auto', minHeight: 44 }}
+            >
+              Create Staff
+            </Field.Button>
+          )}
         </Stack>
 
         <CustomTable

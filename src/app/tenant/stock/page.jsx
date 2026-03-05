@@ -1,6 +1,10 @@
+import { paths } from 'src/routes/paths';
+
 import { createLazyView } from 'src/utils/dynamic-imports';
 
 import { CONFIG } from 'src/global-config';
+
+import { PermissionPageGuard } from 'src/auth/guard';
 
 // ----------------------------------------------------------------------
 
@@ -16,6 +20,10 @@ export const metadata = { title: `Stock - ${CONFIG.appName}` };
 // ----------------------------------------------------------------------
 
 export default function Page() {
-  return <StockListView />;
+  return (
+    <PermissionPageGuard path={paths.tenant.stock.root}>
+      <StockListView />
+    </PermissionPageGuard>
+  );
 }
 

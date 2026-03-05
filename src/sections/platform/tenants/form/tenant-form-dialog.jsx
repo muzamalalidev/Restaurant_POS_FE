@@ -68,6 +68,10 @@ export function TenantFormDialog({ open, mode, record, onClose, onSuccess, tenan
         ownerId: null,
         isActive: true,
         phoneNumbers: null,
+        ownerFirstName: '',
+        ownerLastName: '',
+        ownerEmail: null,
+        ownerPhones: null,
       }),
       []
     ),
@@ -95,6 +99,10 @@ export function TenantFormDialog({ open, mode, record, onClose, onSuccess, tenan
         ownerId: null,
         isActive: true,
         phoneNumbers: null,
+        ownerFirstName: '',
+        ownerLastName: '',
+        ownerEmail: null,
+        ownerPhones: null,
       });
       return;
     }
@@ -136,6 +144,10 @@ export function TenantFormDialog({ open, mode, record, onClose, onSuccess, tenan
         ownerId: null,
         isActive: true,
         phoneNumbers: null,
+        ownerFirstName: '',
+        ownerLastName: '',
+        ownerEmail: null,
+        ownerPhones: null,
       });
     }
   }, [open, mode, record, reset]);
@@ -146,8 +158,9 @@ export function TenantFormDialog({ open, mode, record, onClose, onSuccess, tenan
     isSubmittingRef.current = true;
     try {
       if (mode === 'create') {
-        // Transform data for create: tenantMasterId required; phoneNumbers only phoneNumber, isPrimary, label
+        // Transform data for create: tenantMasterId required; owner block; phoneNumbers only phoneNumber, isPrimary, label
         const validPhones = data.phoneNumbers?.filter((phone) => phone.phoneNumber?.trim()) || [];
+        const validOwnerPhones = data.ownerPhones?.filter((phone) => phone.phoneNumber?.trim()) || [];
         const tenantMasterIdValue = data.tenantMasterId?.id ?? data.tenantMasterId ?? null;
         const createData = {
           tenantMasterId: tenantMasterIdValue,
@@ -166,7 +179,19 @@ export function TenantFormDialog({ open, mode, record, onClose, onSuccess, tenan
                   label: phone.label || null,
                 }))
               : null,
+          ownerFirstName: data.ownerFirstName,
+          ownerLastName: data.ownerLastName,
         };
+        if (data.ownerEmail != null && String(data.ownerEmail).trim() !== '') {
+          createData.ownerEmail = data.ownerEmail;
+        }
+        if (validOwnerPhones.length > 0) {
+          createData.ownerPhones = validOwnerPhones.map((phone) => ({
+            phoneNumber: phone.phoneNumber,
+            isPrimary: phone.isPrimary || false,
+            label: phone.label || null,
+          }));
+        }
         const result = await createTenant(createData).unwrap();
         if (onSuccess) {
           onSuccess(result, 'created');
@@ -335,6 +360,41 @@ export function TenantFormDialog({ open, mode, record, onClose, onSuccess, tenan
                 )}
               </Box>
             </Box>
+
+            {mode === 'create' && (
+              <>
+                <Divider />
+                <Box>
+                  <Typography variant="subtitle2" sx={{ mb: 2 }}>
+                    Owner
+                  </Typography>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <Box sx={{ display: 'flex', flexDirection: 'row', gap: 2, flexWrap: 'wrap' }}>
+                      <Field.Text
+                        name="ownerFirstName"
+                        label="Owner first name"
+                        placeholder="First name"
+                        required
+                        sx={{ flex: 1, minWidth: 140 }}
+                      />
+                      <Field.Text
+                        name="ownerLastName"
+                        label="Owner last name"
+                        placeholder="Last name"
+                        required
+                        sx={{ flex: 1, minWidth: 140 }}
+                      />
+                    </Box>
+                    <Field.Text
+                      name="ownerEmail"
+                      label="Owner email"
+                      placeholder="Leave empty to generate from tenant name"
+                    />
+                    <PhoneNumbersField name="ownerPhones" mode="create" />
+                  </Box>
+                </Box>
+              </>
+            )}
 
             <Divider />
 

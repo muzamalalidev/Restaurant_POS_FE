@@ -374,6 +374,28 @@ Rules:
 
 ---
 
+## ACTION PERMISSIONS (MANDATORY)
+
+All action-level permission gating (Create, Edit, Delete, Toggle, and special actions) MUST use the same approach everywhere. No mixed or ad-hoc permission checks.
+
+**Source of truth:**
+
+import { can } from 'src/utils/permissions';
+import { ACTION_PERMISSIONS } from 'src/utils/action-permissions';
+
+Rules:
+
+- **Do NOT** hard-code permission strings (e.g. `'Roles.Create'`, `'Branches.Update'`) in list views, dialogs, or detail drawers. Use **ACTION_PERMISSIONS** so all permission codes live in one place and stay aligned with the API reference.
+- **Create buttons:** Gate with `can(ACTION_PERMISSIONS.<Resource>.create)`. For Users, use the appropriate Register permission (e.g. `ACTION_PERMISSIONS.Users.registerTenantMaster`, `registerTenant`, `registerBranch`) as defined in action-permissions.js.
+- **Row actions:** Pass `permission: () => can(ACTION_PERMISSIONS.<Resource>.update)` for Edit, `.delete` for Delete, `.toggleActive` for Toggle. For special actions use the correct key (e.g. `.release` for Tables.Release, `.post` for StockDocuments.Post, `.adjust` for Stock.Adjust, `.assignTenantOwnership` for Users).
+- **Detail drawers / dialogs:** When passing "can do X" props (e.g. canUpdate, canAssign), pass `can(ACTION_PERMISSIONS.<Resource>.<action>)` from the parent; do not define local helpers that wrap hard-coded strings.
+- **Single pattern:** Every list view and role/permission-aware component must use `can(ACTION_PERMISSIONS.<Resource>.<action>)`. Do not introduce a different pattern (e.g. local `canCreate = () => can('Roles.Create')`) in one file while others use ACTION_PERMISSIONS.
+- **Route and menu visibility** continue to use [route-permissions.js](src/routes/route-permissions.js) and nav config (e.g. requiredPermission for GetAll). Action-level gating (buttons, row actions) uses action-permissions.js only.
+
+Apply to: all list views, form dialogs, detail drawers, and any UI that shows/hides or enables/disables actions based on permissions. When adding a new resource or action, add the permission to ACTION_PERMISSIONS first, then use it everywhere that action is gated.
+
+---
+
 ## RTK Query API params and paginated response (MANDATORY)
 
 All RTK Query list/dropdown/filter endpoints that accept a **params object** MUST use the shared query-params util so only defined values are sent. Do NOT statically list each param with `params?.key || undefined` in every endpoint.
@@ -570,3 +592,4 @@ Provide:
 - Duplicate shared components
 - Create separate Add/Edit pages unnecessarily
 - Leave linter errors or warnings to fix later; fix them within the same task
+- Use hard-coded permission strings (e.g. `'Roles.Create'`) or local permission helpers instead of ACTION_PERMISSIONS for action gating

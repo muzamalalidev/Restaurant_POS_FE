@@ -10,7 +10,9 @@ import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
 
+import { can } from 'src/utils/permissions';
 import { getApiErrorMessage } from 'src/utils/api-error-message';
+import { ACTION_PERMISSIONS } from 'src/utils/action-permissions';
 
 import { useGetTenantsDropdownQuery } from 'src/store/api/tenants-api';
 import {
@@ -299,7 +301,7 @@ export function PaymentModeListView() {
   const actions = useMemo(
     () => [
       { id: 'view', label: 'View', icon: 'solar:eye-bold', onClick: (row) => handleView(row), order: 1 },
-      { id: 'edit', label: 'Edit', icon: 'solar:pen-bold', onClick: (row) => handleEdit(row), order: 2 },
+      { id: 'edit', label: 'Edit', icon: 'solar:pen-bold', onClick: (row) => handleEdit(row), order: 2, permission: () => can(ACTION_PERMISSIONS.PaymentModes.update) },
       {
         id: 'toggle-active',
         label: (row) => (row.isActive ? 'Deactivate' : 'Activate'),
@@ -325,8 +327,9 @@ export function PaymentModeListView() {
           />
         ),
         order: 3,
+        permission: () => can(ACTION_PERMISSIONS.PaymentModes.toggleActive),
       },
-      { id: 'delete', label: 'Delete', icon: 'solar:trash-bin-trash-bold', onClick: (row) => handleDeleteClick(row), order: 4 },
+      { id: 'delete', label: 'Delete', icon: 'solar:trash-bin-trash-bold', onClick: (row) => handleDeleteClick(row), order: 4, permission: () => can(ACTION_PERMISSIONS.PaymentModes.delete) },
     ],
     [handleView, handleEdit, handleToggleActive, handleDeleteClick, togglingId, toggleForm]
   );
@@ -373,14 +376,16 @@ export function PaymentModeListView() {
               sx={{ minWidth: { sm: 200 } }}
             />
           </FormProvider>
-          <Field.Button
-            variant="contained"
-            startIcon="mingcute:add-line"
-            onClick={handleCreate}
-            sx={{ ml: 'auto', minHeight: 44 }}
-          >
-            Create Payment Mode
-          </Field.Button>
+          {can(ACTION_PERMISSIONS.PaymentModes.create) && (
+            <Field.Button
+              variant="contained"
+              startIcon="mingcute:add-line"
+              onClick={handleCreate}
+              sx={{ ml: 'auto', minHeight: 44 }}
+            >
+              Create Payment Mode
+            </Field.Button>
+          )}
         </Stack>
 
         <CustomTable

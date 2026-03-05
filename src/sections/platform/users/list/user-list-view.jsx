@@ -13,8 +13,10 @@ import IconButton from '@mui/material/IconButton';
 import Autocomplete from '@mui/material/Autocomplete';
 import InputAdornment from '@mui/material/InputAdornment';
 
+import { can } from 'src/utils/permissions';
 import { fDateTime } from 'src/utils/format-time';
 import { getApiErrorMessage } from 'src/utils/api-error-message';
+import { ACTION_PERMISSIONS } from 'src/utils/action-permissions';
 
 import { useGetTenantMastersDropdownQuery } from 'src/store/api/tenant-masters-api';
 import {
@@ -383,6 +385,7 @@ export function UserListView() {
           />
         ),
         order: 2,
+        permission: () => can(ACTION_PERMISSIONS.Users.toggleActive),
       },
       {
         id: 'assign-ownership',
@@ -390,6 +393,7 @@ export function UserListView() {
         icon: 'solar:user-id-bold',
         onClick: (row) => handleAssignOwnership(row),
         order: 3,
+        permission: () => can(ACTION_PERMISSIONS.Users.assignTenantOwnership),
       },
     ],
     [handleView, handleToggleActive, handleAssignOwnership, togglingUserId]
@@ -472,14 +476,18 @@ export function UserListView() {
             renderInput={(params) => <TextField {...params} label="Branch" />}
             sx={{ minWidth: { sm: 180 } }}
           />
-          <Field.Button
-            variant="contained"
-            startIcon="mingcute:add-line"
-            onClick={handleRegister}
-            sx={{ ml: { sm: 'auto' }, minHeight: 44 }}
-          >
-            Register User
-          </Field.Button>
+          {(can(ACTION_PERMISSIONS.Users.registerTenantMaster) ||
+            can(ACTION_PERMISSIONS.Users.registerTenant) ||
+            can(ACTION_PERMISSIONS.Users.registerBranch)) && (
+            <Field.Button
+              variant="contained"
+              startIcon="mingcute:add-line"
+              onClick={handleRegister}
+              sx={{ ml: { sm: 'auto' }, minHeight: 44 }}
+            >
+              Register User
+            </Field.Button>
+          )}
         </Stack>
 
         <CustomTable

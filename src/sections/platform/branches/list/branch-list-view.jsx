@@ -11,7 +11,9 @@ import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
 
+import { can } from 'src/utils/permissions';
 import { getApiErrorMessage } from 'src/utils/api-error-message';
+import { ACTION_PERMISSIONS } from 'src/utils/action-permissions';
 
 import { useGetTenantsDropdownQuery } from 'src/store/api/tenants-api';
 import { useGetBranchesQuery, useDeleteBranchMutation, useToggleBranchActiveMutation } from 'src/store/api/branches-api';
@@ -210,7 +212,7 @@ export function BranchListView() {
     } catch (err) {
       const { message } = getApiErrorMessage(err, {
         defaultMessage: 'Failed to delete branch',
-        notFoundMessage: 'Branch not found',
+        notFoundMessage: 'Branch not found or already deleted.',
       });
       toast.error(message);
     }
@@ -226,7 +228,7 @@ export function BranchListView() {
     } catch (err) {
       const { message } = getApiErrorMessage(err, {
         defaultMessage: 'Failed to update branch status',
-        notFoundMessage: 'Branch not found',
+        notFoundMessage: 'Branch not found or already deleted.',
       });
       toast.error(message);
     } finally {
@@ -343,6 +345,7 @@ export function BranchListView() {
         icon: 'solar:pen-bold',
         onClick: (row) => handleEdit(row),
         order: 2,
+        permission: () => can(ACTION_PERMISSIONS.Branches.update),
       },
       {
         id: 'toggle-active',
@@ -368,6 +371,7 @@ export function BranchListView() {
           />
         ),
         order: 3,
+        permission: () => can(ACTION_PERMISSIONS.Branches.toggleActive),
       },
       {
         id: 'delete',
@@ -375,6 +379,7 @@ export function BranchListView() {
         icon: 'solar:trash-bin-trash-bold',
         onClick: (row) => handleDeleteClick(row),
         order: 4,
+        permission: () => can(ACTION_PERMISSIONS.Branches.delete),
       },
     ],
     [handleView, handleEdit, handleToggleActive, handleDeleteClick, togglingBranchId]
@@ -435,14 +440,16 @@ export function BranchListView() {
               sx={{ minWidth: { sm: 200 } }}
             />
           </FormProvider>
-          <Field.Button
-            variant="contained"
-            startIcon="mingcute:add-line"
-            onClick={handleCreate}
-            sx={{ ml: 'auto', minHeight: 44 }}
-          >
-            Create Branch
-          </Field.Button>
+          {can(ACTION_PERMISSIONS.Branches.create) && (
+            <Field.Button
+              variant="contained"
+              startIcon="mingcute:add-line"
+              onClick={handleCreate}
+              sx={{ ml: 'auto', minHeight: 44 }}
+            >
+              Create Branch
+            </Field.Button>
+          )}
         </Stack>
 
         <CustomTable

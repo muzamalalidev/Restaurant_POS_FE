@@ -1,4 +1,5 @@
 import { paths } from 'src/routes/paths';
+import { routePermissionByPath } from 'src/routes/route-permissions';
 
 import { Iconify } from 'src/components/iconify';
 
@@ -35,11 +36,36 @@ export const navData = [
   {
     subheader: 'Platform',
     items: [
-      { title: 'Tenant Masters', path: paths.platform.tenantMasters.root, icon: ICONS.tenantMasters },
-      { title: 'Tenants', path: paths.platform.tenants.root, icon: ICONS.tenants },
-      { title: 'Users', path: paths.platform.users.root, icon: ICONS.user },
-      { title: 'Roles', path: paths.platform.roles.root, icon: ICONS.roles },
-      { title: 'Branches', path: paths.platform.branches.root, icon: ICONS.branches },
+      {
+        title: 'Tenant Masters',
+        path: paths.platform.tenantMasters.root,
+        icon: ICONS.tenantMasters,
+        requiredPermission: routePermissionByPath[paths.platform.tenantMasters.root],
+      },
+      {
+        title: 'Tenants',
+        path: paths.platform.tenants.root,
+        icon: ICONS.tenants,
+        requiredPermission: routePermissionByPath[paths.platform.tenants.root],
+      },
+      {
+        title: 'Users',
+        path: paths.platform.users.root,
+        icon: ICONS.user,
+        requiredPermission: routePermissionByPath[paths.platform.users.root],
+      },
+      {
+        title: 'Roles',
+        path: paths.platform.roles.root,
+        icon: ICONS.roles,
+        requiredPermission: routePermissionByPath[paths.platform.roles.root],
+      },
+      {
+        title: 'Branches',
+        path: paths.platform.branches.root,
+        icon: ICONS.branches,
+        requiredPermission: routePermissionByPath[paths.platform.branches.root],
+      },
     ],
   },
   /**
@@ -48,18 +74,78 @@ export const navData = [
   {
     subheader: 'Tenant',
     items: [
-      { title: 'Staff Types', path: paths.tenant.staffTypes.root, icon: ICONS.staffTypes },
-      { title: 'Staff', path: paths.tenant.staff.root, icon: ICONS.staff },
-      { title: 'Categories', path: paths.tenant.categories.root, icon: ICONS.categories },
-      { title: 'Items', path: paths.tenant.items.root, icon: ICONS.product },
-      { title: 'Deals', path: paths.tenant.deals.root, icon: ICONS.deals },
-      { title: 'Stock', path: paths.tenant.stock.root, icon: ICONS.analytics },
-      { title: 'Stock Documents', path: paths.tenant.stockDocuments.root, icon: ICONS.file },
-      { title: 'POS', path: paths.tenant.orders.root, icon: ICONS.order },
-      { title: 'Tables', path: paths.tenant.tables.root, icon: ICONS.tables },
-      { title: 'Recipes', path: paths.tenant.recipes.root, icon: ICONS.file },
-      { title: 'Kitchens', path: paths.tenant.kitchens.root, icon: ICONS.kitchens },
-      { title: 'Payment Modes', path: paths.tenant.paymentModes.root, icon: ICONS.banking },
+      {
+        title: 'Staff Types',
+        path: paths.tenant.staffTypes.root,
+        icon: ICONS.staffTypes,
+        requiredPermission: routePermissionByPath[paths.tenant.staffTypes.root],
+      },
+      {
+        title: 'Staff',
+        path: paths.tenant.staff.root,
+        icon: ICONS.staff,
+        requiredPermission: routePermissionByPath[paths.tenant.staff.root],
+      },
+      {
+        title: 'Categories',
+        path: paths.tenant.categories.root,
+        icon: ICONS.categories,
+        requiredPermission: routePermissionByPath[paths.tenant.categories.root],
+      },
+      {
+        title: 'Items',
+        path: paths.tenant.items.root,
+        icon: ICONS.product,
+        requiredPermission: routePermissionByPath[paths.tenant.items.root],
+      },
+      {
+        title: 'Deals',
+        path: paths.tenant.deals.root,
+        icon: ICONS.deals,
+        requiredPermission: routePermissionByPath[paths.tenant.deals.root],
+      },
+      {
+        title: 'Stock',
+        path: paths.tenant.stock.root,
+        icon: ICONS.analytics,
+        requiredPermission: routePermissionByPath[paths.tenant.stock.root],
+      },
+      {
+        title: 'Stock Documents',
+        path: paths.tenant.stockDocuments.root,
+        icon: ICONS.file,
+        requiredPermission: routePermissionByPath[paths.tenant.stockDocuments.root],
+      },
+      {
+        title: 'POS',
+        path: paths.tenant.orders.root,
+        icon: ICONS.order,
+        requiredPermission: routePermissionByPath[paths.tenant.orders.root],
+      },
+      {
+        title: 'Tables',
+        path: paths.tenant.tables.root,
+        icon: ICONS.tables,
+        requiredPermission: routePermissionByPath[paths.tenant.tables.root],
+      },
+      {
+        title: 'Recipes',
+        path: paths.tenant.recipes.root,
+        icon: ICONS.file,
+        requiredPermission: routePermissionByPath[paths.tenant.recipes.root],
+      },
+      {
+        title: 'Kitchens',
+        path: paths.tenant.kitchens.root,
+        icon: ICONS.kitchens,
+        requiredPermission: routePermissionByPath[paths.tenant.kitchens.root],
+      },
+      {
+        title: 'Payment Modes',
+        path: paths.tenant.paymentModes.root,
+        icon: ICONS.banking,
+        requiredPermission: routePermissionByPath[paths.tenant.paymentModes.root],
+      },
     ],
   },
 ];
