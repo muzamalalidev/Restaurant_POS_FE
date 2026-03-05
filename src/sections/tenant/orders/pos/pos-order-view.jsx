@@ -16,7 +16,9 @@ import { paths } from 'src/routes/paths';
 
 import { fCurrency } from 'src/utils/format-number';
 import { getApiErrorMessage } from 'src/utils/api-error-message';
+import { fDateTime, formatPatterns } from 'src/utils/format-time';
 
+import { CONFIG } from 'src/global-config';
 import { createOrderSchema } from 'src/schemas';
 import { useGetItemsQuery } from 'src/store/api/items-api';
 import { useCreateOrderMutation } from 'src/store/api/orders-api';
@@ -77,6 +79,45 @@ const defaultDeliveryDetails = {
   landmark: null,
   instructions: null,
 };
+
+// TESTING: Dummy invoice payload for print flow test. Remove when done. Printer: CONFIG.invoicePrinterName
+function getDummyInvoicePayload() {
+  const dateTime = fDateTime(new Date(), formatPatterns.paramCase.dateTime);
+  return {
+    header: {
+      restaurantName: 'Restaurant POS',
+      branchName: 'Main Branch',
+      address: '123 Main St, City',
+      ntn: '1234567-8',
+      contact: '+92 300 1234567',
+    },
+    meta: {
+      invoiceNumber: 'INV-TEST-001',
+      paymentStatus: 'Paid',
+      cashierName: 'Test Cashier',
+      dateTime,
+      orderNumber: 'ORD-001',
+      orderType: 'Dine In',
+      tableName: 'T-05',
+    },
+    lines: [
+      { productName: 'Chicken Biryani', qty: 2, rate: 350, total: 700 },
+      { productName: 'Naan', qty: 4, rate: 50, total: 200 },
+      { productName: 'Cold Drink', qty: 2, rate: 80, total: 160 },
+    ],
+    totals: {
+      subtotal: 1060,
+      grandTotal: 1113,
+      taxAmount: 53,
+      taxPercentage: 5,
+      discountAmount: 0,
+      discountPercentage: null,
+    },
+    footer: { poweredBy: 'Restaurant POS' },
+    delivery: null,
+    isReprint: false,
+  };
+}
 
 // ----------------------------------------------------------------------
 
@@ -435,7 +476,6 @@ function PosOrderContent({
                 variant="outlined"
                 size="medium"
                 fullWidth
-                disabled={isCreating || !hasCartItems}
                 startIcon="solar:document-text-bold"
                 onClick={onPreviewInvoiceClick}
                 sx={{ flex: 1, minHeight: 44 }}
@@ -458,7 +498,7 @@ export function PosOrderView() {
 
   const { invoicePrintPayload, triggerPrint } = useInvoicePrint();
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewPayload, setPreviewPayload] = useState(null);
+  const [previewPayload, _setPreviewPayload] = useState(null);
 
   const { data: staffDropdown } = useGetStaffDropdownQuery();
   const { data: orderTypesDropdown, isLoading: orderTypesLoading } = useGetOrderTypesDropdownQuery();
@@ -569,7 +609,7 @@ export function PosOrderView() {
         printAfterRef.current = false;
         const payload = buildInvoicePayload(data, optionsRef.current || {}, result);
         triggerPrint(payload);
-        toast.info('Print dialog opened. Complete or cancel in the dialog.');
+        toast.info(`Print dialog opened. Select "${CONFIG.invoicePrinterName}" to print.`);
       }
     } catch (err) {
       const { message, isRetryable } = getApiErrorMessage(err, { defaultMessage: 'Failed to save order' });
@@ -594,11 +634,11 @@ export function PosOrderView() {
   }, []);
 
   const handlePreviewInvoiceClick = useCallback(() => {
-    const data = methods.getValues();
-    const payload = buildInvoicePayload(data, optionsRef.current || {}, null);
-    setPreviewPayload(payload);
-    setPreviewOpen(true);
-  }, [methods]);
+    // TESTING: Use dummy payload to test print flow. Remove when done; restore buildInvoicePayload + setPreviewPayload + setPreviewOpen(true).
+    const payload = getDummyInvoicePayload();
+    triggerPrint(payload);
+    toast.info(`Print dialog opened. Select "${CONFIG.invoicePrinterName}" to print.`);
+  }, [triggerPrint]);
 
   return (
     <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', bgcolor: 'background.default', p: 2 }}>

@@ -3,7 +3,7 @@
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 
-import { fCurrency } from 'src/utils/format-number';
+import { fNumber, fCurrency } from 'src/utils/format-number';
 
 import 'src/components/invoice-print/invoice-print-print.css';
 
@@ -177,10 +177,10 @@ export function InvoicePrintLayout({ payload, widthPreset = '80mm', className, .
                 {line.qty}
               </Typography>
               <Typography component="span" variant="body2" sx={{ minWidth: 44, textAlign: 'right' }}>
-                {fCurrency(line.rate, CURRENCY_OPTS)}
+                {fNumber(line.rate)}
               </Typography>
               <Typography component="span" variant="body2" sx={{ minWidth: 44, textAlign: 'right' }}>
-                {fCurrency(line.total, CURRENCY_OPTS)}
+                {fNumber(line.total)}
               </Typography>
             </Box>
           </Box>

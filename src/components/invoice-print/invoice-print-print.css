@@ -5,6 +5,12 @@
  */
 
 @media print {
+  /* Hint 80mm paper width; margin 0 so content is not shifted (thermal roll) */
+  @page {
+    size: 80mm auto;
+    margin: 0;
+  }
+
   body * {
     visibility: hidden;
   }
@@ -25,8 +31,13 @@
     font-size: 12px;
     background: white;
     color: black;
-    overflow: visible;
+    overflow: hidden;
     box-shadow: none;
+    box-sizing: border-box;
+  }
+
+  #invoice-print-root * {
+    box-sizing: border-box;
   }
 
   /* 58mm variant when class is applied */

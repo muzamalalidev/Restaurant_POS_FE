@@ -32,6 +32,11 @@ export const CONFIG = {
    */
   googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '',
   /**
+   * Invoice / receipt printer name. Shown in UI; in browser user must select this printer in the print dialog.
+   * For Electron or backend print services, use this value to target the device.
+   */
+  invoicePrinterName: process.env.NEXT_PUBLIC_INVOICE_PRINTER_NAME ?? 'POS-80',
+  /**
    * Mapbox
    */
   mapboxApiKey: process.env.NEXT_PUBLIC_MAPBOX_API_KEY ?? '',
