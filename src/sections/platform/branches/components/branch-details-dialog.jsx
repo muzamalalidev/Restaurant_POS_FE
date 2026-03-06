@@ -91,9 +91,23 @@ export function BranchDetailsDialog({ open, record, onClose }) {
                       bgcolor: phone.isPrimary ? 'primary.lighterChannel' : 'background.neutral',
                     }}
                   >
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'flex-start',
+                      }}
+                    >
                       <Box sx={{ flex: 1 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5, flexWrap: 'wrap' }}>
+                        <Box
+                          sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 1,
+                            mb: 0.5,
+                            flexWrap: 'wrap',
+                          }}
+                        >
                           <Typography variant="body2" fontWeight={phone.isPrimary ? 600 : 400}>
                             {phone.phoneNumber}
                           </Typography>

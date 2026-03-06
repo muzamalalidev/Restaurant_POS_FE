@@ -18,7 +18,7 @@ export const routePermissionByPath = {
   [paths.tenant.categories.root]: 'Categories.GetAll',
   [paths.tenant.items.root]: 'Items.GetAll',
   [paths.tenant.deals.root]: 'Deals.GetAll',
-  [paths.tenant.stock.root]: null,
+  [paths.tenant.stock.root]: 'Items.GetAll',
   [paths.tenant.stockDocuments.root]: 'StockDocuments.GetAll',
   [paths.tenant.orders.root]: 'Orders.GetAll',
   [paths.tenant.orders.list]: 'Orders.GetAll',

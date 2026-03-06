@@ -94,6 +94,10 @@ export function useCustomTable({
     return rows.length;
   }, [paginationConfig.mode, paginationConfig.rowCount, rows.length]);
 
+  // Single source for page callbacks: prop (from CustomTable wiring) or config, to avoid double-call and ensure view handler runs
+  const onPageChange = onPageChangeProp ?? paginationConfig.onPageChange;
+  const onPageSizeChange = onPageSizeChangeProp ?? paginationConfig.onPageSizeChange;
+
   // Handle pagination change with edge case handling
   const handlePaginationModelChange = useCallback(
     (newModel) => {
@@ -112,20 +116,11 @@ export function useCustomTable({
 
         setPaginationModel(safeModel);
 
-        if (onPageChangeProp) {
-          onPageChangeProp(safeModel.page);
+        if (onPageChange) {
+          onPageChange(safeModel.page);
         }
-
-        if (onPageSizeChangeProp) {
-          onPageSizeChangeProp(validPageSize);
-        }
-
-        if (paginationConfig.onPageChange) {
-          paginationConfig.onPageChange(safeModel.page);
-        }
-
-        if (paginationConfig.onPageSizeChange) {
-          paginationConfig.onPageSizeChange(validPageSize);
+        if (onPageSizeChange) {
+          onPageSizeChange(validPageSize);
         }
       } else {
         // Client-side pagination: validate page bounds
@@ -143,28 +138,19 @@ export function useCustomTable({
 
         setPaginationModel(safeModel);
 
-        if (onPageChangeProp) {
-          onPageChangeProp(safeModel.page);
+        if (onPageChange) {
+          onPageChange(safeModel.page);
         }
-
-        if (onPageSizeChangeProp) {
-          onPageSizeChangeProp(validPageSize);
-        }
-
-        if (paginationConfig.onPageChange) {
-          paginationConfig.onPageChange(safeModel.page);
-        }
-
-        if (paginationConfig.onPageSizeChange) {
-          paginationConfig.onPageSizeChange(validPageSize);
+        if (onPageSizeChange) {
+          onPageSizeChange(validPageSize);
         }
       }
     },
     [
       totalRows,
       paginationConfig,
-      onPageChangeProp,
-      onPageSizeChangeProp,
+      onPageChange,
+      onPageSizeChange,
     ]
   );
 

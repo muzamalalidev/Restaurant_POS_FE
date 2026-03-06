@@ -88,7 +88,7 @@ export function KitchenFormDialog({ open, mode, record, onClose, onSuccess }) {
         isActive: true,
       });
     }
-  }, [open, mode, record.id, record.name, record.description, record.location, record.isActive, reset, record]);
+  }, [open, mode, record, reset]);
 
   // Handle form submit (P0-002: ref guard blocks rapid double-submit)
   const onSubmit = handleSubmit(async (data) => {
@@ -106,7 +106,7 @@ export function KitchenFormDialog({ open, mode, record, onClose, onSuccess }) {
         if (onSuccess) {
           onSuccess(result, 'created');
         }
-      } else {
+      } else if (record?.id) {
         await updateKitchen({
           id: record.id,
           ...kitchenPayload,

@@ -93,7 +93,7 @@ export function TableFormDialog({ open, mode, record, onClose, onSuccess }) {
         isActive: true,
       });
     }
-  }, [open, mode, record.id, record.tableNumber, record.capacity, record.location, record.isAvailable, record.isActive, reset, record]);
+  }, [open, mode, record, reset]);
 
   // Handle form submit (P0-002: ref guard prevents double-submit)
   const onSubmit = handleSubmit(async (data) => {
@@ -113,7 +113,7 @@ export function TableFormDialog({ open, mode, record, onClose, onSuccess }) {
         if (onSuccess) {
           onSuccess(result, 'created');
         }
-      } else {
+      } else if (record?.id) {
         await updateTable({ id: record.id, ...payload }).unwrap();
         if (onSuccess) {
           onSuccess(record.id, 'updated');

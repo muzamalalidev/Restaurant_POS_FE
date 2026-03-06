@@ -165,6 +165,7 @@ function CustomTableComponent({
   }, [baseColumns, actions, actionsColumnOptions, needsConfirmationDialog, actionsColumnResult.column]);
 
   // Use custom table hook for state management
+  // Pagination callbacks: prefer from pagination config (views pass onPageChange there), fallback to top-level props
   const tableState = useCustomTable({
     rows,
     pagination: paginationProp,
@@ -173,8 +174,8 @@ function CustomTableComponent({
     selection: selectionProp,
     getRowId,
     onSelectionChange,
-    onPageChange: otherProps.onPageChange,
-    onPageSizeChange: otherProps.onPageSizeChange,
+    onPageChange: paginationProp?.onPageChange ?? otherProps.onPageChange,
+    onPageSizeChange: paginationProp?.onPageSizeChange ?? otherProps.onPageSizeChange,
     onSortModelChange: otherProps.onSortModelChange,
     onFilterModelChange: otherProps.onFilterModelChange,
   });
@@ -288,6 +289,7 @@ function CustomTableComponent({
 
     // Pagination
     if (tableState.paginationConfig.enabled) {
+      props.pagination = true; // Required by MUI DataGrid to enable footer and onPaginationModelChange
       props.paginationModel = tableState.paginationModel;
       props.onPaginationModelChange = tableState.handlePaginationModelChange;
       props.pageSizeOptions = tableState.paginationConfig.pageSizeOptions;
